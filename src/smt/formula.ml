@@ -181,6 +181,35 @@ module Make_transformer (X : S) = struct
     | Binop (op, e1, e2) -> X.binop op (transform e1) (transform e2)
 end
 
+let rec subst
+  : type a b. a -> (a, 'k) Symbol.t -> (b, 'k) t  -> (b, 'k) t
+  = fun v s e ->
+    match e with
+    | Key symbol ->
+      begin match s, symbol with
+      | I k, I k' when Utils.Uid.equal k k' -> Const_int v
+      | B k, B k' when Utils.Uid.equal k k' -> Const_bool v
+      | _ -> e
+      end
+    | Const_int _
+    | Const_bool _ -> e
+    | Not e' ->
+      let e'' = subst v s e' in
+      if e' == e'' then
+        e
+      else
+        not_ e''
+    | And e_ls ->
+      let e_ls' = List.map (subst v s) e_ls in
+      and_ e_ls'
+    | Binop (op, e1, e2) ->
+      let e1' = subst v s e1 in
+      let e2' = subst v s e2 in
+      if e1 == e1' && e2 == e2' then
+        e
+      else
+        binop op e1' e2'
+
 type 'k solver = (bool, 'k) t -> 'k Solution.t
 
 module Make_solver (X : SOLVABLE) = struct
@@ -190,12 +219,46 @@ module Make_solver (X : SOLVABLE) = struct
     match expr with
     | Const_bool false -> Unsat
     | Const_bool true -> Sat Model.empty
+    | e -> X.solve [ M.transform e ]
+end
+
+
+(*
+  First attempts to solve with a few heuristics, and then calls the solver.
+*)
+module Make_solver' (X : SOLVABLE) = struct
+  module M = Make_transformer (X) 
+
+  let rec solve (expr : (bool, 'k) t) : 'k Solution.t =
+    match expr with
+    | Const_bool false -> Unsat
+    | Const_bool true -> Sat Model.empty
     | Not (Binop (Equal, Key k, Const_int i)) ->
       Sat (Model.singleton (if i = 0 then 1 else 0) k)
     | Binop (Equal, Key k, Const_int i) ->
       Sat (Model.singleton i k)
-    | e ->
-      X.solve [ M.transform e ]
+    | Binop (Greater_than_eq, Key k, Const_int i) ->
+      Sat (Model.singleton i k)
+    | Binop (Less_than_eq, Key k, Const_int i) ->
+      Sat (Model.singleton i k)
+    | And e_ls ->
+      (* If there is any (key = int) formula, then we can subst it through. *)
+      let e_opt =
+        let find : type a. (a, 'k) t -> (int * (int, 'k) Symbol.t) option = function
+          | Binop (Equal, Key k, Const_int i) -> Some (i, k)
+          | _ -> None
+        in
+        List.find_map find e_ls
+      in
+      begin match e_opt with
+      | Some (i, k) ->
+        let sol = solve (and_ (List.map (subst i k) e_ls)) in
+        Solution.merge sol (Sat (Model.singleton i k))
+      | None ->
+        X.solve [ M.transform expr ]
+      end
+    | _ ->
+      X.solve [ M.transform expr ]
 end
 
 module Set = struct
@@ -226,18 +289,5 @@ module Set = struct
           acc_scc
       in
       and_ @@ collect formula_symbols [ formula ] all_with_symbols
-
-    (* let scc (formula : (bool, K.t) T.t) ~(wrt : t) : (bool, K.t) T.t =
-      let formula_symbols = symbols formula in
-      to_seq wrt
-      |> Seq.fold_left (fun ((acc_symbols, acc_scc) as acc) e ->
-          let e_symbols = symbols e in
-          if Utils.Uid.Set.disjoint acc_symbols e_symbols then
-            acc
-          else
-            Utils.Uid.Set.union acc_symbols e_symbols, e :: acc_scc
-        ) (formula_symbols, [ formula ])
-      |> snd
-      |> and_ *)
   end
 end

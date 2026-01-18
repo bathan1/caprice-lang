@@ -105,7 +105,7 @@ let loop ~(options : Options.t) (solve : Stepkey.t Smt.Formula.solver)
   loop tq
 
 module Default_Z3 = Overlays.Typed_z3.Default
-module Default_solver = Smt.Formula.Make_solver (Default_Z3)
+module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
 
 let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
   (pgm : Lang.Ast.program) : Answer.t =
