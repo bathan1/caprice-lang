@@ -230,17 +230,26 @@ module Make_solver' (X : SOLVABLE) = struct
   module M = Make_transformer (X) 
 
   let rec solve (expr : (bool, 'k) t) : 'k Solution.t =
+    let single i k = Solution.Sat (Model.singleton i k) in
     match expr with
     | Const_bool false -> Unsat
     | Const_bool true -> Sat Model.empty
     | Not (Binop (Equal, Key k, Const_int i)) ->
-      Sat (Model.singleton (if i = 0 then 1 else 0) k)
+      single (if i = 0 then 1 else 0) k
     | Binop (Equal, Key k, Const_int i) ->
-      Sat (Model.singleton i k)
-    | Binop (Greater_than_eq, Key k, Const_int i) ->
-      Sat (Model.singleton i k)
-    | Binop (Less_than_eq, Key k, Const_int i) ->
-      Sat (Model.singleton i k)
+      single i k
+    | Binop ((Greater_than_eq | Less_than_eq), Key k, Const_int i) ->
+      single i k
+    | Binop ((Greater_than_eq | Less_than_eq), Const_int i, Key k) ->
+      single i k
+    | Binop ((Less_than, Key k, Const_int i)) ->
+      single (i - 1) k
+    | Binop (Less_than, Const_int i, Key k) ->
+      single (i + 1) k
+    | Binop (Greater_than, Key k, Const_int i) ->
+      single (i + 1) k
+    | Binop (Greater_than, Const_int i, Key k) ->
+      single (i - 1) k
     | And e_ls ->
       (* If there is any (key = int) formula, then we can subst it through. *)
       let e_opt =
