@@ -121,11 +121,13 @@ let rec binop : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, '
   | Greater_than -> begin
       match x, y with
       | Const_int i1, Const_int i2 -> Const_bool (i1 > i2)
+      (* Note that we will change greater-than to less-than *)
       | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e2, e1)
     end
   | Greater_than_eq -> begin
       match x, y with
       | Const_int i1, Const_int i2 -> Const_bool (i1 >= i2)
+      (* Note that we will change greater-than-eq to less-than-eq *)
       | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e2, e1)
   end
 
@@ -133,6 +135,10 @@ and not_ (e : (bool, 'k) t) : (bool, 'k) t =
   match e with
   | Const_bool b -> Const_bool (not b)
   | Not e' -> e'
+  | Binop (Less_than, e1, e2) ->
+    Binop (Less_than_eq, e2, e1)
+  | Binop (Less_than_eq, e1, e2) ->
+    Binop (Less_than, e2, e1)
   | Binop (Or, e1, e2) -> and_ [ not_ e1 ; not_ e2 ] (* it's easier in general to work with "and" *)
   | _ -> Not e
 
@@ -225,31 +231,51 @@ end
 
 (*
   First attempts to solve with a few heuristics, and then calls the solver.
+  This simply special-cases on some common formulas. It also extracts out
+  constant assignments (variable = constant).
+
+  Since the `binop` function above turns greater-thans into less-thans, we
+  don't handle any greater-than in the cases below--it will never happen if
+  the user constructs formulas with the smart constructors above.
+  Similarly, we will not get "not" of an inequality operator.
 *)
 module Make_solver' (X : SOLVABLE) = struct
   module M = Make_transformer (X) 
 
   let rec solve (expr : (bool, 'k) t) : 'k Solution.t =
     let single i k = Solution.Sat (Model.singleton i k) in
+    (* Hand-write a lot of special cases for single formulas *)
     match expr with
     | Const_bool false -> Unsat
     | Const_bool true -> Sat Model.empty
+    | Key k ->
+      single true k
+    | Not Key k ->
+      single true k
     | Not (Binop (Equal, Key k, Const_int i)) ->
       single (if i = 0 then 1 else 0) k
-    | Binop (Equal, Key k, Const_int i) ->
+    | Binop ((Equal | Less_than_eq), Key k, Const_int i) ->
       single i k
-    | Binop ((Greater_than_eq | Less_than_eq), Key k, Const_int i) ->
+    | Binop ((Equal | Less_than_eq), Const_int i, Key k) ->
       single i k
-    | Binop ((Greater_than_eq | Less_than_eq), Const_int i, Key k) ->
-      single i k
-    | Binop ((Less_than, Key k, Const_int i)) ->
+    | Binop (Less_than, Key k, Const_int i) ->
       single (i - 1) k
     | Binop (Less_than, Const_int i, Key k) ->
       single (i + 1) k
-    | Binop (Greater_than, Key k, Const_int i) ->
-      single (i + 1) k
-    | Binop (Greater_than, Const_int i, Key k) ->
-      single (i - 1) k
+    | Binop (Less_than, Key k, Key k') ->
+      Solution.merge (single 0 k) (single 1 k')
+    | Binop (Less_than_eq, Key k, Key k') ->
+      Solution.merge (single 0 k) (single 0 k')
+    | Binop (Equal, Key k, Key k') ->
+      begin match k, k' with
+      | I _, I _ -> Solution.merge (single 0 k) (single 0 k')
+      | B _, B _ -> Solution.merge (single true k) (single true k')
+      end
+    | Not Binop (Equal, Key k, Key k') ->
+      begin match k, k' with
+      | I _, I _ -> Solution.merge (single 0 k) (single 1 k')
+      | B _, B _ -> Solution.merge (single true k) (single false k')
+      end
     | And e_ls ->
       (* If there is any (key = int) formula, then we can subst it through. *)
       let e_opt =
@@ -262,10 +288,11 @@ module Make_solver' (X : SOLVABLE) = struct
       begin match e_opt with
       | Some (i, k) ->
         let sol = solve (and_ (List.map (subst i k) e_ls)) in
-        Solution.merge sol (Sat (Model.singleton i k))
+        Solution.merge sol (single i k)
       | None ->
         X.solve [ M.transform expr ]
       end
+    (* No simplification above worked, so just resort to the solver *)
     | _ ->
       X.solve [ M.transform expr ]
 end
