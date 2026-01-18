@@ -1,0 +1,81 @@
+(* TEST
+  include refutable;
+*)
+
+(*
+  Module type where the type t has a parameter.
+*)
+let S1 = sig
+  val t : type --> type
+  val return : (type a) -> a -> t a
+  val appl : (type a) -> t a -> (a -> a) -> t a
+end
+
+(*
+  Module type that is itself parameterized.
+  The type t has no parameter.
+
+  ERROR: (type a) -> ... needs to be deterministic because
+    the value with type S0 is used in several spots later and
+    is expected to be the same.
+*)
+let S0 = (type a) -> sig
+  val t : type
+  val return : a -> t
+  val appl : t -> (a -> a) -> t
+end
+
+(*
+  F shows that we can convert from S1 to S0.
+*)
+let F : S1 -> S0 = fun M1 a -> struct
+  let t = M1.t a
+  let return x = M1.return a x
+  let appl x f = M1.appl a x f
+end
+
+(*
+  G shows that we can convert back from S0 to S1.
+*)
+let G : S0 -> S1 = fun M -> struct
+  let t a = (M a).t
+  let return a x = (M a).return x
+  let appl a x f = (M a).appl x f
+end
+
+let NoOp : S1 --> S1 = fun M -> G (F M)
+let NoOp': S0 --> S0 = fun M -> F (G M)
+
+let Identity1 : S1 = struct
+  let t a = a
+  let return _ a = a
+  let appl _ x f = f x
+end
+
+let Identity0 = F Identity1
+
+(* optionally apply no-op *)
+let Id1 = if input == 0 then NoOp Identity1 else Identity1
+let Id0 = if input == 0 then NoOp' Identity0 else Identity0
+
+let pick_t t1 t2 =
+  if input == 0 then
+    t1
+  else
+    t2
+
+(*
+  Check that the forms are equivalent by exhausting the combinations.
+*)
+let check_ret (type a) (x : a) (b : bool) : pick_t (Id1.t a) (Id0 a).t = 
+  if b then
+    Id1.return a x
+  else
+    (Id0 a).return x
+
+let check_appl (type a) (x : pick_t (Id1.t a) (Id0 a).t)
+  (f : a -> a) (b : bool) : pick_t (Id1.t a) (Id0 a).t = 
+  if b then
+    Id1.appl a x f
+  else
+    (Id0 a).appl x f
