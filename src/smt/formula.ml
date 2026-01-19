@@ -55,14 +55,14 @@ let is_const (type a) (x : (a, 'k) t) : bool =
   | Const_int _ | Const_bool _ -> true
   | Key _ | Not _ | And _ | Binop _ -> false
 
-let rec binop : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t = fun op x y ->
+let rec binop
+  : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
+  = fun op x y ->
   match op with
   | Or -> begin
       match x, y with
-      | Const_bool true, _ -> Const_bool true
-      | _, Const_bool true -> Const_bool true
-      | Const_bool false, e -> e
-      | e, Const_bool false -> e
+      | Const_bool true, _ | _, Const_bool true -> Const_bool true
+      | Const_bool false, e | e, Const_bool false -> e
       | e1, e2 -> Binop (Or, e1, e2)
     end
   | Equal -> begin
