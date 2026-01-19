@@ -24,6 +24,9 @@ let empty : t =
     of [last_formula] with respect to [other_formulas], then we have an
     input environment that satisfies the made target.
 
+    This "connected component" optimization originates with EXE. See the
+    comment in Formula.BSet.scc for an explanation.
+
     The made target gets a brand new unique identifier (with respect to
     any other target made in this way), which is the sole means of equality
     and comparison. Therefore, no two targets that represent the same

@@ -136,8 +136,10 @@ and not_ (e : (bool, 'k) t) : (bool, 'k) t =
   | Const_bool b -> Const_bool (not b)
   | Not e' -> e'
   | Binop (Less_than, e1, e2) ->
+    (* not (e1 < e2) = (e2 <= e1) *)
     Binop (Less_than_eq, e2, e1)
   | Binop (Less_than_eq, e1, e2) ->
+    (* not (e1 <= e2) = (e1 < e2) *)
     Binop (Less_than, e2, e1)
   | Binop (Or, e1, e2) -> and_ [ not_ e1 ; not_ e2 ] (* it's easier in general to work with "and" *)
   | _ -> Not e
@@ -275,7 +277,13 @@ module Make_solver' (X : SOLVABLE) = struct
       | B _, B _ -> Solution.merge (assign true k) (assign false k')
       end
     | And e_ls ->
-      (* If there is any (key = int) formula, then we can subst it through. *)
+      (*
+        If there is any (key = int) formula, then we can subst it through, as it
+        is an "implied concretization".
+
+        This idea is originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
+        from Section 3.3, paragraph _Constraint Set Simplification_.
+      *)
       let e_opt =
         let find : type a. (a, 'k) t -> (int * (int, 'k) Symbol.t) option = function
           | Binop (Equal, Key k, Const_int i) -> Some (i, k)
@@ -302,6 +310,18 @@ module Set = struct
       let compare = compare
     end)
 
+    (*
+      We use SCC for constraint set independence. This ideas originates in 
+      EXE (https://dl.acm.org/doi/10.1145/1455518.1455522) Section 4.2.
+      However, we don't even need to solve the other connect components of
+      constraints because we reuse an input environment.
+      EXE uses Union Find in practice to do this, though they describe the
+      problem with connect components in a graph.
+
+      Since independent constraint sets are solved, there may not be repeat
+      queries, and it could be beneficial to keep a cache of solved formulas.
+      We do not yet do this, though.
+    *)
     let scc (formula : (bool, K.t) T.t) ~(wrt : t) : (bool, K.t) T.t =
       let formula_symbols = symbols formula in
       let all_with_symbols =
