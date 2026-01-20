@@ -2,7 +2,7 @@
   open Ast
   open Binop
 
-  let default_fun_sort = Funtype.Nondet
+  let default_fun_mode = Funtype.Nondet
 %}
 
 %token <string> IDENTIFIER
@@ -137,7 +137,7 @@ statement:
   | LET l_ident typed_params COLON expr EQUALS expr
     { SLet { var = VarTyped { item = $2 ; tau =
       List.fold_right (fun (_, domain) acc ->
-        ETypeFun { domain ; codomain = acc ; sort = default_fun_sort }
+        ETypeFun { domain ; codomain = acc ; mode = default_fun_mode }
       ) $3 $5
       }
       ; defn =
@@ -154,7 +154,7 @@ statement:
   | LET REC l_ident typed_params COLON expr EQUALS expr
     { SLetRec { var = VarTyped { item = $3 ; tau =
       List.fold_right (fun (_, domain) acc ->
-        ETypeFun { domain ; codomain = acc ; sort = default_fun_sort }
+        ETypeFun { domain ; codomain = acc ; mode = default_fun_mode }
       ) $4 $6
       }
       ; param = fst (List.hd $4)
@@ -248,17 +248,17 @@ expr:
 %inline function_type:
   (* regular function *)
   | expr type_arrow expr
-    { ETypeFun { domain = PReg { tau = $1 } ; codomain = $3 ; sort = $2 } }
+    { ETypeFun { domain = PReg { tau = $1 } ; codomain = $3 ; mode = $2 } }
   (* standard dependent function type *)
   | OPEN_PAREN ident COLON expr CLOSE_PAREN type_arrow expr
-    { ETypeFun { domain = PDep { item = $2 ; tau = $4 } ; codomain = $7 ; sort = $6 } }
+    { ETypeFun { domain = PDep { item = $2 ; tau = $4 } ; codomain = $7 ; mode = $6 } }
   (* various sugar for dependent functions *)
   | OPEN_PAREN ident COLON expr PIPE expr CLOSE_PAREN type_arrow expr
     { ETypeFun { domain = PDep { item = $2 ; tau = 
-      ETypeRefine { var = $2 ; tau = $4 ; predicate = $6} } ; codomain = $9 ; sort = $8 } }
+      ETypeRefine { var = $2 ; tau = $4 ; predicate = $6} } ; codomain = $9 ; mode = $8 } }
   | OPEN_PAREN TYPE nonempty_list(ident) CLOSE_PAREN type_arrow expr
     { List.fold_right (fun item acc ->
-      ETypeFun { domain = PDep { item ; tau = EType } ; codomain = acc ; sort = $5 }
+      ETypeFun { domain = PDep { item ; tau = EType } ; codomain = acc ; mode = $5 }
       ) $3 $6 }
   ;
 

@@ -169,8 +169,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       contains_mu t
     | VWrapped { data ; tau } ->
       contains_mu data || contains_mu (VTypeFun tau)
-    | VTypeFun { domain ; codomain = CodValue t ; sort = _ }
-    | VGenFun { funtype = { domain ; codomain = CodValue t ; sort = _  } ; nonce = _ ; alist = _ }->
+    | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
+    | VGenFun { funtype = { domain ; codomain = CodValue t ; mode = _  } ; nonce = _ ; alist = _ }->
       (* TODO: consider if the negative position makes a difference *)
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
@@ -178,8 +178,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VFunFix _
     | VTypeModule _
     | VLazy _
-    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ ; sort = _ } ; nonce = _ ; alist = _ }
-    | VTypeFun { domain = _ ; codomain = CodDependent _ ; sort = _ } -> true
+    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ ; mode = _ } ; nonce = _ ; alist = _ }
+    | VTypeFun { domain = _ ; codomain = CodDependent _ ; mode = _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
 
@@ -252,8 +252,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       Format.sprintf "(mu %s. <closure>)" (Ident.to_string var)
     | VTypeList t ->
       Format.sprintf "(list %s)" (to_string t)
-    | VTypeFun { domain ; codomain ; sort } ->
-      let s_arrow = match sort with Funtype.Nondet -> "->" | Det -> "-->" in
+    | VTypeFun { domain ; codomain ; mode } ->
+      let s_arrow = match mode with Funtype.Nondet -> "->" | Det -> "-->" in
       begin match codomain with
       | CodValue cod_tval -> Format.sprintf "%s %s %s" (to_string domain) s_arrow (to_string cod_tval)
       | CodDependent (id, _closure) -> Format.sprintf "(%s : %s) %s <closure>" (Ident.to_string id) (to_string domain) s_arrow
@@ -371,8 +371,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     let wrap_non_tuple (v : any) (t : tval) : string =
       bad_wrap "a tuple" v t
 
-    let sort_mismatch (v1 : any) (v2 : any) : string =
-      Format.sprintf "Bad intensional equality: %s and %s are not of the same sort."
+    let shape_mismatch (v1 : any) (v2 : any) : string =
+      Format.sprintf "Bad intensional equality: %s and %s are not of the same shape."
         (any_to_string v1) (any_to_string v2)
   end
 

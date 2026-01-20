@@ -44,10 +44,10 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
     is_symbolic t1 || is_symbolic t2
   | VTypeSingle t ->
     is_symbolic t
-  | VTypeFun { domain ; codomain = CodValue t ; sort = _ }
-  | VGenFun { funtype = { domain ; codomain = CodValue t ; sort = _ } ; nonce = _ ; alist = _ } ->
+  | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
+  | VGenFun { funtype = { domain ; codomain = CodValue t ; mode = _ } ; nonce = _ ; alist = _ } ->
     is_symbolic domain || is_symbolic t
-  | VWrapped { data ; tau = { domain ; codomain = CodValue t ; sort = _ } } ->
+  | VWrapped { data ; tau = { domain ; codomain = CodValue t ; mode = _ } } ->
     is_symbolic data || is_symbolic domain || is_symbolic t
   (* Closures cases: assume true, but may want to inspect closure *)
   | VFunClosure _
@@ -56,9 +56,9 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VLazy _
   | VTypeMu _
   | VTypeRefine _
-  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ ; sort = _ } ; nonce = _ ; alist = _ }
-  | VTypeFun { domain = _ ; codomain = CodDependent _ ; sort = _ }
-  | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ ; sort = _ } } -> true
+  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ ; mode = _ } ; nonce = _ ; alist = _ }
+  | VTypeFun { domain = _ ; codomain = CodDependent _ ; mode = _ }
+  | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ ; mode = _ } } -> true
 
 let is_any_symbolic (Any v) = is_symbolic v
 
@@ -99,7 +99,7 @@ let rec does_wrap_matter : typeval t -> bool = function
 module X = struct
   type 'a t =
     | Value of ('a * bool Formula.t)
-    | SortMismatch
+    | ShapeMismatch
 
   let of_cdata d = Value d
   let make b = Value (b, Smt.Formula.const_bool b)
@@ -110,9 +110,9 @@ module X = struct
     | Value (a, s) ->
       begin match f () with
       | Value (b, s') -> Value (a && b, Smt.Formula.and_ [ s' ; s ])
-      | SortMismatch -> SortMismatch
+      | ShapeMismatch -> ShapeMismatch
       end
-    | SortMismatch -> SortMismatch
+    | ShapeMismatch -> ShapeMismatch
 
   let rec fold_lists (f : 'a -> 'a -> bool t) (x : 'a list) (y : 'a list) : bool t =
     match x, y with
@@ -125,14 +125,14 @@ end
 
 (**
   [intensional_equal x y] is [Some (b, s)] if [x] and [y] are of the same
-    sort, and their components are of the same sort, where [b] is
+    shape, and their components are of the same shape, where [b] is
     the concrete value of their intensional equality, and [s] is the symbolic
     value.
       e.g. [intensional_equal (0, 1) (1, 0)] is [Some (false, s)] for [s] the
         formula describe equality of all symbolic components, which were not
         written at all in the example concrete tuples.
 
-    It is [None] if they are not of the same sort, which indicates a runtime
+    It is [None] if they are not of the same shape, which indicates a runtime
     type mismatch.
       e.g. [intensional_equal () int] is a mismatch.
       e.g. [intensional_equal (0, 1) true] is a mismatch.
@@ -171,7 +171,7 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     if g1.id = g2.id then
       make (g1.nonce = g2.nonce) 
     else
-      SortMismatch (* these are of different types *)
+      ShapeMismatch (* these are of different types *)
   | Any VTuple (l1, r1), Any VTuple (l2, r2) ->
     let- () = intensional_equal l1 l2 in
     intensional_equal r1 r2
@@ -240,22 +240,22 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VLazy s1, Any VLazy s2 when s1.cell == s2.cell ->
     fold_lists iequal s1.wrapping_types s2.wrapping_types
   | Any VLazy _, _ | _, Any VLazy _ ->
-    (* For now, say false if comparing lazy values. It may be more safe to say sort mismatch. *)
+    (* For now, say false if comparing lazy values. It may be more safe to say shape mismatch. *)
     make false
     (* TODO: eventually we want to handle these by asking for lazy environment *)
   | _, _ ->
     (*
       All data has been handled, and anything that is not
-      handled above is a sort mismatch.
+      handled above is a shape mismatch.
       Otherwise, the values are not equal, but they are all
-      types, so they are of the same sort (type) and are simply
+      types, so they are of the same shape and are simply
       a constant false, but not error.
     *)
     handle_any x
-      ~data:(fun _ -> SortMismatch)
+      ~data:(fun _ -> ShapeMismatch)
       ~typeval:(fun _ ->
         handle_any y
-          ~data:(fun _ -> SortMismatch)
+          ~data:(fun _ -> ShapeMismatch)
           ~typeval:(fun _ -> make false)
         )
 
@@ -264,13 +264,13 @@ and iequal : type a. a t -> a t -> bool X.t = fun x y ->
 
 and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t) (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
   let open X in
-  if Funtype.equal_sort tf1.sort tf2.sort then
+  if Funtype.equal_mode tf1.mode tf2.mode then
     let- () = iequal tf1.domain tf2.domain in
     iequal_cod tf1.codomain tf2.codomain
   else
     (* similar to dependent vs nondependent, a deterministic function type 
-      is not equal to a nondeterministic function type, but it is not a sort
-      mismatch (and this is an overloading of the word "sort") *)
+      is not equal to a nondeterministic function type, but it is not a shape
+      mismatch. *)
     make false
 
 and iequal_cod cod1 cod2 =
@@ -291,11 +291,11 @@ and iequal_cod cod1 cod2 =
     list [bindings] are the equivalent bindings in the expressions
     that overwrite the environments.
 
-  Closure equality will not be a sort mismatch, even if the
+  Closure equality will not be a shape mismatch, even if the
   expression references values in the environment of different
-  sorts in the same spot. Instead, it is just false.
+  shape in the same spot. Instead, it is just false.
   
-  E.g. This will be false, not a sort mismatch.
+  E.g. This will be false, not a shape mismatch.
     { x |-> 0 } ,
       match x with
       | _ -> true
@@ -482,9 +482,9 @@ and iequal_closure bindings closure1 closure2 =
       (* The variables are supposed to bound in the environment *)
       begin match Env.find id1 closure1.env, Env.find id2 closure2.env with
       | Some v1, Some v2 ->
-        (* Found the values. Now compare, and turn sort mismatches into false *)
+        (* Found the values. Now compare, and turn shape mismatches into false *)
         begin match intensional_equal v1 v2 with
-        | SortMismatch -> make false
+        | ShapeMismatch -> make false
         | res ->
           res
         end
@@ -553,7 +553,7 @@ and iequal_closure bindings closure1 closure2 =
 let equal_any x y =
   match intensional_equal x y with
   | Value (b, _) -> b
-  | SortMismatch -> false
+  | ShapeMismatch -> false
 
 (**
   [equal v1 v2] is intensional equality of [v1] and [v2].
@@ -564,7 +564,7 @@ let equal (type a) (x : a t) (y : a t) : bool =
 let equal_fun_cod cod1 cod2 =
   match iequal_cod cod1 cod2 with
   | Value (b, _) -> b
-  | SortMismatch -> false
+  | ShapeMismatch -> false
 
 let equal_closure c1 c2 =
   match iequal_closure [] c1 c2 with

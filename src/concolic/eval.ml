@@ -14,14 +14,14 @@ let make_lazy (lgen : Val.lgen) : Val.dval =
   VLazy { cell = State.make_cell (LLazy lgen) ; wrapping_types = [] }
 
 (**
-  [ctx_of_sort sort] is an environment in which to run a
-    monadic expression based on the [sort] of the function
+  [ctx_of_mode mode] is an environment in which to run a
+    monadic expression based on the [mode] of the function
     type that is being checked.
 
-    The context disallows inputs if the sort is deterministic.
+    The context disallows inputs if the mode is deterministic.
 *)
-let ctx_of_sort (sort : Funtype.sort) =
-  match sort with
+let ctx_of_mode (mode : Funtype.mode) =
+  match mode with
   | Nondet -> Fun.id
   | Det -> disallow_inputs (* deterministic functions must run without inputs *)
 
@@ -245,14 +245,14 @@ let eval
         ) (return Record.empty) t_record_body
       in
       return_any (VTypeRecord record_body)
-    | ETypeFun { domain = PReg { tau } ; codomain ; sort } ->
+    | ETypeFun { domain = PReg { tau } ; codomain ; mode } ->
       let* dom_t = eval_type tau in
       let* cod_t = eval_type codomain in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t ; sort })
-    | ETypeFun { domain = PDep { item ; tau } ; codomain ; sort } ->
+      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t ; mode })
+    | ETypeFun { domain = PDep { item ; tau } ; codomain ; mode } ->
       let* dom_t = eval_type tau in
       let* env = read in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (item, { captured = codomain ; env }) ; sort })
+      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (item, { captured = codomain ; env }) ; mode })
     | ETypeRefine { var ; tau ; predicate } ->
       let* tval = eval_type tau in
       let* env = read in
@@ -372,10 +372,10 @@ let eval
           Env.set fvar (Any self_fun) env
           |> Env.set param v_arg
         ) (eval captured)
-    | VGenFun { funtype = { domain = _ ; codomain ; sort = Nondet } ; _ } ->
+    | VGenFun { funtype = { domain = _ ; codomain ; mode = Nondet } ; _ } ->
       let* cod_tval = eval_codomain codomain v_arg in
       gen cod_tval
-    | VGenFun { funtype = { domain = _ ; codomain ; sort = Det } ; alist ; _ } ->
+    | VGenFun { funtype = { domain = _ ; codomain ; mode = Det } ; alist ; _ } ->
       let rec loop = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
@@ -390,8 +390,8 @@ let eval
           | Value (false, s) ->
             let* () = push_formula_to_path (Formula.not_ s) in
             loop tl
-          | SortMismatch ->
-            mismatch @@ sort_mismatch v_arg input
+          | ShapeMismatch ->
+            mismatch @@ shape_mismatch v_arg input
           end
       in
       loop (State.get_cell alist)
@@ -480,22 +480,22 @@ let eval
       (* TODO: consider a wellformedness check *)
       let* v = force_value v in
       handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
-    | VTypeFun { domain ; codomain ; sort } ->
+    | VTypeFun { domain ; codomain ; mode } ->
       let* v = force_value v in
       begin match v with
       | Any (VFunClosure _ as vfun)
       | Any (VFunFix _ as vfun) ->
         let* genned = allow_inputs (gen domain) in
-        let* res = ctx_of_sort sort (eval_appl vfun genned) in
+        let* res = ctx_of_mode mode (eval_appl vfun genned) in
         let* cod_tval = eval_codomain codomain genned in
         check res cod_tval
-      | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; sort = sort' } ; _ } as v_candidate) ->
+      | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; mode = mode' } ; _ } as v_candidate) ->
         fork_on_left ~reason:CheckGenFun
           ~left:{ run_failing = domain <: domain' }
           ~right:(
             if Val.equal_fun_cod codomain codomain' 
-              && Funtype.equal_sort sort sort' then confirm else
-            match sort' with
+              && Funtype.equal_mode mode mode' then confirm else
+            match mode' with
             | Nondet ->
               let* cod_tval, cod_tval' =
                 match codomain, codomain' with
@@ -507,7 +507,7 @@ let eval
                   let* cod_tval' = eval_codomain codomain' genned in
                   return (cod_tval, cod_tval')
               in
-              begin match sort with
+              begin match mode with
               | Nondet -> cod_tval' <: cod_tval
               | Det ->
                 (* inlining this until it's clear we can extract *)
@@ -521,7 +521,7 @@ let eval
               let* cod_tval = eval_codomain codomain v_arg in
               check res cod_tval
           )
-      | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' ; sort = sort' } } as self_fun) ->
+      | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' ; mode = mode' } } as self_fun) ->
         fork_on_left ~reason:CheckWrappedFun
           ~left:{ run_failing = domain <: domain' }
           ~right:(
@@ -533,7 +533,7 @@ let eval
                 because the wrapper means its been checked.
             *)
             if Val.equal_fun_cod codomain codomain'
-              && Funtype.equal_sort sort sort' then confirm else
+              && Funtype.equal_mode mode mode' then confirm else
             (* TODO: remove this duplication with all the above cases
               (this is almost just the "right" side of checking functions but
               with wrapping the result in the wrapping codomain'). *)
@@ -543,11 +543,11 @@ let eval
               let* genned = allow_inputs (gen domain) in
               let* cod_tval = eval_codomain codomain genned in (* note og codomain uses unwrapped value *)
               let* w = wrap genned domain' in
-              let* res = ctx_of_sort sort (eval_appl data ~self_fun genned) in
+              let* res = ctx_of_mode mode (eval_appl data ~self_fun genned) in
               let* cod_tval' = eval_codomain codomain' w in
               let* w_res = wrap res cod_tval' in
               check w_res cod_tval
-            | VGenFun { funtype = { domain = _ ; codomain = codomain'' ; sort = Nondet } ; _ } ->
+            | VGenFun { funtype = { domain = _ ; codomain = codomain'' ; mode = Nondet } ; _ } ->
               let* cod_tval, cod_tval', cod_tval'' =
                 match codomain, codomain', codomain'' with
                 | CodValue cod_tval, CodValue cod_tval', CodValue cod_tval'' -> 
@@ -560,12 +560,12 @@ let eval
                   let* cod_tval'' = eval_codomain codomain'' w in (* TODO: should this "w" be wrapped with domain''? *)
                   return (cod_tval, cod_tval', cod_tval'')
               in
-              if Funtype.equal_sort sort Nondet
+              if Funtype.equal_mode mode Nondet
                 && Val.equal cod_tval cod_tval'' then confirm else
-              let* genned = ctx_of_sort sort (gen cod_tval'') in
+              let* genned = ctx_of_mode mode (gen cod_tval'') in
               let* w = wrap genned cod_tval' in
               check w cod_tval
-            | VGenFun { funtype = { domain = domain'' ; codomain = _ ; sort = Det } ; _ } ->
+            | VGenFun { funtype = { domain = domain'' ; codomain = _ ; mode = Det } ; _ } ->
               fork_on_left ~reason:CheckGenFun
                 ~left:{ run_failing = domain <: domain'' }
                 ~right:(
