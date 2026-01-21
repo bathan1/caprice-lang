@@ -209,7 +209,8 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
         make false
     ) (Labels.Variant.Map.to_list m1) (Labels.Variant.Map.to_list m2)
   | Any VTypeModule c1, Any VTypeModule c2 ->
-    let rec fold bindings (x : Labels.Record.t Ast.typed_item list) (y : Labels.Record.t Ast.typed_item list) =
+    let rec fold bindings (x : Labels.Record.t Ast.typed_item list)
+      (y : Labels.Record.t Ast.typed_item list) =
       match x, y with
       | [], [] -> make true
       | [], _ | _, [] -> make false
@@ -262,7 +263,8 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
 and iequal : type a. a t -> a t -> bool X.t = fun x y ->
   intensional_equal (Any x) (Any y)
 
-and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t) (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
+and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t)
+  (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
   let open X in
   if Funtype.equal_mode tf1.mode tf2.mode then
     let- () = iequal tf1.domain tf2.domain in

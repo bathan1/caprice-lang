@@ -1,10 +1,9 @@
 (*
   A stem off of a path, represented as a path in reverse order,
-  and a total length.
+  and a total length (priority).
 
   The stem is constructed from nothing and only begins to cons
-  path items if the total length exceeds a set amount.
-  of creation.
+  path items if the total priority exceeds a provided amount.
 *)
 
 type t =

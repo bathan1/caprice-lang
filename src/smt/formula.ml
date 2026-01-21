@@ -278,10 +278,10 @@ module Make_solver' (X : SOLVABLE) = struct
       end
     | And e_ls ->
       (*
-        If there is any (key = int) formula, then we can subst it through, as it
+        If there is any (key = int) formula, then we can subst it through, for it
         is an "implied concretization".
 
-        This idea is originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
+        This idea originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
         from Section 3.3, paragraph _Constraint Set Simplification_.
       *)
       let e_opt =
@@ -298,7 +298,7 @@ module Make_solver' (X : SOLVABLE) = struct
       | None ->
         X.solve [ M.transform expr ]
       end
-    (* No simplification above worked, so just resort to the solver *)
+    (* No simplification above worked, so just resort to the solver. *)
     | _ ->
       X.solve [ M.transform expr ]
 end

@@ -28,7 +28,7 @@ let empty : t =
     comment in Formula.BSet.scc for an explanation.
 
     The made target gets a brand new unique identifier (with respect to
-    any other target made in this way), which is the sole means of equality
+    any other target made in this way), which is the sole basis of equality
     and comparison. Therefore, no two targets that represent the same
     program path should be made, or else they will be unequal.
 *)

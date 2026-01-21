@@ -1,6 +1,6 @@
 # caprice-lang
 
-This repo implements the Caprice programming language.
+This project implements the Caprice programming language.
 
 Caprice is a semantically typed functional language with types as values.
 
