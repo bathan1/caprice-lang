@@ -55,12 +55,11 @@ let make_bool_feeder ~(run_num : int) : unit -> bool =
   else
     Random.bool
 
-open Lwt.Let_syntax.Let_syntax
-open Lwt.Syntax
-
 (* Does not do its own timeout, even though timeout is passed in with options *)
 let loop ~(options : Options.t) (solve : Stepkey.t Smt.Formula.solver) 
   (pgm : Lang.Ast.program) (tq : Target_queue.t) : Answer.t Lwt.t =
+  let open Lwt.Let_syntax.Let_syntax in
+  let open Lwt.Syntax in
   let eval =
     Eval.eval pgm ~max_step:options.max_step ~do_splay:options.do_splay
       ~do_wrap:options.do_wrap
@@ -109,9 +108,9 @@ module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
 
 let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
   (pgm : Lang.Ast.program) : Answer.t =
+  let time_sec = Utils.Time.convert_span options.global_timeout ~to_:Mtime.Span.s in
   let go () =
     try
-      let time_sec = Utils.Time.convert_span options.global_timeout ~to_:Mtime.Span.s in
       Lwt_main.run (Lwt_unix.with_timeout time_sec @@ fun () ->
         loop Default_solver.solve pgm Target_queue.initial ~options
       )
@@ -123,5 +122,5 @@ let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
   let span, answer = Utils.Time.time go () in
   if print_outcome then
   Format.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
-    (Utils.Time.span_to_ms span) !(c.cell) (Answer.to_string answer);
+    (Utils.Time.span_to_ms span) (Utils.Safe_cell.get c) (Answer.to_string answer);
   answer
