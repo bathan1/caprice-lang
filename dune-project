@@ -22,6 +22,7 @@
   lwt
   menhir
   mtime
+  (ocaml (>= 5.4.0))
   ppx_deriving
   psq
   store
