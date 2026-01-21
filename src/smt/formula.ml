@@ -71,9 +71,8 @@ let rec binop
       | e, Const_bool true -> e
       | Const_bool false, e -> not_ e
       | e, Const_bool false -> not_ e
-      | Key k1, Key k2 when Symbol.equal k1 k2 -> Const_bool true
-      | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
       | Const_int _, Key _ -> Binop (Equal, y, x)
+      | e1, e2 when equal e1 e2 -> true_
       | e1, e2 -> Binop (Equal, e1, e2)
     end
   | Not_equal -> not_ (binop Equal x y)
