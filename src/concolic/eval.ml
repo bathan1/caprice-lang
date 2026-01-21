@@ -927,7 +927,9 @@ let eval
       local' (Env.set var (Any (VTypeMu { var ; closure })) closure.env) 
         (eval_type closure.captured)
     in
-    gen t_body
+    match t_body with
+    | VTypeMu { var ; closure } -> force_gen_mu var closure
+    | _ -> gen t_body
 
   (*
     ----
