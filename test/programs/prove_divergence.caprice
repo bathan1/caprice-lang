@@ -1,0 +1,18 @@
+(* TEST
+  include splayable;
+*)
+
+let t x y =
+  if x <= 0 then
+    bottom
+  else
+    { i : int | i == x * y }
+
+(*
+  We can prove that mult diverges on non-positive x.
+*)
+let rec mult (dep x : int) (dep y : int) : t x y =
+  if x == 1 then y else y + mult (x - 1) y
+
+let double (dep n : int | n > 0) : { m : int | m > n } =
+  mult n 2
