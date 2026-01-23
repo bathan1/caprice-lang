@@ -19,7 +19,6 @@
   store
  )
  (instrumentation (backend landmarks --auto))
- (instrumentation (backend bisect_ppx))
  (preprocess (pps ppx_deriving.eq ppx_deriving.ord))
 )
   
