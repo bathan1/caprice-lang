@@ -1,0 +1,18 @@
+(* TEST
+  include splayable;
+*)
+
+let t a = mu t. list (a * t)
+
+let rec append (type a) (l1 : list a) (l2 : list a) : list a =
+  match l1 with
+  | [] -> l2
+  | hd :: tl -> append a tl (hd :: l2)
+  end
+
+let rec flatten (type a) (x : t a) : list a =
+  match x with
+  | [] -> []
+  | (a', y) :: z ->
+    a' :: append a (flatten a y) (flatten a z)
+  end

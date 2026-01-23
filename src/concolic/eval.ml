@@ -411,6 +411,34 @@ let eval
       ~typeval:return
 
   (*
+    -----------------------------------------------
+    EVALUATE RECURSIVE TYPE TO A NON-REC TYPE VALUE
+    -----------------------------------------------
+
+    Vanishes if a cycle is detected. Example cycles include
+      mu t. t (* 1-cycle *)
+    and
+      mu t. let s = mu s. t in s (* 2-cycle *)
+  *)
+  and unroll_mu
+    : 'env. Ident.t -> Ast.t Val.closure -> (Val.tval, 'env) m
+    = fun var closure ->
+    let rec go seen var closure =
+      let t = VTypeMu { var ; closure } in
+      let* t_body = local' (Env.set var (Any t) closure.env) (eval_type closure.captured) in
+      match t_body with
+      | VTypeMu { var ; closure } ->
+        (* Check for cycle by looking for this type in what we've seen before *)
+        if List.exists (Val.equal_closure closure) seen then
+          vanish
+        else
+          go (closure :: seen) var closure
+      | _ ->
+        return t_body
+    in
+    go [] var closure
+
+  (*
     --------------------------
     EVALUATE FUNCTION CODOMAIN
     --------------------------
@@ -634,7 +662,7 @@ let eval
         check_struct push_and_check ~refute ~t_labels ~v_labels
       | _ -> refute
       end
-    | VTypeMu { var ; closure = { captured ; env } } -> (* don't force v *)
+    | VTypeMu { var ; closure = ({ captured ; env } as closure) } -> (* don't force v *)
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
         let lazy_v = State.get_cell cell in
@@ -642,7 +670,9 @@ let eval
         | LValue any_v ->
           check any_v t
         | LLazy LGenList _ ->
-          refute (* TODO: make error message description; it will be cryptic like this *)
+          (* Unroll this type in case it is a list, then check. *)
+          let* t_body = unroll_mu var closure in
+          check v t_body
         | LLazy LGenMu { var = var' ; closure = { captured = captured' ; env = env' } } ->
           (* TODO: these names (with the "prime") go the other direction as the spec *)
           let* a = allow_inputs (gen VType) in (* fresh type to use as a stub *)
@@ -654,7 +684,7 @@ let eval
           check wrapped t_body
         end
       | _ ->
-        let* t_body = local' (Env.set var (Any t) env) (eval_type captured) in
+        let* t_body = unroll_mu var closure in
         check v t_body
       end
     | VTypeList t_body -> (* don't force v *)
@@ -665,8 +695,10 @@ let eval
         | LValue any_v ->
           let* wrapped = wrap_multi wrapping_types any_v in
           check wrapped t
-        | LLazy LGenMu _ ->
-          refute (* see todo on mu check about error messages *)
+        | LLazy LGenMu { var ; closure } ->
+          (* Unroll the type and check to see if it is a list. *)
+          let* tval_mu_body = unroll_mu var closure in
+          tval_mu_body <: t
         | LLazy LGenList t' ->
           if wrapping_types = [] && Val.equal t' t_body then confirm else
           let* genned = allow_inputs (gen t') in
@@ -727,8 +759,7 @@ let eval
         )
 
   (*
-    Check modules and records given a way to check each label and a default
-    label
+    Check modules and records given a way to check each label and a default label.
   *)
   and check_struct
     : type a env. (Labels.Record.t -> (Eval_result.t, env) failing) -> refute:(a, env) m ->
@@ -810,7 +841,7 @@ let eval
       let* newtype = gen VType in
       handle_any newtype
         ~data:(fun _ -> raise @@ InvariantException "`type` generated data value")
-        ~typeval:(fun typ -> gen typ)
+        ~typeval:gen
     | VTypeBottom -> escape Vanish
     | VTypeRecord record_t ->
       let* genned_body =
@@ -923,13 +954,10 @@ let eval
   and force_gen_mu 
     : 'env. Ident.t -> Ast.t Val.closure -> (Val.any, 'env) m
     = fun var closure ->
-    let* t_body = 
-      local' (Env.set var (Any (VTypeMu { var ; closure })) closure.env) 
-        (eval_type closure.captured)
-    in
+    let* t_body = unroll_mu var closure in
     match t_body with
-    | VTypeMu { var ; closure } -> force_gen_mu var closure
-    | _ -> gen t_body
+    | VTypeList t -> force_gen_list t
+    | _ -> gen t_body (* not mu type because of behavior of unroll_mu *)
 
   (*
     ----
@@ -957,8 +985,8 @@ let eval
     | VTypeBool
     | VTypeSingle _ -> return v
     | VTypeBottom -> mismatch @@ wrap_bottom v
-    | VTypeMu { var ; closure = { captured ; env } } ->
-      let* tval = local' (Env.set var (Any t) env) (eval_type captured) in
+    | VTypeMu { var ; closure } ->
+      let* tval = unroll_mu var closure in
       begin match v with
       | Any VLazy vlazy ->
         (* Always lazily wrap, even if the value is forced already. *)

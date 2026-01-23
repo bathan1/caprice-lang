@@ -67,3 +67,13 @@ let g (dep x : t) (dep r : x) (y : r.a) : `T of r.a =
 let t = mu t. mu s. int
 
 let f (x : t) : int = x
+
+let _ : (mu t. t) -> list unit = fun x -> x
+
+let _ : (mu t. let s = mu s. t in s) -> list (list int) = fun x -> x
+
+let f : 
+  let t = mu t. list t in
+  let t' = list t in
+  t -> t'
+  = fun x -> x
