@@ -72,6 +72,7 @@ let rec binop
       | Const_bool false, e -> not_ e
       | e, Const_bool false -> not_ e
       | Const_int _, Key _ -> Binop (Equal, y, x)
+      | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
       | e1, e2 when equal e1 e2 -> true_
       | e1, e2 -> Binop (Equal, e1, e2)
     end
