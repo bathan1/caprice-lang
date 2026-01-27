@@ -69,7 +69,7 @@ end)
 let[@inline always] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
   { run = fun ~reject ~accept state step env _ ->
       match Env.find id env with
-      | None -> let e, s = Eval_result.fail_on_fetch id state in reject e s step
+      | None -> let e, s = Eval_result.fail_on_fetch id state in reject e s
       | Some v -> accept v state step
   }
 
@@ -79,7 +79,7 @@ let[@inline always] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
   The ideal implementation would simply be `escape Vanish`.
 *)
 let vanish : 'a 'env. ('a, 'env) m =
-  { run = fun ~reject ~accept:_ state step _ _ -> reject Vanish state step }
+  { run = fun ~reject ~accept:_ state _ _ _ -> reject Vanish state }
 
 let mismatch : 'a 'env. string -> ('a, 'env) m = fun msg ->
   escape (Mismatch msg)
@@ -91,7 +91,7 @@ let assert_inputs_allowed : 'env. (unit, 'env) m =
   { run = fun ~reject ~accept state step _ ctx ->
     match ctx.det_context with
     | Allowed -> accept () state step
-    | Disallowed -> reject (Mismatch "Nondeterminism used when not allowed") state step
+    | Disallowed -> reject (Mismatch "Nondeterminism used when not allowed") state
   }
 
 (**
@@ -272,8 +272,8 @@ let allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
 
 let run' (x : ('a, Val.Env.t) m) (target : Target.t) (s : State.t) (e : Val.Env.t) : Eval_result.t * State.t =
   match run x s e { target ; det_context = Allowed } with
-  | Ok _, state, _ -> Done, state
-  | Error e, state, _ -> e, state
+  | Ok _, state -> Done, state
+  | Error e, state -> e, state
 
 (**
   [run x target] runs [x] with [target] as the context, beginning with

@@ -29,7 +29,7 @@ end) = struct
   *)
   type ('a, 'err, 'env) t = {
     run : 'r.
-      reject:('err -> State.t -> Step.t -> 'r) ->
+      reject:('err -> State.t -> 'r) ->
       accept:('a -> State.t -> Step.t -> 'r) ->
       State.t -> Step.t -> 'env -> Ctx.t -> 'r
   } [@@unboxed]
@@ -120,19 +120,19 @@ end) = struct
   *)
 
   let[@inline always][@specialise] escape : 'a 'env. Err.t -> ('a, 'env) m = fun err ->
-    { run = fun ~reject ~accept:_ state step _ _ -> reject err state step }
+    { run = fun ~reject ~accept:_ state step _ _ -> reject err state }
 
-  let[@inline always] handle_error (x : ('a, 'err1, 'env) t) (ok : 'a -> ('b, 'err2, 'env) t)
+  (* let[@inline always] handle_error (x : ('a, 'err1, 'env) t) (ok : 'a -> ('b, 'err2, 'env) t)
     (err : Err.t -> ('b, 'err2, 'env) t) : ('b, 'err2, 'env) t =
     { run = fun ~reject ~accept state step env ctx ->
         x.run state step env ctx
-          ~reject:(fun a state step ->
+          ~reject:(fun a state step -> (* supposes the step is passed along inside reject *)
               (err a).run ~reject ~accept state step env ctx
             )
           ~accept:(fun a state step ->
               (ok a).run ~reject ~accept state step env ctx
             )
-    }
+    } *)
 
   (*
     ------------------
@@ -140,10 +140,10 @@ end) = struct
     ------------------
   *)
 
-  let run (x : ('a, 'env) m) (init_state : State.t) (init_env : 'env) (init_ctx : Ctx.t) : ('a, Err.t) result * State.t * Step.t =
+  let run (x : ('a, 'env) m) (init_state : State.t) (init_env : 'env) (init_ctx : Ctx.t) : ('a * Step.t, Err.t) result * State.t =
     x.run init_state Step.zero init_env init_ctx
-      ~reject:(fun e state step -> Error e, state, step) 
-      ~accept:(fun a state step -> Ok a, state, step)
+      ~reject:(fun e state -> Error e, state) 
+      ~accept:(fun a state step -> Ok (a, step), state)
 
   (* let run_safe (x : 'a s) (init_state : State.t) (init_env : Env.t) (init_ctx : Ctx.t) : 'a * State.t * Step.t =
     x.run init_state Step.zero init_env init_ctx
@@ -170,7 +170,7 @@ end) = struct
     { run = fun ~reject ~accept state step _ _ ->
         let step = Step.next step in
         if Step.(step > max_step)
-        then let e, s = Err.fail_on_max_step step state in reject e s step
+        then let e, s = Err.fail_on_max_step step state in reject e s
         else accept () state step
     }
 
@@ -181,7 +181,7 @@ end) = struct
     { run = fun ~reject ~accept state step env ctx ->
       m.run (setup_state state) step env fork_ctx
         ~accept:Utils.Empty.absurd
-        ~reject:(fun e forked_state _ -> 
+        ~reject:(fun e forked_state -> 
           (* uses original step count when resuming, not step count after fork *)
           (k e).run ~reject ~accept (restore_state e ~og:state ~forked_state) step env ctx
         )
