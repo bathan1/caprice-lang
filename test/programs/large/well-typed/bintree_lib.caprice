@@ -52,7 +52,6 @@ let rec fold_left (type a acc) (f : acc -> a -> acc) (init : acc) (tree : t a) :
     fold_left a acc f (f (fold_left a acc f init b.left) b.item) b.right 
   end
 
-(* Slow usage of fold_left. *)
 let is_ordered (type a) (tree : t a) (compare : a -> a -> int) : bool =
   let res =
     fold_left a (
