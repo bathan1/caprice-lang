@@ -122,5 +122,5 @@ let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
   let span, answer = Utils.Time.time go () in
   if print_outcome then
   Format.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
-    (Utils.Time.span_to_ms span) (Utils.Safe_cell.get c) (Answer.to_string answer);
+    (Utils.Time.span_to_ms span) (Utils.Counter.get c) (Answer.to_string answer);
   answer

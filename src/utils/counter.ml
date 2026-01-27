@@ -1,9 +1,15 @@
 
-module C = Safe_cell.Make (Int)
+type t = int Atomic.t
 
-type t = C.t
-let create () = C.create 0
+let create () : t =
+  Atomic.make 0
 
-let next (t : t) : int = C.update ((+) 1) t
+let next (x : t) : int =
+  let () = Atomic.incr x in
+  Atomic.get x
 
-let reset (t : t) : unit = let _ = C.update (fun _ -> 0) t in ()
+let get (x : t) : int =
+  Atomic.get x
+
+let reset (x : t) : unit =
+  Atomic.set x 0
