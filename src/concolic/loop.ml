@@ -44,13 +44,13 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) : Tar
 let c = Utils.Counter.create ()
 
 let make_int_feeder ~(run_num : int) : unit -> int =
-  if run_num = 1 then
+  if run_num = 0 then
     fun () -> 0
   else
     fun () -> Random.int_in_range ~min:(-10) ~max:10
 
 let make_bool_feeder ~(run_num : int) : unit -> bool =
-  if run_num = 1 then
+  if run_num = 0 then
     fun () -> false
   else
     Random.bool

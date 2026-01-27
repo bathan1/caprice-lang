@@ -5,8 +5,7 @@ let create () : t =
   Atomic.make 0
 
 let next (x : t) : int =
-  let () = Atomic.incr x in
-  Atomic.get x
+  Atomic.fetch_and_add x 1
 
 let get (x : t) : int =
   Atomic.get x
