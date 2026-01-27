@@ -133,7 +133,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     True if the value has any mu type in its representation.
     This is used to dodge recursion by default.
   *)
-  let[@tail_mod_cons] rec contains_mu : type a. a t -> bool = fun v ->
+  let rec contains_mu : type a. a t -> bool = fun v ->
     match v with
     | VUnit
     | VInt _
@@ -387,6 +387,18 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
   module Make_match (Monad : Utils.Types.MONAD) = struct
     open Monad
 
+    let ( let* ) = Monad.bind
+
+    let bind_res (m : Match_result.t m) (f : Env.t option -> Match_result.t m) : Match_result.t m =
+      let* m in
+      match m with
+      | (No_match | Failure _) as r ->
+        return r
+      | Match ->
+        f None
+      | Match_bindings env ->
+        f (Some env)
+
     (*
       In case we match on a symbol, we must resolve the symbol to a value.
       It's expected that this computation is monadic, so we must pass in
@@ -403,26 +415,25 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
         | PVariable id, v -> 
           return @@ Match_bindings (Env.singleton id (to_any v))
         | PPatternAs (pat, id), v ->
-          bind (matches pat v) (function
-            | Match ->
-              return (Match_bindings (Env.singleton id (Any v)))
-            | Match_bindings env ->
+          bind_res (matches pat v) (function
+            | Some env ->
               return (Match_bindings (Env.set id (Any v) env))
-            | (No_match | Failure _) as r -> return r
+            | None ->
+              return (Match_bindings (Env.singleton id (Any v)))
           )
         | PPatternOr p_ls, v ->
-          List.fold_left (fun acc_m pat ->
-            bind acc_m (fun acc ->
-              match acc with
-              | No_match ->
-                matches pat v
-              | _ -> return acc
-            )
-          ) (return No_match) p_ls
+          let rec try_patterns = function
+            | [] -> return No_match
+            | pat :: rest ->
+              let* result = matches pat v in
+              match result with
+              | No_match -> try_patterns rest
+              | _ -> return result
+          in
+          try_patterns p_ls
         | _, VLazy vlazy ->
-          bind (resolve_lazy vlazy) (fun (Any v) ->
-            matches p v
-          )
+          let* (Any v) = resolve_lazy vlazy in
+          matches p v
         | p, VGenPoly _ -> 
           (* generated polymorphic values cannot be inspected *)
           return @@ Failure 
@@ -448,19 +459,15 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
         : type a b. Pattern.t * a t -> Pattern.t * b t -> Match_result.t m
         = fun (p1, v1) (p2, v2) ->
         let open Match_result in
-        bind (matches p1 v1) (function
-          | (No_match | Failure _) as r ->
-            return r
-          | Match -> 
+        bind_res (matches p1 v1) (function
+          | None ->
             matches p2 v2
-          | Match_bindings e1 ->
-            bind (matches p2 v2) (function
-              | (No_match | Failure _) as r ->
-                return r
-              | Match -> 
-                return (Match_bindings e1)
-              | Match_bindings e2 ->
-                return (Match_bindings (Env.extend e1 e2))
+          | Some env ->
+            bind_res (matches p2 v2) (function
+              | None ->
+                return (Match_bindings env)
+              | Some env' ->
+                return (Match_bindings (Env.extend env env'))
             )
         )
       in
