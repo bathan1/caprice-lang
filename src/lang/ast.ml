@@ -30,7 +30,7 @@ type t =
   | ETypeBottom
   | ETypeUnit
   | ETypeRecord of t Record.t
-  | ETypeModule of Labels.Record.t typed_item list
+  | ETypeModule of (Labels.Record.t * t) list
   | ETypeFun of (Ident.t option * t, t) Funtype.t
   | ETypeRefine of (t, t) Refinement.t
   | ETypeMu of { var : Ident.t ; body : t }
@@ -38,8 +38,6 @@ type t =
   | ETypeVariant of t Variant.t list
   | ETypeSingle of t
   [@@deriving eq, ord]
-
-and 'a typed_item = { item : 'a ; tau : t }
 
 and statement =
   | SLet of { name : Ident.t ; annot : t option ; defn : t }

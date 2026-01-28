@@ -650,7 +650,7 @@ let eval
       let* v = force_value v in
       begin match v with
       | Any VModule module_v ->
-        let t_labels_ls = List.map (fun { Ast.item ; _ } -> item) captured in
+        let t_labels_ls = List.map fst captured in
         let t_labels = Labels.Record.Set.of_list t_labels_ls in
         let v_labels = Record.label_set module_v in
         let push_and_check label =
@@ -658,7 +658,7 @@ let eval
             let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
             let new_env, tau = 
               (* think about sharing this computation because rn it is redone on every fork *)
-              Utils.List_utils.fold_left_until (fun env { Ast.item = label' ; tau } ->
+              Utils.List_utils.fold_left_until (fun env (label', tau) ->
                 if Labels.Record.equal label' label
                 then `Stop (env, tau)
                 else `Continue (
@@ -917,12 +917,12 @@ let eval
     | VTypeModule { captured ; env } ->
       let rec fold_labels acc_m = function
         | [] -> acc_m
-        | { Ast.item ; tau } :: tl ->
+        | (label, tau) :: tl ->
           let* acc = acc_m in
           let* tval = eval_type tau in
           let* v = gen tval in
-          local (Env.set (Labels.Record.to_ident item) v) (
-            fold_labels (return @@ Labels.Record.Map.add item v acc) tl
+          local (Env.set (Labels.Record.to_ident label) v) (
+            fold_labels (return @@ Labels.Record.Map.add label v acc) tl
           )
       in
       let* genned_body =
@@ -1061,14 +1061,14 @@ let eval
       | Any VModule v_body ->
         let rec fold_labels acc_m = function
           | [] -> acc_m
-          | { Ast.item ; tau } :: tl ->
+          | (label, tau) :: tl ->
             let* acc = acc_m in
-            begin match Labels.Record.Map.find_opt item v_body with
+            begin match Labels.Record.Map.find_opt label v_body with
             | Some v' ->
               let* tval = eval_type tau in
               let* v = wrap v' tval in
-              local (Env.set (Labels.Record.to_ident item) v) (
-                fold_labels (return @@ Labels.Record.Map.add item v acc) tl
+              local (Env.set (Labels.Record.to_ident label) v) (
+                fold_labels (return @@ Labels.Record.Map.add label v acc) tl
               )
             | None ->
               return acc

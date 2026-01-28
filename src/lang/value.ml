@@ -53,7 +53,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VTypeList : typeval t -> typeval t
     | VTypeFun : (typeval t, fun_cod) Funtype.t -> typeval t
     | VTypeRecord : typeval t Record.t -> typeval t
-    | VTypeModule : Labels.Record.t Ast.typed_item list closure -> typeval t (* not eagerly evaluating first label *)
+    | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typeval t (* not eagerly evaluating first label *)
     | VTypeVariant : typeval t Labels.Variant.Map.t -> typeval t
     | VTypeRefine : (typeval t, Ast.t closure) Refinement.t -> typeval t
     | VTypeTuple : typeval t * typeval t -> typeval t
@@ -266,7 +266,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       |> Format.sprintf "{ %s }"
     | VTypeModule { captured = alist ; env = _ } ->
       alist
-      |> List.map (fun { Ast.item ; tau = _ } -> Format.sprintf "val %s : <closure>" (Labels.Record.to_string item))
+      |> List.map (fun (label, _) -> Format.sprintf "val %s : <closure>" (Labels.Record.to_string label))
       |> String.concat "\n"
       |> Format.sprintf "sig %s end"
     | VTypeVariant map_body ->

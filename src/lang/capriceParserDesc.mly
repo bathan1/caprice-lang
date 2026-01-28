@@ -102,54 +102,41 @@
 %nonassoc IDENTIFIER
 
 %start <statement list> prog
-%start <statement list option> delim_expr
 
 %%
 
 prog:
-  | statement_list EOF { $1 }
-  ;
-
-delim_expr:
-  | EOF
-    { None }
-  | prog EOF
-    { Some ($1) }
-  ;
-
-statement_list:
-  | statement { [ $1 ] }
-  | statement statement_list { $1 :: $2 }
+  | nonempty_list(statement) EOF
+    { $1 }
   ;
 
 statement:
-  | LET binding EQUALS expr
-    { SLet { name = fst $2 ; annot = snd $2 ; defn = $4 } }
-  | LET l_ident nonempty_list(l_ident) EQUALS expr
-    { SLet { name = $2 ; annot = None ; defn = mk_curried_fun $3 $5 } }
-  | LET l_ident typed_params COLON expr EQUALS expr
-    { SLet { name = $2 ; annot = Some (mk_curried_funtype $3 $5)
-      ; defn = mk_curried_fun (extract_param_names $3) $7 } }
-  | LET REC l_ident nonempty_list(l_ident) EQUALS expr
-    { SLetRec { name = $3 ; annot = None ; param = List.hd $4 ; defn =
-      mk_curried_fun (List.tl $4) $6 } }
-  | LET REC l_ident typed_params COLON expr EQUALS expr
-    { SLetRec { name = $3
-      ; annot = Some (mk_curried_funtype $4 $6)
-      ; param = fst (List.hd $4)
-      ; defn = mk_curried_fun (List.tl (extract_param_names $4)) $8 } }
-  | LET REC binding EQUALS FUNCTION nonempty_list(l_ident) ARROW expr
-    { SLetRec { name = fst $3 ; annot = snd $3 ; param = List.hd $6 ; defn =
-      mk_curried_fun (List.tl $6) $8 } }
+  | LET b=binding EQUALS defn=expr
+    { SLet { name = fst b ; annot = snd b ; defn } }
+  | LET name=l_ident params=nonempty_list(l_ident) EQUALS body=expr
+    { SLet { name ; annot = None ; defn = mk_curried_fun params body } }
+  | LET name=l_ident tparams=typed_params COLON body_type=expr EQUALS body=expr
+    { SLet { name ; annot = Some (mk_curried_funtype tparams body_type)
+      ; defn = mk_curried_fun (extract_param_names tparams) body } }
+  | LET REC name=l_ident params=nonempty_list(l_ident) EQUALS body=expr
+    { SLetRec { name ; annot = None ; param = List.hd params ; defn =
+      mk_curried_fun (List.tl params) body } }
+  | LET REC name=l_ident tparams=typed_params COLON body_type=expr EQUALS body=expr
+    { SLetRec { name
+      ; annot = Some (mk_curried_funtype tparams body_type)
+      ; param = fst (List.hd tparams)
+      ; defn = mk_curried_fun (List.tl (extract_param_names tparams)) body } }
+  | LET REC b=binding EQUALS FUNCTION params=nonempty_list(l_ident) ARROW body=expr
+    { SLetRec { name = fst b ; annot = snd b ; param = List.hd params ; defn =
+      mk_curried_fun (List.tl params) body } }
   ;
 
 %inline binding:
-  | l_ident COLON expr
-    { $1, Some $3 }
-  | OPEN_PAREN l_ident COLON expr CLOSE_PAREN
-    { $2, Some $4 }
-  | l_ident
-    { $1, None }
+  | name=l_ident COLON tau=expr
+  | OPEN_PAREN name=l_ident COLON tau=expr CLOSE_PAREN
+    { name, Some tau }
+  | name=l_ident
+    { name, None }
 
 typed_params:
   | nonempty_list(typed_param_group)
@@ -164,70 +151,65 @@ typed_param_group:
   ;
 
 %inline single_typed_param:
-  | OPEN_PAREN l_ident COLON expr CLOSE_PAREN
-    { $2, (None, $4) }
-  | OPEN_PAREN ident COLON expr PIPE expr CLOSE_PAREN
-    { $2, (None, ETypeRefine { var = $2 ; tau = $4 ; predicate = $6}) }
-  | OPEN_PAREN DEP ident COLON expr CLOSE_PAREN
-  | OPEN_PAREN DEPENDENT ident COLON expr CLOSE_PAREN
-    { $3, (Some $3, $5) }
-  | OPEN_PAREN DEP ident COLON expr PIPE expr CLOSE_PAREN
-  | OPEN_PAREN DEPENDENT ident COLON expr PIPE expr CLOSE_PAREN
-    { $3, (Some $3, ETypeRefine { var = $3 ; tau = $5 ; predicate = $7 }) }
+  | OPEN_PAREN name=l_ident COLON tau=expr CLOSE_PAREN
+    { name, (None, tau) }
+  | OPEN_PAREN name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
+    { name, (None, ETypeRefine { var = name ; tau ; predicate }) }
+  | OPEN_PAREN DEP name=ident COLON tau=expr CLOSE_PAREN
+  | OPEN_PAREN DEPENDENT name=ident COLON tau=expr CLOSE_PAREN
+    { name, (Some name, tau) }
+  | OPEN_PAREN DEP name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
+  | OPEN_PAREN DEPENDENT name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
+    { name, (Some name, ETypeRefine { var = name ; tau ; predicate }) }
   ;
 
 %inline multiple_typed_params:
-  | OPEN_PAREN TYPE nonempty_list(ident) CLOSE_PAREN (* underscore not allowed as type parameter *)
-    { List.map (fun id -> id, (Some id, EType)) $3 }
+  | OPEN_PAREN TYPE type_ids=nonempty_list(ident) CLOSE_PAREN (* underscore not allowed as type parameter *)
+    { List.map (fun type_id -> type_id, (Some type_id, EType)) type_ids }
   ;
 
 expr:
   | appl_expr /* Includes primary expressions */
-    { $1 }
   | op_expr
-    { $1 }
   | type_expr
     { $1 }
-  | expr COMMA expr
-    { ETuple ($1, $3) }
-  | IF expr THEN expr ELSE expr %prec prec_if
-    { EIf { if_ = $2 ; then_ = $4 ; else_ = $6 } }
-  | FUNCTION nonempty_list(l_ident) ARROW expr %prec prec_fun 
-    { List.fold_right (fun param body ->
-      EFunction { param ; body }
-      ) $2 $4 }
-  | statement IN expr %prec prec_let
-    { ELet { stmt = $1 ; body = $3 } }
-  | MATCH expr WITH PIPE? match_expr_list END
-    { EMatch { subject = $2 ; patterns = $5 } }
+  | left=expr COMMA right=expr
+    { ETuple (left, right) }
+  | IF if_=expr THEN then_=expr ELSE else_=expr %prec prec_if
+    { EIf { if_ ; then_ ; else_ } }
+  | FUNCTION params=nonempty_list(l_ident) ARROW body=expr %prec prec_fun 
+    { mk_curried_fun params body }
+  | stmt=statement IN body=expr %prec prec_let
+    { ELet { stmt ; body } }
+  | MATCH subject=expr WITH PIPE? patterns=match_expr_list END
+    { EMatch { subject ; patterns } }
   ;
 
 %inline type_expr:
-  | PIPE variant_type_body (* pipe optional before first variant *)
-    { ETypeVariant $2 }
-  | variant_type_body
-    { ETypeVariant $1 }
-  | MU l_ident DOT expr %prec prec_mu
-    { ETypeMu { var = $2 ; body = $4 } }
+  | PIPE v_type=variant_type_body (* pipe optional before first variant *)
+  | v_type=variant_type_body
+    { ETypeVariant v_type }
+  | MU var=l_ident DOT body=expr %prec prec_mu
+    { ETypeMu { var ; body } }
   | function_type
     { $1 }
   ;
 
 %inline function_type:
   (* regular function *)
-  | expr type_arrow expr
-    { ETypeFun { domain = None, $1 ; codomain = $3 ; mode = $2 } }
+  | tdom=expr mode=type_arrow codomain=expr
+    { ETypeFun { domain = None, tdom ; codomain ; mode } }
   (* standard dependent function type *)
-  | OPEN_PAREN ident COLON expr CLOSE_PAREN type_arrow expr
-    { ETypeFun { domain = Some $2, $4 ; codomain = $7 ; mode = $6 } }
+  | OPEN_PAREN name=ident COLON tdom=expr CLOSE_PAREN mode=type_arrow codomain=expr
+    { ETypeFun { domain = Some name, tdom ; codomain ; mode } }
   (* various sugar for dependent functions *)
-  | OPEN_PAREN ident COLON expr PIPE expr CLOSE_PAREN type_arrow expr
-    { ETypeFun { domain = Some $2, ETypeRefine
-      { var = $2 ; tau = $4 ; predicate = $6} ; codomain = $9 ; mode = $8 } }
-  | OPEN_PAREN TYPE nonempty_list(ident) CLOSE_PAREN type_arrow expr
+  | OPEN_PAREN name=ident COLON tdom=expr PIPE predicate=expr CLOSE_PAREN mode=type_arrow codomain=expr
+    { ETypeFun { domain = Some name, ETypeRefine
+      { var = name ; tau = tdom ; predicate } ; codomain ; mode } }
+  | OPEN_PAREN TYPE type_ids=nonempty_list(ident) CLOSE_PAREN mode=type_arrow codomain=expr
     { List.fold_right (fun type_id acc ->
-      ETypeFun { domain = Some type_id, EType ; codomain = acc ; mode = $5 }
-      ) $3 $6 }
+      ETypeFun { domain = Some type_id, EType ; codomain = acc ; mode }
+      ) type_ids codomain }
   ;
 
 %inline type_arrow:
@@ -237,20 +219,20 @@ expr:
     { Funtype.Det } (* deterministic function arrow *)
 
 variant_type_body:
-  | variant_label OF expr
-    { [ { label = $1 ; payload = $3 } ] }
-  | variant_label OF expr PIPE variant_type_body
-    { { Variant.label = $1 ; payload = $3 } :: $5 }
+  | label=variant_label OF payload=expr
+    { [ { label ; payload } ] }
+  | label=variant_label OF payload=expr PIPE rest=variant_type_body
+    { { Variant.label ; payload } :: rest }
 
 appl_expr:
-  | appl_expr primary_expr
-    { EAppl { func = $1 ; arg = $2 } }
-  | variant_label primary_expr
-    { EVariant { label = $1 ; payload = $2 } }
-  | ASSERT primary_expr
-    { EAssert $2 }
-  | ASSUME primary_expr
-    { EAssume $2 }
+  | func=appl_expr arg=primary_expr
+    { EAppl { func ; arg } }
+  | label=variant_label payload=primary_expr
+    { EVariant { label ; payload } }
+  | ASSERT cond=primary_expr
+    { EAssert cond }
+  | ASSUME cond=primary_expr
+    { EAssume cond }
   | primary_expr
     { $1 }
   ;
@@ -292,88 +274,81 @@ primary_expr:
     { ERecord $2 }
   | OPEN_BRACE CLOSE_BRACE
     { ERecord Record.empty }
-  | OPEN_BRACKET separated_list(SEMICOLON, expr) CLOSE_BRACKET
+  | OPEN_BRACKET list_items=separated_list(SEMICOLON, expr) CLOSE_BRACKET
     { List.fold_right (fun e acc -> 
         EListCons (e, acc)
-      ) $2 EEmptyList }
-  | OPEN_PAREN expr CLOSE_PAREN
-    { $2 }
-  // | OPEN_BRACE expr PIPE expr CLOSE_BRACE
-  //   { ETypeRefine { tau = $2 ; predicate = $4 } : t }
-  | STRUCT list(statement) END (* may be empty *)
-    { EModule $2 }
-  | SIG list(val_item) END
-    { ETypeModule $2 }
+      ) list_items EEmptyList }
+  | OPEN_PAREN e=expr CLOSE_PAREN
+    { e }
+  | STRUCT stmts=list(statement) END (* may be empty *)
+    { EModule stmts }
+  | SIG val_decls=list(val_decl) END
+    { ETypeModule val_decls }
   | record_type_or_refinement
     { $1 }
-  | primary_expr DOT record_label
-    { EProject { record = $1 ; label = $3 } }
+  | record=primary_expr DOT label=record_label
+    { EProject { record ; label } }
   ;
 
 op_expr:
-  | expr ASTERISK expr
-      { EBinop { left = $1 ; binop = BTimes ; right = $3 } }
-  | expr SLASH expr
-      { EBinop { left = $1 ; binop = BDivide ; right = $3 } }
-  | expr PERCENT expr
-      { EBinop { left = $1 ; binop = BModulus ; right = $3 } }
-  | expr PLUS expr
-      { EBinop { left = $1 ; binop = BPlus ; right = $3 } }
-  | expr MINUS expr
-      { EBinop { left = $1 ; binop = BMinus ; right = $3 } }
-  | expr DOUBLE_COLON expr
-      { EListCons ($1, $3) }
-  | expr EQUAL_EQUAL expr
-      { EBinop { left = $1 ; binop = BEqual ; right = $3 } }
-  | expr NOT_EQUAL expr
-      { EBinop { left = $1 ; binop = BNeq ; right = $3 } }
-  | expr GREATER expr
-      { EBinop { left = $1 ; binop = BGreaterThan ; right = $3 } }
-  | expr GREATER_EQUAL expr
-      { EBinop { left = $1 ; binop = BGeq ; right = $3 } }
-  | expr LESS expr
-      { EBinop { left = $1 ; binop = BLessThan ; right = $3 } }
-  | expr LESS_EQUAL expr
-      { EBinop { left = $1 ; binop = BLeq ; right = $3 } }
-  | NOT expr
-      { ENot $2 }
-  | expr DOUBLE_AMPERSAND expr
-      { EBinop { left = $1 ; binop = BAnd ; right = $3 } }
-  | expr DOUBLE_PIPE expr
-      { EBinop { left = $1 ; binop = BOr ; right = $3 } }
-  | MINUS INT
-      { EInt (-$2) }
+  | left=expr ASTERISK right=expr
+    { EBinop { left ; binop = BTimes ; right } }
+  | left=expr SLASH right=expr
+    { EBinop { left ; binop = BDivide ; right } }
+  | left=expr PERCENT right=expr
+    { EBinop { left ; binop = BModulus ; right } }
+  | left=expr PLUS right=expr
+    { EBinop { left ; binop = BPlus ; right } }
+  | left=expr MINUS right=expr
+    { EBinop { left ; binop = BMinus ; right } }
+  | hd=expr DOUBLE_COLON tl=expr
+    { EListCons (hd, tl) }
+  | left=expr EQUAL_EQUAL right=expr
+    { EBinop { left ; binop = BEqual ; right } }
+  | left=expr NOT_EQUAL right=expr
+    { EBinop { left ; binop = BNeq ; right } }
+  | left=expr GREATER right=expr
+    { EBinop { left ; binop = BGreaterThan ; right } }
+  | left=expr GREATER_EQUAL right=expr
+    { EBinop { left ; binop = BGeq ; right } }
+  | left=expr LESS right=expr
+    { EBinop { left ; binop = BLessThan ; right } }
+  | left=expr LESS_EQUAL right=expr
+    { EBinop { left ; binop = BLeq ; right } }
+  | NOT body=expr
+    { ENot body }
+  | left=expr DOUBLE_AMPERSAND right=expr
+    { EBinop { left ; binop = BAnd ; right } }
+  | left=expr DOUBLE_PIPE right=expr
+    { EBinop { left ; binop = BOr ; right } }
+  | MINUS i=INT
+    { EInt (-i) }
   ;
 
 %inline record_type_or_refinement:
   (* exactly one label *)
-  | OPEN_BRACE record_type_item CLOSE_BRACE
-      { ETypeRecord (Record.Parsing.singleton $2) }
-  (* more than one label *)
-  | OPEN_BRACE record_type_item SEMICOLON record_type_body CLOSE_BRACE
-      { ETypeRecord (Record.Parsing.add_entry $2 $4) }
-  (* refinement type with binding for tau, which looks like a record type at first, so that's why we expand the rules above *)
-  | OPEN_BRACE l_ident COLON expr PIPE expr CLOSE_BRACE
-      { ETypeRefine { var = $2 ; tau = $4 ; predicate = $6 } }
+  | OPEN_BRACE record=record_type_body CLOSE_BRACE
+    { ETypeRecord record }
+  (* refinement type with binding for tau, which looks like a record type at first *)
+  | OPEN_BRACE var=l_ident COLON tau=expr PIPE predicate=expr CLOSE_BRACE
+    { ETypeRefine { var ; tau ; predicate } }
   ;
 
 %inline record_type_item:
-  | record_label COLON expr
-      { $1, $3 }
+  | label=record_label COLON tau=expr
+    { label, tau }
   ;
 
 %inline record_expr_item:
-  | record_label EQUALS expr
-      { $1, $3 }
-  | record_label
-      { $1, EVar (Labels.Record.to_ident $1) }
+  | label=record_label EQUALS e=expr
+    { label, e }
+  | label=record_label (* punning *)
+    { label, EVar (Labels.Record.to_ident label) }
   ;
 
 record_type_body:
-  | record_type_item
-      { Record.Parsing.singleton $1 }
-  | record_type_item SEMICOLON record_type_body
-      { Record.Parsing.add_entry $1 $3 }
+  | items=separated_nonempty_list(SEMICOLON, record_type_item)
+    { Record.Parsing.of_list items }
   ;
 
 %inline record_label:
@@ -398,59 +373,58 @@ record_type_body:
     { Ident.Ident $1 }
   ;
 
-%inline val_item:
-  | VAL record_type_item
-    { { item = fst $2 ; tau = snd $2 } }
-  | VAL record_label EQUALS expr
-    { { item = $2 ; tau = ETypeSingle $4 } }
+%inline val_decl:
+  | VAL pair=record_type_item
+    { pair }
+  | VAL label=record_label EQUALS tau=expr
+    { label, ETypeSingle tau }
 
 /* **** Records, lists, and variants **** */
 
 /* e.g. { x = 1 ; y = 2 ; z = 3 } */
 record_body:
-  | record_expr_item
-    { Record.Parsing.singleton $1 }
-  | record_expr_item SEMICOLON record_body
-    { Record.Parsing.add_entry $1 $3 }
+  | items=separated_nonempty_list(SEMICOLON, record_expr_item)
+    { Record.Parsing.of_list items }
   ;
 
 /* e.g. `Variant 0 */
 variant_label:
-  | BACKTICK ident
-    { Labels.Variant.VariantLabel $2 }
+  | BACKTICK label=ident
+    { Labels.Variant.VariantLabel label }
   ;
 
 /* **** Pattern matching **** */
 
+match_arm:
+  | pat=pattern ARROW body=expr
+    { pat, body }
+
 match_expr_list:
-  | pattern ARROW expr PIPE match_expr_list
-    { ($1, $3) :: $5 }
-  | pattern ARROW expr
-    { [ $1, $3 ] }
-  ;
+  | separated_nonempty_list(PIPE, match_arm)
+    { $1 }
 
 pattern:
-  | pattern AS ident
-    { PPatternAs ($1, $3) }
-  | pattern DOUBLE_COLON pattern
-    { PDestructList ($1, $3) }
-  | variant_label pattern %prec prec_variant_pattern
-    { PVariant { Variant.label = $1 ; payload = $2 } }
-  | pattern COMMA pattern
-    { PTuple ($1, $3)}
+  | pat=pattern AS name=ident
+    { PPatternAs (pat, name) }
+  | hd=pattern DOUBLE_COLON tl=pattern
+    { PDestructList (hd, tl) }
+  | label=variant_label payload=pattern %prec prec_variant_pattern
+    { PVariant { Variant.label ; payload } }
+  | left=pattern COMMA right=pattern
+    { PTuple (left, right)}
   | OPEN_PAREN CLOSE_PAREN
     { PUnit }
   | OPEN_BRACKET CLOSE_BRACKET 
     { PEmptyList }
   | UNDERSCORE
     { PAny }
-  | pattern PIPE pattern
-    { match $3 with (* since pipe is right assoc, the left is not an "or" pattern *)
-      | Pattern.PPatternOr p_ls -> PPatternOr ($1 :: p_ls)
-      | p -> PPatternOr [ $1 ; p ]
+  | hd_pat=pattern PIPE rest=pattern
+    { match rest with (* since pipe is right assoc, the hd_pat is not an "or" pattern *)
+      | Pattern.PPatternOr p_ls -> PPatternOr (hd_pat :: p_ls)
+      | p -> PPatternOr [ hd_pat ; p ]
     }
   | ident
     { Pattern.PVariable $1 } (* not l_ident because we handle underscore immediately above *)
-  | OPEN_PAREN pattern CLOSE_PAREN
-    { $2 }
+  | OPEN_PAREN pat=pattern CLOSE_PAREN
+    { pat }
   ;

@@ -209,19 +209,18 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
         make false
     ) (Labels.Variant.Map.to_list m1) (Labels.Variant.Map.to_list m2)
   | Any VTypeModule c1, Any VTypeModule c2 ->
-    let rec fold bindings (x : Labels.Record.t Ast.typed_item list)
-      (y : Labels.Record.t Ast.typed_item list) =
+    let rec fold bindings x y =
       match x, y with
       | [], [] -> make true
       | [], _ | _, [] -> make false
-      | i1 :: xs, i2 :: ys ->
-        if Labels.Record.equal i1.item i2.item then
+      | (lx, tx) :: xs, (ly, ty) :: ys ->
+        if Labels.Record.equal lx ly then
           let- () =
             iequal_closure bindings
-              { captured = i1.tau ; env = c1.env }
-              { captured = i2.tau ; env = c2.env }
+              { captured = tx ; env = c1.env }
+              { captured = ty ; env = c2.env }
           in
-          fold [ Labels.Record.to_ident i1.item, Labels.Record.to_ident i2.item ] xs ys
+          fold [ Labels.Record.to_ident lx, Labels.Record.to_ident ly ] xs ys
         else
           make false
     in
@@ -408,11 +407,11 @@ and iequal_closure bindings closure1 closure2 =
       begin match l1, l2 with
       | [], [] -> make true
       | [], _ | _, [] -> make false
-      | d1 :: tl1, d2 :: tl2 ->
-        let- () = ieq d1.tau d2.tau in
-        if Labels.Record.equal d1.item d2.item then
-          let id1 = Labels.Record.to_ident d1.item in
-          let id2 = Labels.Record.to_ident d2.item in
+      | (lbl1, t1) :: tl1, (lbl2, t2) :: tl2 ->
+        let- () = ieq t1 t2 in
+        if Labels.Record.equal lbl1 lbl2 then
+          let id1 = Labels.Record.to_ident lbl1 in
+          let id2 = Labels.Record.to_ident lbl2 in
           iequal_expr ((id1, id2) :: bindings) (ETypeModule tl1) (ETypeModule tl2)
         else
           make false
