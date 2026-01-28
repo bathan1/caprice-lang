@@ -98,11 +98,8 @@ let eval
     | ETypeModule items ->
       let* env = read in
       return_any (VTypeModule { captured = items ; env })
-    | ELet { var ; defn ; body } ->
-      let* (binding, v) = eval_statement (SLet { var ; defn }) in
-      local (Env.set binding v) (eval body)
-    | ELetRec { var ; param ; defn ; body } ->
-      let* (binding, v) = eval_statement (SLetRec { var ; param ; defn }) in
+    | ELet { stmt ; body } ->
+      let* (binding, v) = eval_statement stmt in
       local (Env.set binding v) (eval body)
     | EAppl { func ; arg } ->
       let* v_func = force_eval func in

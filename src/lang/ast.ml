@@ -6,8 +6,7 @@ type t =
   | EVar of Ident.t
   | EBinop of { left : t ; binop : Binop.t ; right : t }
   | EIf of { if_ : t ; then_ : t ; else_ : t }
-  | ELet of { var : var ; defn : t ; body : t }
-  | ELetRec of { var : var ; param : Ident.t ; defn : t ; body : t } (* no mutual recursion yet *)
+  | ELet of { stmt : statement ; body : t }
   | EAppl of { func : t ; arg : t }
   | EMatch of { subject : t ; patterns : (Pattern.t * t) list }
   | EProject of { record : t ; label : Labels.Record.t }
@@ -57,19 +56,11 @@ and statement =
 
 type program = statement list
 
-let statement_to_t (stmt : statement) (body : t) : t =
-  match stmt with
-  | SLet { var ; defn } ->
-    ELet { var ; defn ; body }
-  | SLetRec { var ; param ; defn } ->
-    ELetRec { var ; param ; defn ; body }
-
-let rec t_of_statement_list (ls : statement list) : t =
-  match ls with
-  | [] -> EUnit
-  | hd :: tl -> statement_to_t hd (t_of_statement_list tl)
-
 let id_of_var (var : var) : Ident.t =
   match var with
   | VarUntyped { name } -> name
   | VarTyped { item ; tau = _ } -> item
+
+let id_of_stmt = function
+  | SLet { var ; _ }
+  | SLetRec { var ; _ } -> id_of_var var

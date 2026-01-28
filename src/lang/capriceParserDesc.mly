@@ -229,7 +229,7 @@ expr:
       EFunction { param ; body }
       ) $2 $4 }
   | statement IN expr %prec prec_let
-    { Ast.statement_to_t $1 $3 }
+    { ELet { stmt = $1 ; body = $3 } }
   | MATCH expr WITH PIPE? match_expr_list END
     { EMatch { subject = $2 ; patterns = $5 } }
   ;

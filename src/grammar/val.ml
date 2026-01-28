@@ -389,25 +389,20 @@ and iequal_closure bindings closure1 closure2 =
     | EFunction r1, EFunction r2 ->
       iequal_expr ((r1.param, r2.param) :: bindings) r1.body r2.body
     | ELet r1, ELet r2 ->
-      let- () = ieq r1.defn r2.defn in
-      let- () = iequal_var_types bindings r1.var r2.var in
+      let- () = iequal_statement bindings r1.stmt r2.stmt in
       iequal_expr (
-        (Ast.id_of_var r1.var, Ast.id_of_var r2.var) :: bindings
+        (Ast.id_of_stmt r1.stmt, Ast.id_of_stmt r2.stmt) :: bindings
       ) r1.body r2.body
-    | ELetRec r1, ELetRec r2 ->
-      let- () = iequal_var_types bindings r1.var r2.var in
-      let bindings =
-        (Ast.id_of_var r1.var, Ast.id_of_var r2.var) :: bindings
-      in
-      let- () = iequal_expr ((r1.param, r2.param) :: bindings) r1.defn r2.defn in
-      iequal_expr bindings r1.body r2.body
     | EModule l1, EModule l2 ->
       begin match l1, l2 with
       | [], [] -> make true
       | [], _ | _, [] -> make false
       | s1 :: tl1, s2 :: tl2 ->
         (* compare first statement and continue with remainder of modules *)
-        iequal_statement bindings s1 (Ast.EModule tl1) s2 (Ast.EModule tl2)
+        let id1, id2 = Ast.id_of_stmt s1, Ast.id_of_stmt s2 in
+        let- () = make (Ident.equal id1 id2) in
+        let- () = iequal_statement bindings s1 s2 in 
+        iequal_expr ((id1, id2) :: bindings) (Ast.EModule tl1) (Ast.EModule tl2)
       end
     | ETypeModule l1, ETypeModule l2 ->
       begin match l1, l2 with
@@ -453,15 +448,18 @@ and iequal_closure bindings closure1 closure2 =
     Compare statements like let-expressions. A body is required.
     Requires equal names.
   *)
-  and iequal_statement bindings s1 k1 s2 k2 =
-    let name_of_stmt = function
-      | Ast.SLet { var ; _ }
-      | Ast.SLetRec { var ; _ } -> Ast.id_of_var var
-    in
-    let- () = make (Ident.equal (name_of_stmt s1) (name_of_stmt s2)) in
-    iequal_expr bindings
-      (Ast.statement_to_t s1 k1)
-      (Ast.statement_to_t s2 k2)
+  and iequal_statement bindings s1 s2 =
+    match s1, s2 with
+    | SLet r1, SLet r2 ->
+      let- () = iequal_expr bindings r1.defn r2.defn in
+      iequal_var_types bindings r1.var r2.var
+    | SLetRec r1, SLetRec r2 ->
+      let id1, id2 = Ast.id_of_var r1.var, Ast.id_of_var r2.var in
+      let- () = iequal_expr ((r1.param, r2.param) :: (id1, id2) :: bindings) r1.defn r2.defn in
+      iequal_var_types bindings r1.var r2.var
+    | _ ->
+      make false
+
 
   and iequal_id bindings id1 id2 =
     let de_bruijn_eq =
