@@ -391,7 +391,7 @@ and iequal_closure bindings closure1 closure2 =
     | ELet r1, ELet r2 ->
       let- () = iequal_statement bindings r1.stmt r2.stmt in
       iequal_expr (
-        (Ast.id_of_stmt r1.stmt, Ast.id_of_stmt r2.stmt) :: bindings
+        (Ast.Tools.id_of_stmt r1.stmt, Ast.Tools.id_of_stmt r2.stmt) :: bindings
       ) r1.body r2.body
     | EModule l1, EModule l2 ->
       begin match l1, l2 with
@@ -399,7 +399,7 @@ and iequal_closure bindings closure1 closure2 =
       | [], _ | _, [] -> make false
       | s1 :: tl1, s2 :: tl2 ->
         (* compare first statement and continue with remainder of modules *)
-        let id1, id2 = Ast.id_of_stmt s1, Ast.id_of_stmt s2 in
+        let id1, id2 = Ast.Tools.id_of_stmt s1, Ast.Tools.id_of_stmt s2 in
         let- () = make (Ident.equal id1 id2) in
         let- () = iequal_statement bindings s1 s2 in 
         iequal_expr ((id1, id2) :: bindings) (Ast.EModule tl1) (Ast.EModule tl2)
@@ -424,12 +424,12 @@ and iequal_closure bindings closure1 closure2 =
       iequal_expr ((r1.var, r2.var) :: bindings) r1.body r2.body
     | ETypeFun tf1, ETypeFun tf2 ->
       begin match tf1.domain, tf2.domain with 
-      | PReg t1, PReg t2 ->
-        let- () = ieq t1.tau t2.tau in
+      | (None, t1), (None, t2) ->
+        let- () = ieq t1 t2 in
         ieq tf1.codomain tf2.codomain
-      | PDep t1, PDep t2 ->
-        let- () = ieq t1.tau t2.tau in
-        iequal_expr ((t1.item, t2.item) :: bindings) tf1.codomain tf2.codomain
+      | (Some id1, t1), (Some id2, t2) ->
+        let- () = ieq t1 t2 in
+        iequal_expr ((id1, id2) :: bindings) tf1.codomain tf2.codomain
       | _ ->
         make false
       end
@@ -452,11 +452,10 @@ and iequal_closure bindings closure1 closure2 =
     match s1, s2 with
     | SLet r1, SLet r2 ->
       let- () = iequal_expr bindings r1.defn r2.defn in
-      iequal_var_types bindings r1.var r2.var
+      iequal_type_opts bindings r1.annot r2.annot
     | SLetRec r1, SLetRec r2 ->
-      let id1, id2 = Ast.id_of_var r1.var, Ast.id_of_var r2.var in
-      let- () = iequal_expr ((r1.param, r2.param) :: (id1, id2) :: bindings) r1.defn r2.defn in
-      iequal_var_types bindings r1.var r2.var
+      let- () = iequal_expr ((r1.param, r2.param) :: (r1.name, r2.name) :: bindings) r1.defn r2.defn in
+      iequal_type_opts bindings r1.annot r2.annot
     | _ ->
       make false
 
@@ -496,13 +495,13 @@ and iequal_closure bindings closure1 closure2 =
         make false
       end
   
-  (* check that types on variables are the same *)
-  and iequal_var_types bindings var1 var2 =
+  (* check that types annotations on variables are the same *)
+  and iequal_type_opts bindings var1 var2 =
     match var1, var2 with
-    | Ast.VarUntyped _, Ast.VarUntyped _ ->
+    | None, None ->
       make true
-    | VarTyped t1, VarTyped t2 ->
-      iequal_expr bindings t1.tau t2.tau
+    | Some t1, Some t2 ->
+      iequal_expr bindings t1 t2
     | _ ->
       make false
 

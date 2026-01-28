@@ -31,7 +31,7 @@ type t =
   | ETypeUnit
   | ETypeRecord of t Record.t
   | ETypeModule of Labels.Record.t typed_item list
-  | ETypeFun of (fun_domain, t) Funtype.t
+  | ETypeFun of (Ident.t option * t, t) Funtype.t
   | ETypeRefine of (t, t) Refinement.t
   | ETypeMu of { var : Ident.t ; body : t }
   | ETypeList of t
@@ -39,28 +39,32 @@ type t =
   | ETypeSingle of t
   [@@deriving eq, ord]
 
-and var =
-  | VarUntyped of { name : Ident.t }
-  | VarTyped of Ident.t typed_item
-
 and 'a typed_item = { item : 'a ; tau : t }
 
-and fun_domain =
-  | PReg of { tau : t } (* regular parameter *)
-  | PDep of Ident.t typed_item (* dependent parameter *)
-
 and statement =
-  | SLet of { var : var ; defn : t }
-  | SLetRec of { var : var ; param : Ident.t ; defn : t }
+  | SLet of { name : Ident.t ; annot : t option ; defn : t }
+  | SLetRec of { name : Ident.t ; annot : t option ; param : Ident.t ; defn : t }
   [@@deriving eq, ord]
 
 type program = statement list
 
-let id_of_var (var : var) : Ident.t =
-  match var with
-  | VarUntyped { name } -> name
-  | VarTyped { item ; tau = _ } -> item
+module Tools = struct
+  let id_of_stmt = function
+    | SLet { name ; _ }
+    | SLetRec { name ; _ } -> name
 
-let id_of_stmt = function
-  | SLet { var ; _ }
-  | SLetRec { var ; _ } -> id_of_var var
+  let mk_curried_fun params body =
+    List.fold_right (fun param body ->
+      EFunction { param ; body }
+    ) params body
+
+  let default_fun_mode = Funtype.Nondet
+
+  let mk_curried_funtype params codomain =
+    List.fold_right (fun (_, domain) codomain ->
+      ETypeFun { domain ; codomain ; mode = default_fun_mode }
+    ) params codomain
+
+  let extract_param_names params =
+    List.map fst params
+end

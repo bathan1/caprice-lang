@@ -242,14 +242,14 @@ let eval
         ) (return Record.empty) t_record_body
       in
       return_any (VTypeRecord record_body)
-    | ETypeFun { domain = PReg { tau } ; codomain ; mode } ->
+    | ETypeFun { domain = None, tau ; codomain ; mode } ->
       let* dom_t = eval_type tau in
       let* cod_t = eval_type codomain in
       return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t ; mode })
-    | ETypeFun { domain = PDep { item ; tau } ; codomain ; mode } ->
+    | ETypeFun { domain = Some id, tau ; codomain ; mode } ->
       let* dom_t = eval_type tau in
       let* env = read in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (item, { captured = codomain ; env }) ; mode })
+      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) ; mode })
     | ETypeRefine { var ; tau ; predicate } ->
       let* tval = eval_type tau in
       let* env = read in
@@ -1157,23 +1157,23 @@ let eval
   *)
   and eval_statement (stmt : Ast.statement) : (Ident.t * Val.any, Val.Env.t) m =
     match stmt with
-    | SLet { var = VarUntyped { name } ; defn } ->
+    | SLet { name ; annot = None ; defn } ->
       let* v = eval defn in
       return (name, v)
-    | SLetRec { var = VarUntyped { name } ; param ; defn } ->
+    | SLetRec { name ; annot = None ; param ; defn } ->
       let* env = read in
       let v = to_any (VFunFix { fvar = name ; param ; closure = { captured = defn ; env } }) in
       return (name, v)
-    | SLet { var = VarTyped { item ; tau } ; defn } ->
+    | SLet { name ; annot = Some tau ; defn } ->
       let* tval = eval_type tau in
       let* v = eval defn in
       fork_on_left ~reason:CheckLetExpr
         ~left:{ run_failing = check v tval }
         ~right:(
           let* w = wrap v tval in
-          return (item, w)
+          return (name, w)
         )
-    | SLetRec { var = VarTyped { item ; tau } ; param ; defn } ->
+    | SLetRec { name ; annot = Some tau ; param ; defn } ->
       let* tval = eval_type tau in
       let* env = read in
       let* v =
@@ -1182,19 +1182,19 @@ let eval
             gen tval
           else
             wrap (Any (
-              VFunFix { fvar = item ; param ; closure = { captured = defn ; env } }
+              VFunFix { fvar = name ; param ; closure = { captured = defn ; env } }
             )) tval
         in
         (* we don't just return a wrapped fix fun because that would skip the check *)
         return_any (VFunClosure { param ; closure =
-          { captured = defn ; env = Env.set item self env } }
+          { captured = defn ; env = Env.set name self env } }
         )
       in
       fork_on_left ~reason:CheckLetExpr
         ~left:{ run_failing = check v tval }
         ~right:(
           let* w = wrap v tval in
-          return (item, w)
+          return (name, w)
         )
 
   (*
