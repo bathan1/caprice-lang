@@ -532,7 +532,14 @@ let eval
                 | _ ->
                   let* genned = allow_inputs (gen domain) in
                   let* cod_tval = eval_codomain codomain genned in
-                  let* cod_tval' = eval_codomain codomain' genned in
+                  (*
+                    Since we can assume domain <: domain', it's possible
+                    that codomain' can misuse genned with respect to
+                    domain. We must therefore wrap genned with domain to
+                    check that codomain' does not misuse it.
+                  *)
+                  let* wrapped = wrap genned domain' in
+                  let* cod_tval' = eval_codomain codomain' wrapped in
                   return (cod_tval, cod_tval')
               in
               begin match mode with
@@ -558,7 +565,7 @@ let eval
               domain side is well-typed.
 
               We can skip the work on the right if the codomains are equal
-                because the wrapper means its been checked.
+                because the wrapper means it has been checked.
             *)
             if Val.equal_fun_cod codomain codomain'
               && Funtype.equal_mode mode mode' then confirm else
@@ -569,10 +576,10 @@ let eval
             | VFunClosure _
             | VFunFix _ ->
               let* genned = allow_inputs (gen domain) in
-              let* cod_tval = eval_codomain codomain genned in (* note og codomain uses unwrapped value *)
-              let* w = wrap genned domain' in
+              let* cod_tval = eval_codomain codomain genned in
+              let* wrapped = wrap genned domain' in
               let* res = ctx_of_mode mode (eval_appl data ~self_fun genned) in
-              let* cod_tval' = eval_codomain codomain' w in
+              let* cod_tval' = eval_codomain codomain' wrapped in
               let* w_res = wrap res cod_tval' in
               check w_res cod_tval
             | VGenFun { funtype = { domain = _ ; codomain = codomain'' ; mode = Nondet } ; _ } ->
@@ -583,9 +590,16 @@ let eval
                 | _ ->
                   let* genned = allow_inputs (gen domain) in
                   let* cod_tval = eval_codomain codomain genned in
-                  let* w = wrap genned domain' in
-                  let* cod_tval' = eval_codomain codomain' w in
-                  let* cod_tval'' = eval_codomain codomain'' w in (* TODO: should this "w" be wrapped with domain''? *)
+                  let* wrapped = wrap genned domain' in
+                  let* cod_tval' = eval_codomain codomain' wrapped in
+                  (*
+                    Since codomain'' has already been evaluated depending on any
+                    v in domain' wrapped with domain'', we know that codomain''
+                    does not misuse any value in domain'' with respect to the type
+                    domain'. Hence there is no need to wrap with domain' before
+                    evaluating codomain'' because it cannot possibly go wrong.
+                  *)
+                  let* cod_tval'' = eval_codomain codomain'' wrapped in
                   return (cod_tval, cod_tval', cod_tval'')
               in
               if Funtype.equal_mode mode Nondet

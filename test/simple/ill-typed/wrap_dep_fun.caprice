@@ -1,0 +1,8 @@
+(* TEST
+  include refutable;
+*)
+
+(* ERROR: the type of g misuses the argument. This is only caught when the argument is wrapped
+  while the codomain is evaluated. *)
+let f (g : (r : {:}) -> if r.b then int else bool ) : { b : { b : bool | b } } -> int =
+  g
