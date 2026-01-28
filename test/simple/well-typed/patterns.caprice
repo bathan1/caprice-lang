@@ -68,3 +68,15 @@ let k (x : list int) : int =
     end
   | [] -> 0
   end
+
+let rec l (x : int * list int) : int =
+  match x with
+  | a, b :: _ -> a + b
+  | a, [] -> a
+  end
+
+let m (x : list (int * bool)) : int =
+  match x with
+  | (a, b) :: _ -> if b then a else 1
+  | [] -> 0
+  end
