@@ -1,0 +1,18 @@
+(* TEST
+  include finite-well-typed;
+*)
+
+(* Encodes a record with two labels. *)
+let t = (x : `l of unit | `m of unit) -->
+  match x with
+  | `l _ -> int
+  | `m _ -> bool
+  end
+
+(* asserts that projecting a label twice always gives the same value *)
+let f (g : t) : unit =
+  if g (`l ()) == 0
+  then
+    assert ((g (`l ())) == 0)
+  else
+    ()
