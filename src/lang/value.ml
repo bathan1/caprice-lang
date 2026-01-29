@@ -7,14 +7,6 @@
 module Make (Atom_cell : Utils.Comparable.P1) = struct
   type data = private Data [@@deriving eq, ord]
   type typeval = private Typeval [@@deriving eq, ord]
-  type neither = private Neither [@@deriving eq, ord]
-
-  (* symbols to identify lazy things *)
-  (* type symbol = { id : int } [@@unboxed] [@@deriving eq, ord]
-
-  module SymbolMap = Baby.H.Map.Make (struct
-    type t = symbol [@@deriving eq, ord]
-  end) *)
 
   (*
     Data values and type values are all the same type constructor

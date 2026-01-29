@@ -8,8 +8,7 @@ type t =
   [@@deriving eq, ord]
   (* comparison follows the listed ordering *)
 
-let min =
-  function
+let min = function
   | Exhausted -> fun b -> b (* CPS *)
   | a -> fun b -> 
     if compare a b < 0 then a else b

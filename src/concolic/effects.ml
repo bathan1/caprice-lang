@@ -242,20 +242,6 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
       then escape res (* propagate up the failure *)
       else return ())
 
-(* INVARIANT: the symbol must always exist *)
-(* let find_symbol (symbol : Val.symbol) : (Val.vlazy, 'env) m =
-  let* { lazy_values ; _ } = get in
-  return (Val.SymbolMap.find symbol lazy_values)
-
-let add_symbol (symbol : Val.symbol) (lazy_v : Lazy_val.t) : (unit, 'env) m =
-  modify (fun s -> { s with lazy_values = Val.SymbolMap.add symbol lazy_v s.lazy_values })
-
-(* Makes a new symbol for this lazy value. Assumes the lazy value is not a symbol itself *)
-let make_new_lazy_value (lgen : Lazy_val.LGen.t) : (Val.any, 'env) m =
-  let* Step id = step in (* use step as fresh identifier *)
-  let* () = add_symbol { id } (LLazy lgen) in
-  return (Val.Any (VLazy { symbol = { id } ; wrapping_types = [] })) *)
-
 (**
   [disallow_inputs x] runs [x] such that any [assert_inputs_allowed]
     is a failure.
