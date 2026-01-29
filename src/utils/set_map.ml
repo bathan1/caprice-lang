@@ -3,7 +3,7 @@
 module Make_W (K : Baby.OrderedType) = struct
   module B = Baby.W.Make (K)
 
-  (* TODO: make this faster by actually walking the tree. However
+  (* We could make this faster by actually walking the tree. However
     that would require I modify the source code of Baby. *)
   let random_from_seq ~size seq =
     let n = ref size in

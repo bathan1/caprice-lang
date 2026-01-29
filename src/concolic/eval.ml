@@ -502,7 +502,6 @@ let eval
       | _ -> refute
       end
     | VType ->
-      (* TODO: consider a wellformedness check *)
       let* v = force_value v in
       handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
     | VTypeFun { domain ; codomain ; mode } ->

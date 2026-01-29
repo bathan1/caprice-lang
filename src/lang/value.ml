@@ -22,7 +22,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VFunClosure : { param : Ident.t ; closure : Ast.t closure } -> data t
     | VVariant : any Variant.t -> data t
     | VRecord : any Record.t -> data t
-    | VModule : any Record.t -> data t (* TODO: consider merging with record *)
+    | VModule : any Record.t -> data t
     | VTuple : any * any -> data t
     | VFunFix : { fvar : Ident.t ; param : Ident.t ; closure : Ast.t closure } -> data t (* no mutual recursion yet *)
     | VEmptyList : data t
@@ -163,7 +163,6 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       contains_mu data || contains_mu (VTypeFun tau)
     | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
     | VGenFun { funtype = { domain ; codomain = CodValue t ; mode = _  } ; nonce = _ ; alist = _ }->
-      (* TODO: consider if the negative position makes a difference *)
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
     | VFunClosure _
