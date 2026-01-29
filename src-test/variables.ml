@@ -7,7 +7,7 @@ module Ident = struct
 
   include T
 
-  module Map = Baby.H.Map.Make (T)
+  module Map = Baby.W.Map.Make (T)
 end
 
 type ident = Ident.t

@@ -8,4 +8,4 @@ include T
 
 let to_string (Ident s) = s
 
-module Map = Baby.H.Map.Make (T)
+module Map = Baby.W.Map.Make (T)

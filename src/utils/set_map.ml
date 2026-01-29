@@ -1,6 +1,7 @@
 
-module Make_H (K : Baby.OrderedType) = struct
-  module B = Baby.H.Make (K)
+(* Make weight-balanced set and map modules. *)
+module Make_W (K : Baby.OrderedType) = struct
+  module B = Baby.W.Make (K)
 
   (* TODO: make this faster by actually walking the tree. However
     that would require I modify the source code of Baby. *)
