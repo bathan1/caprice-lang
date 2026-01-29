@@ -14,6 +14,9 @@ let min =
   | a -> fun b -> 
     if compare a b < 0 then a else b
 
+let prune a =
+  min a Exhausted_pruned
+
 let to_string = function
   | Found_error msg  -> Format.sprintf "Found error: %s" msg
   | Timeout span     -> Format.sprintf "Timeout in %0.3fs" (Utils.Time.convert_span span ~to_:Mtime.Span.s)

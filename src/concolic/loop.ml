@@ -3,43 +3,54 @@ open Grammar
 
 let make_targets ~(max_tree_depth : int) (target : Target.t)
   (stem : Path.t) : Target.t list * bool =
-  Utils.List_utils.fold_left_until (fun (acc_set, len, formulas) p_item ->
-    if Path_priority.to_int len > max_tree_depth then
-      `Stop (acc_set, true)
-    else
-      let path_priority = Path_priority.plus_int len (Path_item.to_priority p_item) in
+  let rec make acc_targets acc_prio acc_formulas = function
+    | [] -> acc_targets, false (* done, and did not prune *)
+    | (p_item : Path_item.t) :: tl ->
+      if Path_priority.to_int acc_prio > max_tree_depth then
+        acc_targets, true (* done because pruned *)
+      else
+      let path_priority =
+        Path_priority.plus_int acc_prio (Path_item.to_priority p_item)
+      in
       match p_item with
       | Path_item.Nonflipping formula ->
-        `Continue (acc_set, path_priority, Formula.BSet.add formula formulas)
+        make acc_targets path_priority (Formula.BSet.add formula acc_formulas) tl
       | Formula { cond ; logged_inputs } ->
         let new_target =
-          Target.make (Formula.not_ cond) formulas logged_inputs
+          Target.make (Formula.not_ cond) acc_formulas logged_inputs
             ~path_priority
         in
-        `Continue (new_target :: acc_set, path_priority, Formula.BSet.add cond formulas)
+        make (new_target :: acc_targets) path_priority (Formula.BSet.add cond acc_formulas) tl
       | Tag { tag = _ ; alternatives ; key ; logged_inputs } ->
-        `Continue (
-          List.fold_left (fun acc alt_tag ->
+        let new_targets =
+          List.map (fun alt_tag ->
             Target.make 
               Formula.trivial
-              formulas
+              acc_formulas
               (Input_env.add KTag key alt_tag logged_inputs)
-              ~path_priority:(Path_priority.plus_int len (Tag.priority alt_tag))
-            :: acc
-          ) acc_set alternatives
-          , path_priority, formulas
-        )
-  ) (fun (acc_set, _, _) -> acc_set, false)
-  ([], Target.priority target, target.all_formulas) stem
+              ~path_priority:(Path_priority.plus_int acc_prio (Tag.priority alt_tag))
+          ) alternatives
+        in
+        make (new_targets @ acc_targets) path_priority acc_formulas tl
+  in
+  make [] (Target.priority target) target.all_formulas stem
 
-let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) : Target.t list * bool * Answer.t =
-  List.fold_left (fun (targets, is_pruned, answer) run ->
-    let new_targets, new_is_pruned = 
-      let open Logged_run in
-      make_targets run.target (Rev_stem.to_forward_path run.rev_stem) ~max_tree_depth
-    in
-    new_targets @ targets, is_pruned || new_is_pruned, Answer.min answer run.answer
-  ) ([], false, Exhausted) runs
+let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) : 
+  [ `Quit of Answer.t | `Cont of Target.t list * Answer.t ] =
+  let rec collect acc_targets acc_answer = function
+    | [] -> `Cont (acc_targets, acc_answer)
+    | (run : Logged_run.t) :: _ when Answer.is_signal_to_stop run.answer ->
+      `Quit run.answer
+    | run :: tl ->
+      let new_targets, is_pruned =
+        make_targets run.target (Rev_stem.to_forward_path run.rev_stem) ~max_tree_depth
+      in
+      let targets = new_targets @ acc_targets in
+      let run_answer = if is_pruned then Answer.prune run.answer else run.answer in
+      let answer = Answer.min acc_answer run_answer in
+      collect targets answer tl
+  in
+  collect [] Exhausted runs
 
 let c = Utils.Counter.create ()
 
@@ -80,26 +91,16 @@ let loop ~(options : Options.t) (solve : Stepkey.t Smt.Formula.solver)
   and loop_on_model target tq model =
     let run_num = Utils.Counter.next c in
     let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
-    let answer, runs =
+    let runs =
       eval ienv target
         ~default_int:(make_int_feeder ~run_num)
         ~default_bool:(make_bool_feeder ~run_num)
     in
-    if Answer.is_signal_to_stop answer
-    then return answer
-    else
-      let* loop_answer =
-        let targets, is_pruned, forked_answer = 
-          collect_logged_runs runs ~max_tree_depth:options.max_tree_depth
-        in
-        let* a = loop (Target_queue.push_list tq targets) in
-        return @@
-        Answer.min forked_answer @@
-          if is_pruned
-          then Answer.min Answer.Exhausted_pruned a
-          else a
-      in
-      return @@ Answer.min answer loop_answer
+    match collect_logged_runs runs ~max_tree_depth:options.max_tree_depth with
+    | `Quit answer -> return answer
+    | `Cont (targets, answer) ->
+      let* a = loop (Target_queue.push_list tq targets) in
+      return @@ Answer.min a answer
   in
   loop tq
 

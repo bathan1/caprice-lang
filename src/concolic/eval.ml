@@ -36,7 +36,7 @@ let eval
   ~(default_bool : unit -> bool)
   ~(do_splay : bool)
   ~(do_wrap : bool)
-  : Answer.t * Logged_run.t list
+  : Logged_run.t list
   =
   (*
     Reads a tag from the input environment. If the tag was planned,
@@ -1265,7 +1265,6 @@ let eval
     ; rev_stem = state.rev_stem
     ; answer }
   in
-  answer,
   Utils.Diff_list.(
     to_list @@ this_logged_run -:: state.runs
   )
