@@ -204,7 +204,6 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
     let n' = Target.priority ctx.target in
     Path_priority.geq n n'
   );
-  Lwt_direct.yield ();
   fork forked_m { target ; det_context = ctx.det_context }
     ~setup_state:(fun state ->
       (* keeps all the logged runs *)
@@ -224,7 +223,7 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
     (fun res ->
       if Eval_result.is_signal_to_stop res
       then escape res (* propagate up the failure *)
-      else return ())
+      else (Lwt_direct.yield (); return ()))
 
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind
