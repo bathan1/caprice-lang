@@ -1,7 +1,4 @@
 
-type det
-type nondet
-
 type mode =
   | Det
   | Nondet

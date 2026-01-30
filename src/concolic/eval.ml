@@ -10,9 +10,6 @@ let[@inline always] return_any v = return (Any v)
 let bad_input_env =
   InvariantException "Input environment is ill-formed"
 
-let make_lazy (lgen : Val.lgen) : Val.dval =
-  VLazy { cell = State.make_cell (LLazy lgen) ; wrapping_types = [] }
-
 (**
   [ctx_of_mode mode] is an environment in which to run a
     monadic expression based on the [mode] of the function
@@ -27,6 +24,14 @@ let ctx_of_mode (mode : Funtype.mode) =
 
 open Grammar.Val.Error_messages
 
+(**
+  [eval] returns the list of runs (evaluation) of the program.
+  There are multiple runs because it sometimes forks the state
+  to symbolically evaluate.
+  Every fork calls [Lwt_direct.yield] so that timeout can be
+  noticed reasonably frequently. This is why the return type is
+  [Lwt.t]. The caller is expected to set the timeout with [Lwt].
+*)
 let eval
   (pgm : Ast.statement list)
   (input_env : Input_env.t)
@@ -36,7 +41,7 @@ let eval
   ~(default_bool : unit -> bool)
   ~(do_splay : bool)
   ~(do_wrap : bool)
-  : Logged_run.t list
+  : Logged_run.t list Lwt.t
   =
   (*
     Reads a tag from the input environment. If the tag was planned,
@@ -166,7 +171,7 @@ let eval
       | Any (VEmptyList as tl)
       | Any (VListCons _ as tl) -> cons_with_v1 tl
       | Any (VLazy { cell ; _ } as tl) ->
-        let v_lazy = State.get_cell cell in
+        let* v_lazy = read_cell cell in
         begin match v_lazy with
         | LLazy LGenList _
         | LValue Any VEmptyList
@@ -373,11 +378,12 @@ let eval
       let* cod_tval = eval_codomain codomain v_arg in
       gen cod_tval
     | VGenFun { funtype = { domain = _ ; codomain ; mode = Det } ; alist ; _ } ->
+      let* mappings = read_cell alist in
       let rec loop = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = allow_inputs (gen cod_tval) in
-          State.set_cell alist ((v_arg, genned) :: State.get_cell alist);
+          let* () = set_cell alist ((v_arg, genned) :: mappings) in
           return genned
         | (input, output) :: tl ->
           begin match Val.intensional_equal v_arg input with
@@ -391,7 +397,7 @@ let eval
             mismatch @@ shape_mismatch v_arg input
           end
       in
-      loop (State.get_cell alist)
+      loop mappings
     | _ -> mismatch @@ apply_non_function (Any v_func)
     
   (*
@@ -675,7 +681,7 @@ let eval
     | VTypeMu { var ; closure = ({ captured ; env } as closure) } -> (* don't force v *)
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
-        let lazy_v = State.get_cell cell in
+        let* lazy_v = read_cell cell in
         begin match lazy_v with
         | LValue any_v ->
           check any_v t
@@ -700,7 +706,7 @@ let eval
     | VTypeList t_body -> (* don't force v *)
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
-        let lazy_v = State.get_cell cell in
+        let* lazy_v = read_cell cell in
         begin match lazy_v with
         | LValue any_v ->
           let* wrapped = wrap_multi wrapping_types any_v in
@@ -839,7 +845,8 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
       let* Step nonce = step in
-      return_any (VGenFun { funtype ; nonce ; alist = State.make_cell [] })
+      let* s = get in
+      return_any (VGenFun { funtype ; nonce ; alist = State.make_cell [] s })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })
@@ -886,7 +893,8 @@ let eval
     | VTypeList t ->
       if do_splay then
         let* () = assert_inputs_allowed in
-        return_any (make_lazy (LGenList t))
+        let* l = make_lazy (LGenList t) in
+        return_any l
       else
         force_gen_list t
     | VTypeRefine { var ; tau ; predicate = { captured ; env } } ->
@@ -906,7 +914,8 @@ let eval
         (* Be overly cautious and assume that the generated value
           will have several choices and hence uses an input. *)
         let* () = assert_inputs_allowed in
-        return_any (make_lazy (LGenMu { var ; closure }))
+        let* lgen = make_lazy (LGenMu { var ; closure }) in
+        return_any lgen
       else
         force_gen_mu var closure
     | VTypeTuple (t1, t2) ->
@@ -1239,7 +1248,7 @@ let eval
     = fun { cell ; wrapping_types } ->
     assert do_splay;
     let* v_any =
-      let lazy_v = State.get_cell cell in
+      let* lazy_v = read_cell cell in
       match lazy_v with
       | LLazy lv ->
         let* genned =
@@ -1248,7 +1257,7 @@ let eval
           | LGenMu { var ; closure } -> force_gen_mu var closure
           | LGenList t -> force_gen_list t
         in
-        State.set_cell cell (LValue genned);
+        let* () = set_cell cell (LValue genned) in
         return genned
       | LValue v_any ->
         return v_any
@@ -1257,13 +1266,14 @@ let eval
 
   in
 
-  let result, state = run (eval_statement_list pgm) target in
+  let open Lwt.Syntax in
+  let* result, state = 
+    Lwt_direct.spawn (fun () -> run (eval_statement_list pgm) target)
+  in
   let answer = Eval_result.to_answer result in
   let this_logged_run =
     { Logged_run.target 
     ; rev_stem = state.rev_stem
     ; answer }
   in
-  Utils.Diff_list.(
-    to_list @@ this_logged_run -:: state.runs
-  )
+  Lwt.return (this_logged_run :: state.runs)

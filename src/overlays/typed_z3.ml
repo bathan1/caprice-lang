@@ -74,6 +74,15 @@ module Make_of_context (C : CONTEXT) : Formula.SOLVABLE = struct
 
   let solver = Z3.Solver.mk_simple_solver ctx
 
+  let set_timeout time =
+    time
+    |> Utils.Time.span_to_ms
+    |> Float.to_int
+    |> Int.to_string
+    |> Z3.Params.update_param_value ctx "timeout"
+
+  let () = set_timeout (Mtime.Span.(100 * ms))
+
   let unbox_int_expr e =
     if Z3.Expr.is_numeral e 
     then

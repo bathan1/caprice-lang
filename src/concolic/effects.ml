@@ -19,23 +19,23 @@ exception InvariantException of string
     future.
 *)
 module State = struct
-  let store = Store.create ()
-
   type t = 
     { rev_stem : Rev_stem.t (* we will cons to the path instead of union a log *)
     ; logged_inputs : Input_env.t 
-    ; runs : Logged_run.t Utils.Diff_list.t
+    ; runs : Logged_run.t list
+    ; store : Store.t (* MUTABLE! *)
     }
 
-  let empty : t =
+  let create () : t =
     { rev_stem = Rev_stem.empty
     ; logged_inputs = Input_env.empty
-    ; runs = Utils.Diff_list.empty
+    ; runs = []
+    ; store = Store.create ()
     }
 
-  let get_cell : 'a. 'a Store.Ref.t -> 'a = fun c -> Store.Ref.get store c
-  let set_cell : 'a. 'a Store.Ref.t -> 'a -> unit = fun c a -> Store.Ref.set store c a
-  let make_cell : 'a. 'a -> 'a Store.Ref.t = fun a -> Store.Ref.make store a
+  let get_cell c state = Store.Ref.get state.store c
+  let set_cell c a state = Store.Ref.set state.store c a
+  let make_cell a state = Store.Ref.make state.store a
 end
 
 module Context = struct
@@ -207,6 +207,9 @@ let target_to_here : 'env. (Target.t, 'env) m =
     step count. If [forked_m] is a failure case, then the result is a failure.
     Otherwise, the original state is restored, and the fork is logged as a
     run.
+    Calls [Lwt_direct.yield] because this is a good moment to check for time out.
+    Therefore, this function must be run inside an [Lwt_direct.spawn], which is
+    not guaranteed by the type system.
 *)
 let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
   let* target = target_to_here in
@@ -217,30 +220,44 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
     let n' = Target.priority ctx.target in
     Path_priority.geq n n'
   );
+  Lwt_direct.yield ();
   let snapshot = ref None in
   fork forked_m { target ; det_context = ctx.det_context }
     ~setup_state:(fun state ->
       (* keeps all the logged runs *)
-      snapshot := Some (Store.capture State.store);
+      snapshot := Some (Store.capture state.store);
       { state with rev_stem = Rev_stem.discard_stem state.rev_stem }
     )
     ~restore_state:(fun e ~og ~forked_state ->
-      Store.restore State.store (Option.get !snapshot);
+      Store.restore forked_state.store (Option.get !snapshot);
       { og with runs =
         let forked_run =
           { Logged_run.rev_stem = forked_state.rev_stem 
           ; target 
           ; answer = Eval_result.to_answer e }
         in
-        let open Utils.Diff_list in
         (* Note that the forked state runs include the original runs (see setup_state) *)
-        forked_run -:: forked_state.runs (* ... hence, don't copy the og runs *)
+        forked_run :: forked_state.runs (* ... hence, don't copy the og runs *)
       }
     )
     (fun res ->
       if Eval_result.is_signal_to_stop res
       then escape res (* propagate up the failure *)
       else return ())
+
+let read_cell : 'env. 'a Store.Ref.t -> ('a, 'env) m =
+  fun cell ->
+    let* s = get in
+    return (State.get_cell cell s)
+
+let set_cell : 'env. 'a Store.Ref.t -> 'a -> (unit, 'env) m =
+  fun cell a ->
+    let* s = get in
+    return (State.set_cell cell a s)
+
+let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
+  let* s = get in
+  return (Val.VLazy { cell = State.make_cell (Val.LLazy lgen) s ; wrapping_types = [] })
 
 (**
   [disallow_inputs x] runs [x] such that any [assert_inputs_allowed]
@@ -266,4 +283,4 @@ let run' (x : ('a, Val.Env.t) m) (target : Target.t) (s : State.t) (e : Val.Env.
     empty state and environment.
 *)
 let run (x : ('a, Val.Env.t) m) (target : Target.t) : Eval_result.t * State.t =
-  run' x target State.empty Env.empty
+  run' x target (State.create ()) Env.empty

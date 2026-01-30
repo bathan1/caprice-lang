@@ -69,7 +69,6 @@ let make_bool_feeder ~(run_num : int) : unit -> bool =
 (* Does not do its own timeout, even though timeout is passed in with options *)
 let loop ~(options : Options.t) (solve : Stepkey.t Smt.Formula.solver) 
   (pgm : Lang.Ast.program) (tq : Target_queue.t) : Answer.t Lwt.t =
-  let open Lwt.Let_syntax.Let_syntax in
   let open Lwt.Syntax in
   let eval =
     Eval.eval pgm ~max_step:options.max_step ~do_splay:options.do_splay
@@ -83,24 +82,24 @@ let loop ~(options : Options.t) (solve : Stepkey.t Smt.Formula.solver)
       | Sat model -> loop_on_model target tq model
       | Unknown -> 
         let* a = loop tq in
-        return @@ Answer.min Answer.Unknown a
+        Lwt.return @@ Answer.min Answer.Unknown a
       | Unsat -> loop tq
       end
-    | None -> return Answer.Exhausted
+    | None -> Lwt.return Answer.Exhausted
 
   and loop_on_model target tq model =
     let run_num = Utils.Counter.next c in
     let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
-    let runs =
+    let* runs =
       eval ienv target
         ~default_int:(make_int_feeder ~run_num)
         ~default_bool:(make_bool_feeder ~run_num)
     in
     match collect_logged_runs runs ~max_tree_depth:options.max_tree_depth with
-    | `Quit answer -> return answer
+    | `Quit answer -> Lwt.return answer
     | `Cont (targets, answer) ->
       let* a = loop (Target_queue.push_list tq targets) in
-      return @@ Answer.min a answer
+      Lwt.return @@ Answer.min a answer
   in
   loop tq
 

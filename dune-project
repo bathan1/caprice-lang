@@ -20,6 +20,7 @@
   baby
   benchmark
   lwt
+  lwt_direct
   menhir
   mtime
   (ocaml (>= 5.4.0))
