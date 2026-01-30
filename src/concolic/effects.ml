@@ -4,38 +4,22 @@ open Grammar
 
 exception InvariantException of string
 
-(*
-  IMPORTANT:
-    We are using some mutable state with Store, so this monad
-    will not obey all monad laws because it is not pure. However,
-    in every real use, it is fine.
-
-    This is done to keep the state record small and avoid a map
-    to lookup stateful values. When the monad is forked, we must
-    carefully snapshot the store, and when it is joined back, we
-    restore the original store.
-
-    Since this is a code smell, the choice may be reverted in the
-    future.
-*)
 module State = struct
   type t = 
     { rev_stem : Rev_stem.t (* we will cons to the path instead of union a log *)
     ; logged_inputs : Input_env.t 
     ; runs : Logged_run.t list
-    ; store : Store.t (* MUTABLE! *)
+    ; lazies : Val.vlazy Suspension.Map.t
+    ; detfun_alists : Val.alist Suspension.Map.t
     }
 
-  let create () : t =
+  let empty : t =
     { rev_stem = Rev_stem.empty
     ; logged_inputs = Input_env.empty
     ; runs = []
-    ; store = Store.create ()
+    ; lazies = Suspension.Map.empty
+    ; detfun_alists = Suspension.Map.empty
     }
-
-  let get_cell c state = Store.Ref.get state.store c
-  let set_cell c a state = Store.Ref.set state.store c a
-  let make_cell a state = Store.Ref.make state.store a
 end
 
 module Context = struct
@@ -221,15 +205,12 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
     Path_priority.geq n n'
   );
   Lwt_direct.yield ();
-  let snapshot = ref None in
   fork forked_m { target ; det_context = ctx.det_context }
     ~setup_state:(fun state ->
       (* keeps all the logged runs *)
-      snapshot := Some (Store.capture state.store);
       { state with rev_stem = Rev_stem.discard_stem state.rev_stem }
     )
     ~restore_state:(fun e ~og ~forked_state ->
-      Store.restore forked_state.store (Option.get !snapshot);
       { og with runs =
         let forked_run =
           { Logged_run.rev_stem = forked_state.rev_stem 
@@ -245,19 +226,47 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
       then escape res (* propagate up the failure *)
       else return ())
 
-let read_cell : 'env. 'a Store.Ref.t -> ('a, 'env) m =
-  fun cell ->
-    let* s = get in
-    return (State.get_cell cell s)
+type 'a suspension_kind =
+  | SLazy : Val.vlazy suspension_kind
+  | SAlist : Val.alist suspension_kind
 
-let set_cell : 'env. 'a Store.Ref.t -> 'a -> (unit, 'env) m =
-  fun cell a ->
+let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
+  fun kind susp ->
     let* s = get in
-    return (State.set_cell cell a s)
+    let map : a Suspension.Map.t =
+      match kind with
+      | SLazy -> s.lazies
+      | SAlist -> s.detfun_alists
+    in
+    return (Suspension.Map.find_exn susp map)
+
+let set_cell : type a env. a suspension_kind -> a Suspension.t -> a -> (unit, env) m =
+  fun kind susp v ->
+    modify (fun s ->
+      match kind with
+      | SLazy -> { s with lazies = Suspension.Map.add susp v s.lazies}
+      | SAlist -> { s with detfun_alists = Suspension.Map.add susp v s.detfun_alists}
+    )
+
+(* Because of value restriction, we must inline this definition. We would prefer to write
+      let* Step id = step in
+      let susp = { Suspension.id } in
+      let* () = set_cell SAlist { id } [] in
+      return susp
+*)
+let make_alist : 'env. (Val.alist Suspension.t, 'env) m =
+  { run = fun ~reject:_ ~accept state step _ _ ->
+    let Step id = step in
+    let susp = { Suspension.id } in
+    accept susp { state with detfun_alists =
+      Suspension.Map.add susp [] state.detfun_alists } step
+  }
 
 let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
-  let* s = get in
-  return (Val.VLazy { cell = State.make_cell (Val.LLazy lgen) s ; wrapping_types = [] })
+  let* Step id = step in
+  let v = Val.VLazy { cell = { id } ; wrapping_types = [] } in
+  let* () = set_cell SLazy { id } (Val.LLazy lgen) in
+  return v
 
 (**
   [disallow_inputs x] runs [x] such that any [assert_inputs_allowed]
@@ -283,4 +292,4 @@ let run' (x : ('a, Val.Env.t) m) (target : Target.t) (s : State.t) (e : Val.Env.
     empty state and environment.
 *)
 let run (x : ('a, Val.Env.t) m) (target : Target.t) : Eval_result.t * State.t =
-  run' x target (State.create ()) Env.empty
+  run' x target State.empty Env.empty

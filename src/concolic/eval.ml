@@ -171,7 +171,7 @@ let eval
       | Any (VEmptyList as tl)
       | Any (VListCons _ as tl) -> cons_with_v1 tl
       | Any (VLazy { cell ; _ } as tl) ->
-        let* v_lazy = read_cell cell in
+        let* v_lazy = read_cell SLazy cell in
         begin match v_lazy with
         | LLazy LGenList _
         | LValue Any VEmptyList
@@ -378,12 +378,12 @@ let eval
       let* cod_tval = eval_codomain codomain v_arg in
       gen cod_tval
     | VGenFun { funtype = { domain = _ ; codomain ; mode = Det } ; alist ; _ } ->
-      let* mappings = read_cell alist in
+      let* mappings = read_cell SAlist (Option.get alist) in
       let rec loop = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = allow_inputs (gen cod_tval) in
-          let* () = set_cell alist ((v_arg, genned) :: mappings) in
+          let* () = set_cell SAlist (Option.get alist) ((v_arg, genned) :: mappings) in
           return genned
         | (input, output) :: tl ->
           begin match Val.intensional_equal v_arg input with
@@ -681,7 +681,7 @@ let eval
     | VTypeMu { var ; closure = ({ captured ; env } as closure) } -> (* don't force v *)
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
-        let* lazy_v = read_cell cell in
+        let* lazy_v = read_cell SLazy cell in
         begin match lazy_v with
         | LValue any_v ->
           check any_v t
@@ -706,7 +706,7 @@ let eval
     | VTypeList t_body -> (* don't force v *)
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
-        let* lazy_v = read_cell cell in
+        let* lazy_v = read_cell SLazy cell in
         begin match lazy_v with
         | LValue any_v ->
           let* wrapped = wrap_multi wrapping_types any_v in
@@ -845,8 +845,12 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
       let* Step nonce = step in
-      let* s = get in
-      return_any (VGenFun { funtype ; nonce ; alist = State.make_cell [] s })
+      begin match funtype.mode with
+      | Nondet -> return_any (VGenFun { funtype ; nonce ; alist = None })
+      | Det ->
+        let* cell = make_alist in
+        return_any (VGenFun { funtype ; nonce ; alist = Some cell })
+      end
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })
@@ -1248,7 +1252,7 @@ let eval
     = fun { cell ; wrapping_types } ->
     assert do_splay;
     let* v_any =
-      let* lazy_v = read_cell cell in
+      let* lazy_v = read_cell SLazy cell in
       match lazy_v with
       | LLazy lv ->
         let* genned =
@@ -1257,7 +1261,7 @@ let eval
           | LGenMu { var ; closure } -> force_gen_mu var closure
           | LGenList t -> force_gen_list t
         in
-        let* () = set_cell cell (LValue genned) in
+        let* () = set_cell SLazy cell (LValue genned) in
         return genned
       | LValue v_any ->
         return v_any

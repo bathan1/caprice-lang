@@ -28,7 +28,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VEmptyList : data t
     | VListCons : any * data t -> data t
     (* generated values *)
-    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; alist : (any * any) list Store.Ref.t } -> data t
+    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; alist : alist Suspension.t option } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
     | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
@@ -53,6 +53,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
 
   and 'a closure = { captured : 'a ; env : env }
 
+  and alist = (any * any) list
+
   and env = any Env.t
 
   and fun_cod =
@@ -67,7 +69,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
 
     The lazy state itself is not updated because wrapping is flow sensitive.
   *)
-  and lazy_cell = { cell : vlazy Store.Ref.t ; wrapping_types : typeval t list }
+  and lazy_cell = { cell : vlazy Suspension.t ; wrapping_types : typeval t list }
 
   and lgen =
     | LGenList of typeval t
