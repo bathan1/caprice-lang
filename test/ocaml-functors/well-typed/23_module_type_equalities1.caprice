@@ -11,7 +11,7 @@ end;;
 *)
 
 let M : sig
-  val S = sig val t : type end
+  val S := sig val t : type end
 end = struct
   let S = sig val t : type end
 end

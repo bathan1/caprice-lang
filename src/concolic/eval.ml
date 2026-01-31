@@ -183,8 +183,8 @@ let eval
     | EAbstractType ->
       gen VType
     | ETypeSingle e ->
-      let* tval = eval_type e in
-      return_any (VTypeSingle tval)
+      let* v = eval e in
+      return_any (VTypeSingle v)
     (* symbolic values and branching *)
     | EPick_i ->
       let* step = step in
@@ -329,15 +329,12 @@ let eval
       | BModulus, Any VInt (n1, e1), Any VInt (n2, e2) when n2 <> 0 ->
         let* () = push_formula_to_path (Smt.Formula.binop Not_equal e2 (Smt.Formula.const_int 0)) in
         k (v_int (n1 mod n2)) e1 e2 Modulus
-      | BTimes, Any v1, Any v2 ->
+      | BTimes, v1, v2 ->
         (* Make tuple if v1 and v2 are types. Note that integer muliplication is handled above. *)
-        handle v1
-          ~typeval:(fun t1 ->
-            handle v2
-              ~typeval:(fun t2 -> return_any @@ VTypeTuple (t1, t2))
-              ~data:(fun _ -> fail_binop ())
-          )
-          ~data:(fun _ -> fail_binop ())
+        handle_two v1 v2 (function
+          | `Types (t1, t2) -> return_any @@ VTypeTuple (t1, t2)
+          | _ -> fail_binop ()
+        )
       | _ -> fail_binop ()
 
   (*
@@ -763,16 +760,27 @@ let eval
           ~right:(check v2 t2)
       | _ -> refute
       end
-    | VTypeSingle tval ->
+    | VTypeSingle v_single ->
       let* v = force_value v in
-      handle_any v
-        ~data:(fun _ -> refute)
-        ~typeval:(fun tval' ->
+      handle_two v_single v (function
+        | `Types (tval, tval') ->
+          (* For type equality, check subsets *)
           if Val.equal tval' tval then confirm else
-          fork_on_left ~reason:CheckSingletype
+          fork_on_left ~reason:CheckSingleton
             ~left:{ run_failing = tval' <: tval }
             ~right:(tval <: tval')
-        )
+        | _ ->
+          (* For non-type equality, use intensional equality *)
+          match Val.intensional_equal v_single v with
+          | Value (true, s) ->
+            let* () = push_formula_to_path s in
+            confirm
+          | Value (false, s) ->
+            let* () = push_formula_to_path ~allow_flip:false (Formula.not_ s) in
+            refute
+          | ShapeMismatch ->
+            refute
+      )
 
   (*
     Check modules and records given a way to check each label and a default label.
@@ -943,8 +951,8 @@ let eval
         )
       in
       return_any (VModule genned_body)
-    | VTypeSingle tval ->
-      return_any tval
+    | VTypeSingle v ->
+      return v
 
   (*
     Generate a list. Makes an actual list instead of a symbol for a lazy one.

@@ -16,8 +16,8 @@ module Missing_X_bis = F(struct type x = int type y = float end)(Y)
 
 let F
     (dependent A : sig val x : type val y : type end)
-    (dependent B : sig val x = A.x end)
-    (dependent C : sig val y = A.y end)
+    (dependent B : sig val x := A.x end)
+    (dependent C : sig val y := A.y end)
   : sig end
   = struct end
 

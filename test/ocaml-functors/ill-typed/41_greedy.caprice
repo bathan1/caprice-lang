@@ -13,8 +13,8 @@ module Error=F(X)(struct type t = int end)(Y)(Z)
 *)
 
 let F (dependent X : sig val t : type end)
-  (Y : sig val t = `Y of X.t end)
-  (Z : sig val t = `Z of X.t end)
+  (Y : sig val t := `Y of X.t end)
+  (Z : sig val t := `Z of X.t end)
   : sig end
   = struct end
 

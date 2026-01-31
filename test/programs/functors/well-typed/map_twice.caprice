@@ -30,13 +30,14 @@ end = struct
 end
 
 let Id (dep T : sig val t : type end) : sig
-  val s : singletype T.t
+  val s := T.t
 end = struct
   let s = T.t
 end
 
 let Id2 (dep M : sig val m : type --> type end) : sig
-  val n : (type a) -> singletype (M.m a)
+  val n : (type a) -> singleton (M.m a)
+  (* val n := M.m a *) (* this also works *)
 end = struct
   let n = M.m
 end

@@ -7,7 +7,7 @@ let closed_sum n = n * (n + 1) / 2
 (*
   This mimics the order of arguments a monadic solution might take.
 *)
-let rec summate (dep n : int | n >= 0) (type r) (k : { m : int | m == closed_sum n } -> r) : r =
+let rec summate (dep n : int | n >= 0) (type r) (k : singleton (closed_sum n) -> r) : r =
   if n <= 0 then k 0 else
   summate (n - 1) r (fun a ->
     k (a + n)

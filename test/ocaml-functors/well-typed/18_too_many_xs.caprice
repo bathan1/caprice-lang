@@ -27,8 +27,8 @@ module Too_many_Xs = F(M.N)(Defs.X)(Defs.X)(Defs.Y)
 
 let F
     (dependent A : sig val x : type val y : type end)
-    (dependent B : sig val x = A.x end)
-    (dependent C : sig val y = A.y end)
+    (dependent B : sig val x := A.x end)
+    (dependent C : sig val y := A.y end)
   : sig end
   = struct end
 

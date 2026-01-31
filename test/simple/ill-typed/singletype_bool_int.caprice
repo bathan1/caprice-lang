@@ -3,4 +3,4 @@
 *)
 
 
-let t : singletype bool = int
+let t : singleton bool = int

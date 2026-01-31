@@ -3,6 +3,7 @@
 *)
 
 
-let f (type a b) (dependent t : singletype a) (x : t) : b =
+(* This `t` argument is the same as (dependent t := a) *)
+let f (type a b) (dependent t := a) (x : t) : b =
   x
 

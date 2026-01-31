@@ -9,7 +9,7 @@ let Option = struct
 end
 
 let Id : sig
-  val t = `Id of int
+  val t := `Id of int
   val get : t -> int
   val make : int -> t
   val eq : t -> t -> bool

@@ -32,6 +32,7 @@ rule token = parse
 | "="                  { EQUALS }
 | "."                  { DOT }
 | ":"                  { COLON }
+| ":="                 { COLON_EQUAL }
 | "_"                  { UNDERSCORE }
 | "|"                  { PIPE }
 | "||"                 { DOUBLE_PIPE }
@@ -71,7 +72,7 @@ rule token = parse
 | "mu"                 { MU }
 | "of"                 { OF }
 | "sig"                { SIG }
-| "singletype"         { SINGLETYPE_KEYWORD }
+| "singleton"          { SINGLETON }
 | "top"                { TOP_KEYWORD }
 | "type"               { TYPE }
 | "unit"               { UNIT_KEYWORD }

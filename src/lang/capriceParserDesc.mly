@@ -18,6 +18,7 @@
 %token EQUALS
 %token DOT
 %token COLON
+%token COLON_EQUAL
 %token UNDERSCORE
 %token PIPE
 %token DOUBLE_PIPE
@@ -54,7 +55,7 @@
 %token MU
 %token OF
 %token SIG
-%token SINGLETYPE_KEYWORD
+%token SINGLETON
 %token TOP_KEYWORD
 %token TYPE
 %token UNIT_KEYWORD
@@ -150,17 +151,30 @@ typed_param_group:
     { $1 }
   ;
 
+%inline typed_name:
+  | name=l_ident COLON tau=expr
+    { name, tau } 
+  | name=l_ident COLON tau=expr PIPE predicate=expr
+    { name, ETypeRefine { var = name ; tau ; predicate } }
+  | name=l_ident COLON_EQUAL e=expr
+    { name, ETypeSingle e }
+
 %inline single_typed_param:
-  | OPEN_PAREN name=l_ident COLON tau=expr CLOSE_PAREN
-    { name, (None, tau) }
-  | OPEN_PAREN name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
-    { name, (None, ETypeRefine { var = name ; tau ; predicate }) }
-  | OPEN_PAREN DEP name=ident COLON tau=expr CLOSE_PAREN
-  | OPEN_PAREN DEPENDENT name=ident COLON tau=expr CLOSE_PAREN
-    { name, (Some name, tau) }
-  | OPEN_PAREN DEP name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
-  | OPEN_PAREN DEPENDENT name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
-    { name, (Some name, ETypeRefine { var = name ; tau ; predicate }) }
+  | OPEN_PAREN p=typed_name CLOSE_PAREN
+    { fst p, (None, snd p) }
+  | OPEN_PAREN DEP p=typed_name CLOSE_PAREN
+  | OPEN_PAREN DEPENDENT p=typed_name CLOSE_PAREN
+    { fst p, (Some (fst p), snd p) }
+  // | OPEN_PAREN name=l_ident COLON tau=expr CLOSE_PAREN
+  //   { name, (None, tau) }
+  // | OPEN_PAREN name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
+  //   { name, (None, ETypeRefine { var = name ; tau ; predicate }) }
+  // | OPEN_PAREN DEP name=ident COLON tau=expr CLOSE_PAREN
+  // | OPEN_PAREN DEPENDENT name=ident COLON tau=expr CLOSE_PAREN
+  //   { name, (Some name, tau) }
+  // | OPEN_PAREN DEP name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
+  // | OPEN_PAREN DEPENDENT name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
+  //   { name, (Some name, ETypeRefine { var = name ; tau ; predicate }) }
   ;
 
 %inline multiple_typed_params:
@@ -200,12 +214,8 @@ expr:
   | tdom=expr mode=type_arrow codomain=expr
     { ETypeFun { domain = None, tdom ; codomain ; mode } }
   (* standard dependent function type *)
-  | OPEN_PAREN name=ident COLON tdom=expr CLOSE_PAREN mode=type_arrow codomain=expr
-    { ETypeFun { domain = Some name, tdom ; codomain ; mode } }
-  (* various sugar for dependent functions *)
-  | OPEN_PAREN name=ident COLON tdom=expr PIPE predicate=expr CLOSE_PAREN mode=type_arrow codomain=expr
-    { ETypeFun { domain = Some name, ETypeRefine
-      { var = name ; tau = tdom ; predicate } ; codomain ; mode } }
+  | OPEN_PAREN pair=typed_name CLOSE_PAREN mode=type_arrow codomain=expr
+    { ETypeFun { domain = Some (fst pair), snd pair ; codomain ; mode } }
   | OPEN_PAREN TYPE type_ids=nonempty_list(ident) CLOSE_PAREN mode=type_arrow codomain=expr
     { List.fold_right (fun type_id acc ->
       ETypeFun { domain = Some type_id, EType ; codomain = acc ; mode }
@@ -264,8 +274,8 @@ primary_expr:
     { EFunction { param = Ident "~list" ; body = ETypeList (EVar (Ident "~list")) } } (* HACK HACK HACK *)
   | ABSTRACT
     { EAbstractType }
-  | SINGLETYPE_KEYWORD
-    { EFunction { param = Ident "~singletype" ; body = ETypeSingle (EVar (Ident "~singletype")) } } (* HACK HACK HACK *)
+  | SINGLETON
+    { EFunction { param = Ident "~singleton" ; body = ETypeSingle (EVar (Ident "~singleton")) } } (* HACK HACK HACK *)
   | OPEN_PAREN CLOSE_PAREN
     { EUnit }
   | OPEN_BRACE COLON CLOSE_BRACE
@@ -337,6 +347,8 @@ op_expr:
 %inline record_type_item:
   | label=record_label COLON tau=expr
     { label, tau }
+  | label=record_label COLON_EQUAL e=expr
+    { label, ETypeSingle e }
   ;
 
 %inline record_expr_item:
@@ -376,8 +388,6 @@ record_type_body:
 %inline val_decl:
   | VAL pair=record_type_item
     { pair }
-  | VAL label=record_label EQUALS tau=expr
-    { label, ETypeSingle tau }
 
 /* **** Records, lists, and variants **** */
 

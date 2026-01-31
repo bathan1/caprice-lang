@@ -3,5 +3,5 @@
 *)
 
 
-let t : singletype (`A of int | `B of bool) =
+let t : singleton (`A of int | `B of bool) =
   `A of int | `B of int

@@ -29,15 +29,15 @@ end
 let M : sig
   val F : sig end -> (X : sig
       val T : type
-      val inner = sig
+      val inner := sig
           val t : type
           val M : t
         end
       val F : (X : inner) -> (T -> T -> T) -> sig
-          val res = X.t
+          val res := X.t
         end
       val Y : sig
-        val t = T -> T -> T
+        val t := T -> T -> T
         val M : T -> T -> T
       end
     end) -> (X.F (X.Y) (X.Y.M)).res

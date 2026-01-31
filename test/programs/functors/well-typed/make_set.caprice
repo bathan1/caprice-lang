@@ -9,7 +9,7 @@ let F :
     val add : (type a) -> a -> t a -> t a
     val map : (type a) -> (b : type) -> t a -> (a -> b) -> t b
   end) -> sig
-    val t : type --> type (* notably, `val t = S.t` does not work here because S.t is a function, not a type *)
+    val t := S.t
     val empty : (type a) -> t a
     val add : (type a) -> a -> t a -> t a
     val map : (type a b) -> t a -> (a -> b) -> t b

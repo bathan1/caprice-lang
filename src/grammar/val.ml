@@ -42,8 +42,8 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
     Labels.Variant.Map.exists (fun _ t -> is_symbolic t) variant_body
   | VTypeTuple (t1, t2) ->
     is_symbolic t1 || is_symbolic t2
-  | VTypeSingle t ->
-    is_symbolic t
+  | VTypeSingle Any v ->
+    is_symbolic v
   | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
   | VGenFun { funtype = { domain ; codomain = CodValue t ; mode = _ } ; nonce = _ ; alist = _ } ->
     is_symbolic domain || is_symbolic t
@@ -178,7 +178,8 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VGenFun { nonce = n1 ; funtype = _ ; alist = _ }
   , Any VGenFun { nonce = n2 ; funtype = _ ; alist = _ } ->
     make (n1 = n2)
-  | Any VTypeSingle t1, Any VTypeSingle t2
+  | Any VTypeSingle v1, Any VTypeSingle v2 ->
+    intensional_equal v1 v2
   | Any VTypeList t1, Any VTypeList t2 ->
     iequal t1 t2
   | Any VTypeTuple (tl1, tr1), Any VTypeTuple (tl2, tr2) ->

@@ -3,7 +3,7 @@ type reason =
   | GenList             (* generate empty or cons *)
   | CheckList           (* check hd or tl *)
   | CheckTuple          (* check left or right side of tuple *)
-  | CheckSingletype     (* check subset or superset *)
+  | CheckSingleton      (* check subset or superset or intensional equality *)
   | CheckGenFun         (* check domain or codomain *)
   | CheckWrappedFun     (* check domain or codomain of a wrapped function *)
   | CheckRefinementType (* check underlying type or evaluate the predicate *)
@@ -16,7 +16,7 @@ let reason_to_string = function
   | GenList             -> "Generate list"
   | CheckList           -> "Check list"
   | CheckTuple          -> "Check tuple"
-  | CheckSingletype     -> "Check singletype"
+  | CheckSingleton      -> "Check singleton"
   | CheckGenFun         -> "Check generated function"
   | CheckWrappedFun     -> "Check wrapped function"
   | CheckRefinementType -> "Check refinement type"

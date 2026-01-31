@@ -27,7 +27,7 @@ let Id_example : BASIC = struct
 end
 
 let Derive_bind (dep M : BASIC) : sig
-  val m : (type a) -> singletype (M.m a)
+  val m : (type a) -> singleton (M.m a)
   val bind : (type a b) -> m a -> (a -> m a) -> m a (* note: b unused *)
 end = struct
   let m = M.m

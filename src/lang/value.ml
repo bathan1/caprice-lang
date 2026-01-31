@@ -49,7 +49,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VTypeVariant : typeval t Labels.Variant.Map.t -> typeval t
     | VTypeRefine : (typeval t, Ast.t closure) Refinement.t -> typeval t
     | VTypeTuple : typeval t * typeval t -> typeval t
-    | VTypeSingle : typeval t -> typeval t
+    | VTypeSingle : any -> typeval t
 
   and 'a closure = { captured : 'a ; env : env }
 
@@ -123,6 +123,20 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
   let[@inline always] handle_any (type a) (Any v : any) ~(data : data t -> a) ~(typeval : typeval t -> a) : a =
     handle v ~data ~typeval
 
+  let[@inline always] handle_two (v1 : any) (v2 : any)
+    (f : [ `Data of dval * dval | `Types of tval * tval | `Mismatch of any * any ] -> 'a) : 'a =
+    handle_any v1
+      ~data:(fun d1 ->
+        handle_any v2
+          ~data:(fun d2 -> f (`Data (d1, d2)))
+          ~typeval:(fun _ -> f (`Mismatch (v1, v2)))
+        )
+      ~typeval:(fun t1 ->
+        handle_any v2
+          ~data:(fun _ -> f (`Mismatch (v1, v2)))
+          ~typeval:(fun t2 -> f (`Types (t1, t2)))
+      )
+
   (* 
     True if the value has any mu type in its representation.
     This is used to dodge recursion by default.
@@ -159,8 +173,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       Labels.Variant.Map.exists (fun _ t -> contains_mu t) variant_body
     | VTypeTuple (t1, t2) ->
       contains_mu t1 || contains_mu t2
-    | VTypeSingle t ->
-      contains_mu t
+    | VTypeSingle Any v ->
+      contains_mu v
     | VWrapped { data ; tau } ->
       contains_mu data || contains_mu (VTypeFun tau)
     | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
@@ -271,8 +285,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       Format.sprintf "{ %s : %s | <closure> }" (Ident.to_string var) (to_string tau)
     | VTypeTuple (t1, t2) ->
       Format.sprintf "(%s * %s)" (to_string t1) (to_string t2)
-    | VTypeSingle t ->
-      Format.sprintf "(singletype %s)" (to_string t)
+    | VTypeSingle Any v ->
+      Format.sprintf "(singleton %s)" (to_string v)
 
   and any_to_string (Any any) = to_string any
 

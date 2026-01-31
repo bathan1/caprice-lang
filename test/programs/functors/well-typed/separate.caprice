@@ -27,8 +27,8 @@ let is_t_bool a =
   end
 
 let Make : (X : T) -> sig
-  val x = X.t
-  val t = sig
+  val x := X.t
+  val t := sig
     val a : tp 
     val v : 
       | `I of { _ : x | is_t_int a }

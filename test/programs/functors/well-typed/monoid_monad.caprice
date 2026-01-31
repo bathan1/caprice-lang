@@ -15,7 +15,7 @@ let MONAD = sig
 end
 
 let F : (X : MONOID) -> (M : MONAD) -> sig
-  val t = M.m X.t (* good use of singletype sugar here *)
+  val t := M.m X.t (* singleton sugar *)
   val neutral : t
   val combine : t -> t -> t
 end = fun X M -> struct

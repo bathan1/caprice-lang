@@ -26,15 +26,13 @@ end = struct
 end
 
 let Make : (Monad : MONAD) -> (Tape : MONOID) -> sig
-  val tape = Tape.t
+  val tape := Tape.t
 
-  val with_tape : (type a) -> singletype { a : a ; tape : tape }
+  val with_tape : (type a) -> singleton { a : a ; tape : tape }
 
-  (* Note this is inherently deterministic because singletype has one member *)
-  val monad : (type a) -> singletype (Monad.m a)
+  val monad := Monad.m
 
-  (* same here *)
-  val t : (type a) -> singletype (monad (with_tape a))
+  val t : (type a) -> singleton (monad (with_tape a))
 
   val run : (type a) -> t a -> monad (with_tape a)
 
@@ -47,7 +45,7 @@ end = fun Monad Tape -> struct
   let map = (Derive_map Monad).map
 
   let tape = Tape.t
-  let monad a = Monad.m a
+  let monad = Monad.m
   let with_tape a = { a : a ; tape : tape }
   let t a = Monad.m { a : a ; tape : tape }
 

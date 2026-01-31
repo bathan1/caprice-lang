@@ -22,7 +22,7 @@ end
 let M : sig
   val F : (X : sig
       val T : type
-      val t = T -> T -> T
+      val t := T -> T -> T
       val M : t
     end) -> X.T -> X.T -> X.T
 end = struct
