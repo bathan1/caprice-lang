@@ -13,7 +13,7 @@ type t =
   | ERecord of t Record.t
   | ETuple of t * t
   | EEmptyList
-  | EListCons of t * t
+  | EListCons of { hd : t ; tl : t }
   | EModule of statement list
   | ENot of t
   | EPick_i

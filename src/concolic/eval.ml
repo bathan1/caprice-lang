@@ -162,11 +162,11 @@ let eval
       return_any (VTuple (v1, v2))
     | EEmptyList ->
       return_any VEmptyList
-    | EListCons (e1, e2) ->
-      let* v1 = eval e1 in
-      let* v2 = eval e2 in (* don't force eval because want to allow cons to lazy list *)
-      let cons_with_v1 tl = return_any (VListCons (v1, tl)) in
-      begin match v2 with
+    | EListCons { hd ; tl } ->
+      let* hd = eval hd in
+      let* v_tl = eval tl in (* don't force eval because want to allow cons to lazy list *)
+      let cons_with_v1 tl = return_any (VListCons { hd ; tl }) in
+      begin match v_tl with
       | Any (VEmptyList as tl)
       | Any (VListCons _ as tl) -> cons_with_v1 tl
       | Any (VLazy { cell ; _ } as tl) ->
@@ -175,9 +175,9 @@ let eval
         | LLazy LGenList _
         | LValue Any VEmptyList
         | LValue Any VListCons _ -> cons_with_v1 tl
-        | _ -> mismatch @@ cons_non_list v1 v2
+        | _ -> mismatch @@ cons_non_list hd v_tl 
         end
-      | _ -> mismatch @@ cons_non_list v1 v2
+      | _ -> mismatch @@ cons_non_list hd v_tl
       end
     | EAbstractType ->
       gen VType
@@ -728,10 +728,10 @@ let eval
           check wrapped t_body
         end
       | Any VEmptyList -> confirm
-      | Any VListCons (v_hd, v_tl) ->
+      | Any VListCons { hd ; tl } ->
         fork_on_left ~reason:CheckList
-          ~left:{ run_failing = check v_hd t_body }
-          ~right:(check (Any v_tl) t)
+          ~left:{ run_failing = check hd t_body }
+          ~right:(check (Any tl) t)
       | _ -> refute
       end
     | VTypeRefine { var ; tau ; predicate = { captured ; env } } ->
@@ -972,7 +972,7 @@ let eval
       let* hd = gen body in
       let* Any v_tl = gen (VTypeList body) in
       handle v_tl
-        ~data:(fun tl -> return_any @@ VListCons (hd, tl))
+        ~data:(fun tl -> return_any @@ VListCons { hd ; tl })
         ~typeval:(fun _ -> raise @@ InvariantException "List generation makes a type value")
     | _ -> raise bad_input_env
 
@@ -1033,15 +1033,15 @@ let eval
       begin match v with
       | Any VLazy vlazy when does_wrap_matter t ->
         return_any (VLazy { vlazy with wrapping_types = t :: vlazy.wrapping_types })
-      | Any VListCons (v_hd, v_tl) ->
-        let* w_hd = wrap v_hd t_body in
-        let* Any w_tl = wrap (Any v_tl) t in
+      | Any VListCons { hd ; tl } ->
+        let* w_hd = wrap hd t_body in
+        let* Any w_tl = wrap (Any tl) t in
         handle w_tl
           ~data:(fun w_tl_data -> 
-            if w_hd == v_hd && w_tl_data == v_tl then
+            if w_hd == hd && w_tl_data == tl then
               return v
             else
-              return_any (VListCons (w_hd, w_tl_data))
+              return_any (VListCons { hd = w_hd ; tl = w_tl_data })
           )
           ~typeval:(fun _ -> raise @@ InvariantException "Wrapped list is not data")
       | Any VLazy _ (* wrap must not matter due to pattern guard above *)

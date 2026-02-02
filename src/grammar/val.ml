@@ -32,8 +32,8 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
     Labels.Record.Map.exists (fun _ (Any v') -> is_symbolic v') map_body
   | VTuple (Any v1, Any v2) ->
     is_symbolic v1 || is_symbolic v2
-  | VListCons (Any v_hd, v_tl) ->
-    is_symbolic v_hd || is_symbolic v_tl
+  | VListCons { hd = Any v_hd ; tl } ->
+    is_symbolic v_hd || is_symbolic tl
   | VTypeList t ->
     is_symbolic t
   | VTypeRecord record_body ->
@@ -164,7 +164,7 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
       intensional_equal v1.payload v2.payload
     else
       make false
-  | Any VListCons (a1, tl1), Any VListCons (a2, tl2) ->
+  | Any VListCons { hd = a1 ; tl = tl1 }, Any VListCons { hd = a2 ; tl = tl2 } ->
     let- () = intensional_equal a1 a2 in
     iequal tl1 tl2
   | Any VGenPoly g1, Any VGenPoly g2 ->
@@ -370,7 +370,7 @@ and iequal_closure bindings closure1 closure2 =
           make false
       ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
     | ETuple (l1, r1), ETuple (l2, r2)
-    | EListCons (l1, r1), EListCons (l2, r2) ->
+    | EListCons { hd = l1 ; tl = r1 }, EListCons { hd = l2 ; tl = r2 } ->
       let- () = ieq l1 l2 in
       ieq r1 r2
     | EVariant r1, EVariant r2 ->

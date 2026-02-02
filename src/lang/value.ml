@@ -26,7 +26,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VTuple : any * any -> data t
     | VFunFix : { fvar : Ident.t ; param : Ident.t ; closure : Ast.t closure } -> data t (* no mutual recursion yet *)
     | VEmptyList : data t
-    | VListCons : any * data t -> data t
+    | VListCons : { hd : any ; tl : data t } -> data t
     (* generated values *)
     | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; alist : alist Suspension.t option } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
@@ -163,8 +163,8 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       Labels.Record.Map.exists (fun _ (Any v') -> contains_mu v') map_body
     | VTuple (Any v1, Any v2) ->
       contains_mu v1 || contains_mu v2
-    | VListCons (Any v_hd, v_tl) ->
-      contains_mu v_hd || contains_mu v_tl
+    | VListCons { hd = Any v_hd ; tl } ->
+      contains_mu v_hd || contains_mu tl
     | VTypeList t ->
       contains_mu t
     | VTypeRecord record_body ->
@@ -229,7 +229,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
       Format.sprintf "(fix %s(%s). <closure>)" (Ident.to_string fvar) (Ident.to_string param)
     | VEmptyList ->
       "[]"
-    | VListCons (hd, tl) ->
+    | VListCons { hd ; tl } ->
       Format.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
     | VGenFun { funtype ; nonce ; alist = _ } ->
       Format.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) nonce
@@ -451,7 +451,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
           return match_
         | PEmptyList, VEmptyList -> 
           return match_
-        | PDestructList (p1, p2), VListCons (Any v1, v2) ->
+        | PDestructList (p1, p2), VListCons { hd = Any v1 ; tl = v2 } ->
           match_two (p1, v1) (p2, v2)
         | _ -> 
           return No_match

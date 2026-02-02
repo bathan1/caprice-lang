@@ -285,8 +285,8 @@ primary_expr:
   | OPEN_BRACE CLOSE_BRACE
     { ERecord Record.empty }
   | OPEN_BRACKET list_items=separated_list(SEMICOLON, expr) CLOSE_BRACKET
-    { List.fold_right (fun e acc -> 
-        EListCons (e, acc)
+    { List.fold_right (fun hd tl -> 
+        EListCons { hd ; tl }
       ) list_items EEmptyList }
   | OPEN_PAREN e=expr CLOSE_PAREN
     { e }
@@ -312,7 +312,7 @@ op_expr:
   | left=expr MINUS right=expr
     { EBinop { left ; binop = BMinus ; right } }
   | hd=expr DOUBLE_COLON tl=expr
-    { EListCons (hd, tl) }
+    { EListCons { hd ; tl } }
   | left=expr EQUAL_EQUAL right=expr
     { EBinop { left ; binop = BEqual ; right } }
   | left=expr NOT_EQUAL right=expr
