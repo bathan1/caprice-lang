@@ -107,29 +107,27 @@
 %%
 
 prog:
-  | nonempty_list(statement) EOF
+  | statement+ EOF
     { $1 }
   ;
 
 statement:
   | LET b=binding EQUALS defn=expr
     { SLet { name = fst b ; annot = snd b ; defn } }
-  | LET name=l_ident params=nonempty_list(l_ident) EQUALS body=expr
+  | LET name=l_ident params=l_ident+ EQUALS body=expr
     { SLet { name ; annot = None ; defn = mk_curried_fun params body } }
   | LET name=l_ident tparams=typed_params COLON body_type=expr EQUALS body=expr
     { SLet { name ; annot = Some (mk_curried_funtype tparams body_type)
       ; defn = mk_curried_fun (extract_param_names tparams) body } }
-  | LET REC name=l_ident params=nonempty_list(l_ident) EQUALS body=expr
-    { SLetRec { name ; annot = None ; param = List.hd params ; defn =
-      mk_curried_fun (List.tl params) body } }
+  | LET REC name=l_ident param=l_ident params=l_ident* EQUALS body=expr
+    { SLetRec { name ; annot = None ; param ; defn = mk_curried_fun params body } }
   | LET REC name=l_ident tparams=typed_params COLON body_type=expr EQUALS body=expr
     { SLetRec { name
       ; annot = Some (mk_curried_funtype tparams body_type)
       ; param = fst (List.hd tparams)
       ; defn = mk_curried_fun (List.tl (extract_param_names tparams)) body } }
-  | LET REC b=binding EQUALS FUNCTION params=nonempty_list(l_ident) ARROW body=expr
-    { SLetRec { name = fst b ; annot = snd b ; param = List.hd params ; defn =
-      mk_curried_fun (List.tl params) body } }
+  | LET REC b=binding EQUALS FUNCTION param=l_ident params=l_ident* ARROW body=expr
+    { SLetRec { name = fst b ; annot = snd b ; param ; defn = mk_curried_fun params body } }
   ;
 
 %inline binding:
@@ -138,17 +136,18 @@ statement:
     { name, Some tau }
   | name=l_ident
     { name, None }
+  ;
 
 typed_params:
-  | nonempty_list(typed_param_group)
+  | typed_param_group+
     { List.concat $1 }
   ;
 
 typed_param_group:
-  | single_typed_param
-    { [ $1 ] }
-  | multiple_typed_params
-    { $1 }
+  | OPEN_PAREN tp=typed_param CLOSE_PAREN
+    { [ tp ] }
+  | OPEN_PAREN TYPE type_params=ttype_param+ CLOSE_PAREN
+    { type_params }
   ;
 
 %inline typed_name:
@@ -159,27 +158,17 @@ typed_param_group:
   | name=l_ident COLON_EQUAL e=expr
     { name, ETypeSingle e }
 
-%inline single_typed_param:
-  | OPEN_PAREN p=typed_name CLOSE_PAREN
+%inline typed_param:
+  | p=typed_name
     { fst p, (None, snd p) }
-  | OPEN_PAREN DEP p=typed_name CLOSE_PAREN
-  | OPEN_PAREN DEPENDENT p=typed_name CLOSE_PAREN
+  | DEP p=typed_name
+  | DEPENDENT p=typed_name
     { fst p, (Some (fst p), snd p) }
-  // | OPEN_PAREN name=l_ident COLON tau=expr CLOSE_PAREN
-  //   { name, (None, tau) }
-  // | OPEN_PAREN name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
-  //   { name, (None, ETypeRefine { var = name ; tau ; predicate }) }
-  // | OPEN_PAREN DEP name=ident COLON tau=expr CLOSE_PAREN
-  // | OPEN_PAREN DEPENDENT name=ident COLON tau=expr CLOSE_PAREN
-  //   { name, (Some name, tau) }
-  // | OPEN_PAREN DEP name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
-  // | OPEN_PAREN DEPENDENT name=ident COLON tau=expr PIPE predicate=expr CLOSE_PAREN
-  //   { name, (Some name, ETypeRefine { var = name ; tau ; predicate }) }
   ;
 
-%inline multiple_typed_params:
-  | OPEN_PAREN TYPE type_ids=nonempty_list(ident) CLOSE_PAREN (* underscore not allowed as type parameter *)
-    { List.map (fun type_id -> type_id, (Some type_id, EType)) type_ids }
+%inline ttype_param:
+  | type_id=ident
+    { type_id, (Some type_id, EType) }
   ;
 
 expr:
@@ -191,17 +180,16 @@ expr:
     { ETuple (left, right) }
   | IF if_=expr THEN then_=expr ELSE else_=expr %prec prec_if
     { EIf { if_ ; then_ ; else_ } }
-  | FUNCTION params=nonempty_list(l_ident) ARROW body=expr %prec prec_fun 
+  | FUNCTION params=l_ident+ ARROW body=expr %prec prec_fun 
     { mk_curried_fun params body }
   | stmt=statement IN body=expr %prec prec_let
     { ELet { stmt ; body } }
-  | MATCH subject=expr WITH PIPE? patterns=match_expr_list END
+  | MATCH subject=expr WITH ioption(PIPE) patterns=match_expr_list END
     { EMatch { subject ; patterns } }
   ;
 
 %inline type_expr:
-  | PIPE v_type=variant_type_body (* pipe optional before first variant *)
-  | v_type=variant_type_body
+  | ioption(PIPE) v_type=variant_type_body
     { ETypeVariant v_type }
   | MU var=l_ident DOT body=expr %prec prec_mu
     { ETypeMu { var ; body } }
@@ -216,7 +204,7 @@ expr:
   (* standard dependent function type *)
   | OPEN_PAREN pair=typed_name CLOSE_PAREN mode=type_arrow codomain=expr
     { ETypeFun { domain = Some (fst pair), snd pair ; codomain ; mode } }
-  | OPEN_PAREN TYPE type_ids=nonempty_list(ident) CLOSE_PAREN mode=type_arrow codomain=expr
+  | OPEN_PAREN TYPE type_ids=ident+ CLOSE_PAREN mode=type_arrow codomain=expr
     { List.fold_right (fun type_id acc ->
       ETypeFun { domain = Some type_id, EType ; codomain = acc ; mode }
       ) type_ids codomain }
@@ -290,9 +278,9 @@ primary_expr:
       ) list_items EEmptyList }
   | OPEN_PAREN e=expr CLOSE_PAREN
     { e }
-  | STRUCT stmts=list(statement) END (* may be empty *)
+  | STRUCT stmts=statement* END (* may be empty *)
     { EModule stmts }
-  | SIG val_decls=list(val_decl) END
+  | SIG val_decls=val_decl* END
     { ETypeModule val_decls }
   | record_type_or_refinement
     { $1 }
@@ -405,12 +393,8 @@ variant_label:
 
 /* **** Pattern matching **** */
 
-match_arm:
-  | pat=pattern ARROW body=expr
-    { pat, body }
-
 match_expr_list:
-  | separated_nonempty_list(PIPE, match_arm)
+  | separated_nonempty_list(PIPE, pat=pattern ARROW body=expr { pat, body })
     { $1 }
 
 pattern:
