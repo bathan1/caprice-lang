@@ -385,10 +385,11 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
 
   module Match_result = struct
     type t =
-      | Match
-      | Match_bindings of env
+      | Match of env
       | No_match
       | Failure of string
+
+    let match_ = Match Env.empty
   end
 
   module Make_match (Monad : Utils.Types.MONAD) = struct
@@ -396,15 +397,11 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
 
     let ( let* ) = Monad.bind
 
-    let bind_res (m : Match_result.t m) (f : Env.t option -> Match_result.t m) : Match_result.t m =
+    let bind_res (m : Match_result.t m) (f : Env.t -> Match_result.t m) : Match_result.t m =
       let* m in
       match m with
-      | (No_match | Failure _) as r ->
-        return r
-      | Match ->
-        f None
-      | Match_bindings env ->
-        f (Some env)
+      | (No_match | Failure _) as r -> return r
+      | Match env -> f env
 
     (*
       In case we match on a symbol, we must resolve the symbol to a value.
@@ -418,15 +415,12 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
         let open Match_result in
         match p, v with
         | PAny, _ ->
-          return Match
+          return match_
         | PVariable id, v -> 
-          return @@ Match_bindings (Env.singleton id (to_any v))
+          return @@ Match (Env.singleton id (Any v))
         | PPatternAs (pat, id), v ->
-          bind_res (matches pat v) (function
-            | Some env ->
-              return (Match_bindings (Env.set id (Any v) env))
-            | None ->
-              return (Match_bindings (Env.singleton id (Any v)))
+          bind_res (matches pat v) (fun env ->
+            return @@ Match (Env.set id (Any v) env)
           )
         | PPatternOr p_ls, v ->
           let rec try_patterns = function
@@ -454,9 +448,9 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
         | PTuple (p1, p2), VTuple (Any v1, Any v2) ->
           match_two (p1, v1) (p2, v2)
         | PUnit, VUnit ->
-          return Match
+          return match_
         | PEmptyList, VEmptyList -> 
-          return Match
+          return match_
         | PDestructList (p1, p2), VListCons (Any v1, v2) ->
           match_two (p1, v1) (p2, v2)
         | _ -> 
@@ -466,16 +460,10 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
         : type a b. Pattern.t * a t -> Pattern.t * b t -> Match_result.t m
         = fun (p1, v1) (p2, v2) ->
         let open Match_result in
-        bind_res (matches p1 v1) (function
-          | None ->
-            matches p2 v2
-          | Some env ->
-            bind_res (matches p2 v2) (function
-              | None ->
-                return (Match_bindings env)
-              | Some env' ->
-                return (Match_bindings (Env.extend env env'))
-            )
+        bind_res (matches p1 v1) (fun env ->
+          bind_res (matches p2 v2) (fun env' ->
+            return @@ Match (Env.extend env env')
+          )
         )
       in
       matches pat v
