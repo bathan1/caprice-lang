@@ -31,17 +31,6 @@ module Make (K : Smt.Symbol.KEY) = struct
       |> String.concat " ; ")
     ^ "}"
 
-
-  (**
-    [remove_greater max_key t] is the map [t] filtered to only have keys not
-    exceeding [max_key].
-  *)
-  let remove_greater (max_key : K.t) (m : t) : t =
-    let new_m, i_opt, _ = Utils.Uid.Map.split (K.uid max_key) m in
-    match i_opt with
-    | Some i -> Utils.Uid.Map.add (K.uid max_key) i new_m
-    | None -> new_m
-
   let of_model (model : K.t Smt.Model.t) : t =
     List.fold_left (fun acc uid ->
       let v =
