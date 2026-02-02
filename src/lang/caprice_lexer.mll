@@ -1,5 +1,5 @@
 {
-  open CapriceParserDesc
+  open Caprice_parser
   open Lexing
   let incr_lineno lexbuf =
     let pos = lexbuf.lex_curr_p in

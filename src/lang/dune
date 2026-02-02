@@ -1,9 +1,9 @@
 (include_subdirs unqualified)
 
-(ocamllex capriceLexerDesc)
+(ocamllex caprice_lexer)
 
 (menhir
- (modules capriceParserDesc))
+ (modules caprice_parser))
 
 (library
  (name lang)

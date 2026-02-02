@@ -15,7 +15,7 @@ let handle_parse_error buf f =
 let parse_program (input : in_channel) : Ast.statement list =
   let buf = Lexing.from_channel input in
   handle_parse_error buf @@ fun () ->
-  CapriceParserDesc.prog CapriceLexerDesc.token buf
+  Caprice_parser.prog Caprice_lexer.token buf
 
 let parse_file (filename : string) : Ast.statement list =
   let channel = In_channel.open_bin filename in
