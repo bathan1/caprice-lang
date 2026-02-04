@@ -39,9 +39,13 @@ type t =
   | ETypeSingle of t
   [@@deriving eq, ord]
 
+and annot =
+  | ANone
+  | AType of { tau : t ; do_check : bool }
+
 and statement =
-  | SLet of { name : Ident.t ; annot : t option ; defn : t }
-  | SLetRec of { name : Ident.t ; annot : t option ; param : Ident.t ; defn : t }
+  | SLet of { name : Ident.t ; annot : annot ; defn : t }
+  | SLetRec of { name : Ident.t ; annot : annot ; param : Ident.t ; defn : t }
   [@@deriving eq, ord]
 
 type program = statement list

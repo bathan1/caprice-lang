@@ -115,15 +115,15 @@ statement:
   | LET b=binding EQUALS defn=expr
     { SLet { name = fst b ; annot = snd b ; defn } }
   | LET name=l_ident params=l_ident+ EQUALS body=expr
-    { SLet { name ; annot = None ; defn = mk_curried_fun params body } }
+    { SLet { name ; annot = ANone ; defn = mk_curried_fun params body } }
   | LET name=l_ident tparams=typed_params COLON body_type=expr EQUALS body=expr
-    { SLet { name ; annot = Some (mk_curried_funtype tparams body_type)
+    { SLet { name ; annot = AType { tau = (mk_curried_funtype tparams body_type) ; do_check = true }
       ; defn = mk_curried_fun (extract_param_names tparams) body } }
   | LET REC name=l_ident param=l_ident params=l_ident* EQUALS body=expr
-    { SLetRec { name ; annot = None ; param ; defn = mk_curried_fun params body } }
+    { SLetRec { name ; annot = ANone ; param ; defn = mk_curried_fun params body } }
   | LET REC name=l_ident tparams=typed_params COLON body_type=expr EQUALS body=expr
     { SLetRec { name
-      ; annot = Some (mk_curried_funtype tparams body_type)
+      ; annot = AType { tau = (mk_curried_funtype tparams body_type) ; do_check = true }
       ; param = fst (List.hd tparams)
       ; defn = mk_curried_fun (List.tl (extract_param_names tparams)) body } }
   | LET REC b=binding EQUALS FUNCTION param=l_ident params=l_ident* ARROW body=expr
@@ -133,9 +133,9 @@ statement:
 %inline binding:
   | name=l_ident COLON tau=expr
   | OPEN_PAREN name=l_ident COLON tau=expr CLOSE_PAREN
-    { name, Some tau }
+    { name, AType { tau ; do_check = true } }
   | name=l_ident
-    { name, None }
+    { name, ANone }
   ;
 
 typed_params:

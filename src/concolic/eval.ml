@@ -1176,14 +1176,16 @@ let eval
   *)
   and eval_statement (stmt : Ast.statement) : (Ident.t * Val.any, Val.Env.t) m =
     match stmt with
-    | SLet { name ; annot = None ; defn } ->
+    | SLet { name ; annot = ANone ; defn }
+    | SLet { name ; annot = AType { do_check = false ; _ } ; defn } ->
       let* v = eval defn in
       return (name, v)
-    | SLetRec { name ; annot = None ; param ; defn } ->
+    | SLetRec { name ; annot = ANone ; param ; defn }
+    | SLetRec { name ; annot = AType { do_check = false ; _ } ; param ; defn } ->
       let* env = read in
       let v = to_any (VFunFix { fvar = name ; param ; closure = { captured = defn ; env } }) in
       return (name, v)
-    | SLet { name ; annot = Some tau ; defn } ->
+    | SLet { name ; annot = AType { tau ; _ } ; defn } ->
       let* tval = eval_type tau in
       let* v = eval defn in
       fork_on_left ~reason:CheckLetExpr
@@ -1192,7 +1194,7 @@ let eval
           let* w = wrap v tval in
           return (name, w)
         )
-    | SLetRec { name ; annot = Some tau ; param ; defn } ->
+    | SLetRec { name ; annot = AType { tau ; _ } ; param ; defn } ->
       let* tval = eval_type tau in
       let* env = read in
       let* v =

@@ -498,9 +498,10 @@ and iequal_closure bindings closure1 closure2 =
   (* check that types annotations on variables are the same *)
   and iequal_type_opts bindings var1 var2 =
     match var1, var2 with
-    | None, None ->
+    | ANone, ANone
+    | AType { do_check = false ; _ } , AType { do_check = false ; _ } ->
       make true
-    | Some t1, Some t2 ->
+    | AType { tau = t1 ; _ } , AType { tau = t2 ; _ } ->
       iequal_expr bindings t1 t2
     | _ ->
       make false
