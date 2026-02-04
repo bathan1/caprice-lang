@@ -14,7 +14,7 @@ let default : t =
   ; max_step       = Step 100_000
   ; global_timeout = Mtime.Span.(10 * s)
   ; do_splay       = false
-  ; do_wrap        = false
+  ; do_wrap        = true
   ; is_random      = false
   ; check_index    = None
   }  
@@ -34,7 +34,7 @@ let of_argv =
   and+ do_splay = 
     value & flag & info ["s"; "splay"] ~doc:"Do type splay"
   and+ do_wrap = 
-    value & opt (enum (["yes", true; "no", false])) true
+    value & opt (enum (["yes", true; "no", false])) default.do_wrap
     & info ["w"; "wrap"] ~doc:"Wrap flag: yes or no. Default is yes."
   and+ is_random = 
     value & flag & info ["r"; "random"] ~doc:"Randomize"
