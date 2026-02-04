@@ -12,7 +12,7 @@ Via opam, install OCaml 5.4.0 and then install the dependencies. Answer y/yes to
 
 ```cmd
 opam switch create 5.4.0
-opam install .
+opam install . --deps-only
 ```
 
 Then, build the repository with dune:
