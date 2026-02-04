@@ -1,0 +1,164 @@
+(* TEST
+  include splayable;
+*)
+
+
+(*
+  This file is a best effort port of the well typed code in
+    https://github.com/samsa1/ocaml/blob/4f44b16ec6dcd45061bd4a991471600cf16bc3c2/testsuite/tests/typing-modular-explicits/general.ml
+  which are general modular explicit (i.e. module-dependent functions) uses.
+*)
+
+let Typ = sig val t : type end
+
+let Add = sig val t : type val add : t -> t -> t end
+
+let id (dep T : Typ) (x : T.t) : T.t =
+  x
+
+let id2 : (T : Typ) -> T.t -> T.t =
+  fun A x -> x
+
+let Int = struct
+  let t = int
+end
+
+let Bool = struct
+  let t = bool
+end
+
+let f (x : int) (y : bool) : int * bool =
+  id Int x, id Bool y
+
+let Map = sig
+  val t : type --> type
+  val map : (type a b) -> (a -> b) -> t a -> t b
+end
+
+let map (dep M : Map) (type a b) (f : a -> b) (x : M.t a) : M.t b =
+  M.map a b f x
+
+let List = struct
+  let t = list
+  let rec map : (type a b) -> (a -> b) -> list a -> list b =
+    fun a b f l ->
+      match l with
+      | [] -> []
+      | hd :: tl -> f hd :: map a b f tl
+      end
+end
+
+let b_list = map List int bool (fun i -> i > 0) [3; 1; 4]
+
+let MapCombine (M1 : Map) (M2 : Map) : Map = struct
+  let t a = M2.t (M1.t a)
+  let map a b f = map M2 (M1.t a) (M1.t b) (map M1 a b f)
+end
+
+let b_list_list = map (MapCombine List List) int bool
+                    (fun i -> i > 0) [[3; 2]; [2]; []]
+
+(* see s_list_arrayb in the linked file. Caprice can handle this! *)
+let b_list_listb =
+  map
+    (MapCombine (struct
+      let t a = `A of a
+      let map a b f x =
+        match x with
+        | `A x -> `A (f x)
+        end
+    end) List) int bool
+    (fun i -> i > 0) [`A 0]
+
+let b_list_listb =
+  map
+    (MapCombine (struct let t a = list a let map = List.map end) List)
+    int bool (fun i -> i > 0) [[3; 2]; [2]; []]
+
+let F (_ : unit) : Map = struct
+  let t = list
+  let map = List.map
+end
+
+let ok = map (F ()) int bool (fun i -> i > 0) [3]
+
+(* Works, but `try_unify` does not in the OCaml source. *)
+(* Various other conversions work here but are brittle in OCaml. *)
+let unify (f : (T : Typ) -> T.t -> T.t) : (A : Add) -> A.t -> A.t =
+  f
+
+let M : sig
+  val f1 : unit -> (M : Typ) -> (type a) -> a -> a
+  val f : (M : Typ) -> M.t -> M.t
+end = struct
+  let f1 = fun _ M a x -> x (* OCaml source does not provide an implementation. Anything will do *)
+  let f M = f1 () M M.t (* fails in OCaml due to value restriction. But I guess we skirt it here in order to do the type application *)
+end
+
+let Coerce = sig
+  val a : type
+  val b : type
+  val coerce : a -> b
+end
+
+let coerce (dep C : Coerce) (x : C.a) : C.b =
+  C.coerce x
+
+let Coerce' a b = sig
+  val a := a
+  val b := b
+  val coerce : a -> b
+end
+
+let incr_general
+  (type a)
+  (dep Cfrom : Coerce' a int)
+  (Cto : Coerce' int Cfrom.a)
+  (x : a) : a =
+  coerce Cto (1 + coerce Cfrom x)
+
+let CoerceToInt = sig
+  val a : type
+  val b := int
+  val coerce : a -> int
+end
+
+let CoerceFromInt b = sig
+  val a := int
+  val b := b
+  val coerce : int -> b
+end
+
+(* Need to eta convert in order to provide C1.a *)
+let incr_general'' : (C1 : CoerceToInt) -> (CoerceFromInt C1.a) -> C1.a -> C1.a =
+  fun C1 -> incr_general C1.a C1
+
+(* The source has an incr_general' that is identical but without explicit coercions *)
+
+let rec f : (T : Typ) -> int -> T.t -> T.t -> T.t =
+  fun T n x y ->
+    if n == 0
+    then x
+    else f T (n - 1) y x
+
+(* It might ruin the point of the test a bit to write the types, but we don't have type inference, so... *)
+let should_be_principal (f : (M : Typ) -> (N : Typ) -> M.t * N.t) : Int.t * Int.t =
+  f Int Int
+
+(* Provided in PR description, not in the linked file *)
+let MONAD = sig
+  val m : type --> type
+  val return : (type a) -> a -> m a
+  val bind : (type a b) -> m a -> (a -> m b) -> m b
+end
+
+let rec mapM (dep M : MONAD) (type a b) (f : a -> M.m b) (ls : list a) : M.m (list b) =
+  match ls with
+  | [] -> M.return (list b) []
+  | x::xs ->
+    M.bind b (list b) (f x) (fun y ->
+      M.bind (list b) (list b) (mapM M a b f xs) (fun ys ->
+        M.return (list b) (y :: ys)
+      )
+    )
+  end
