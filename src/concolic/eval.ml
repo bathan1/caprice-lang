@@ -1176,25 +1176,27 @@ let eval
   *)
   and eval_statement (stmt : Ast.statement) : (Ident.t * Val.any, Val.Env.t) m =
     match stmt with
-    | SLet { name ; annot = ANone ; defn }
-    | SLet { name ; annot = AType { do_check = false ; _ } ; defn } ->
+    | SLet { name ; annot = ANone ; defn } ->
       let* v = eval defn in
       return (name, v)
-    | SLetRec { name ; annot = ANone ; param ; defn }
-    | SLetRec { name ; annot = AType { do_check = false ; _ } ; param ; defn } ->
+    | SLetRec { name ; annot = ANone ; param ; defn } ->
       let* env = read in
       let v = to_any (VFunFix { fvar = name ; param ; closure = { captured = defn ; env } }) in
       return (name, v)
-    | SLet { name ; annot = AType { tau ; _ } ; defn } ->
+    | SLet { name ; annot = AType { tau ; do_check } ; defn } ->
       let* tval = eval_type tau in
       let* v = eval defn in
-      fork_on_left ~reason:CheckLetExpr
-        ~left:{ run_failing = check v tval }
-        ~right:(
-          let* w = wrap v tval in
-          return (name, w)
-        )
-    | SLetRec { name ; annot = AType { tau ; _ } ; param ; defn } ->
+      let wrapped_val =
+        let* w = wrap v tval in
+        return (name, w)
+      in
+      if do_check then
+        fork_on_left ~reason:CheckLetExpr
+          ~left:{ run_failing = check v tval }
+          ~right:wrapped_val
+      else
+        wrapped_val
+    | SLetRec { name ; annot = AType { tau ; do_check } ; param ; defn } ->
       let* tval = eval_type tau in
       let* env = read in
       let* v =
@@ -1211,12 +1213,16 @@ let eval
           { captured = defn ; env = Env.set name self env } }
         )
       in
-      fork_on_left ~reason:CheckLetExpr
-        ~left:{ run_failing = check v tval }
-        ~right:(
-          let* w = wrap v tval in
-          return (name, w)
-        )
+      let wrapped_val =
+        let* w = wrap v tval in
+        return (name, w)
+      in
+      if do_check then
+        fork_on_left ~reason:CheckLetExpr
+          ~left:{ run_failing = check v tval }
+          ~right:wrapped_val
+      else
+        wrapped_val
 
   (*
     -------------------------------
