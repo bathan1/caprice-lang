@@ -1,0 +1,19 @@
+(* TEST
+  include finite-well-typed;
+*)
+
+let t (n : int) : type =
+  | `A of if n == 0 then bottom else int
+  | `B of bool
+
+let f : t 0 -> `B of bool =
+  fun x -> x
+
+let g : (n : int) -> t n -> `B of bool =
+  fun n x ->
+    match x with
+    | `A _ -> `B true
+    | y -> y
+    end
+
+let h : bottom -> int = fun _ -> true
