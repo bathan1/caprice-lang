@@ -210,7 +210,7 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VBool b ->
       Atom_cell.to_string Bool.to_string b
     | VFunClosure { param ; closure = _ } ->
-      Format.sprintf "(fun %s -> <closure>)" (Ident.to_string param)
+      Format.sprintf "(fun %s -> <body>)" (Ident.to_string param)
     | VVariant { label ; payload } -> 
       Format.sprintf "(%s %s)" (Labels.Variant.to_string label) (any_to_string payload)
     | VRecord map_body ->
@@ -221,12 +221,12 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VModule map_body ->
       Labels.Record.Map.to_list map_body
       |> List.map (fun (key, data) -> Format.sprintf "let %s = %s" (Labels.Record.to_string key) (any_to_string data))
-      |> String.concat "\n"
+      |> String.concat " "
       |> Format.sprintf "struct %s end"
     | VTuple (v1, v2) ->
       Format.sprintf "(%s, %s)" (any_to_string v1) (any_to_string v2)
     | VFunFix { fvar ; param ; closure = _ } ->
-      Format.sprintf "(fix %s(%s). <closure>)" (Ident.to_string fvar) (Ident.to_string param)
+      Format.sprintf "(fix %s(%s). <body>)" (Ident.to_string fvar) (Ident.to_string param)
     | VEmptyList ->
       "[]"
     | VListCons { hd ; tl } ->
@@ -256,33 +256,33 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     | VTypeBool -> 
       "bool"
     | VTypeMu { var ; closure = _ } ->
-      Format.sprintf "(mu %s. <closure>)" (Ident.to_string var)
+      Format.sprintf "(mu %s. <body>)" (Ident.to_string var)
     | VTypeList t ->
       Format.sprintf "(list %s)" (to_string t)
     | VTypeFun { domain ; codomain ; mode } ->
       let s_arrow = match mode with Funtype.Nondet -> "->" | Det -> "-->" in
       begin match codomain with
       | CodValue cod_tval -> Format.sprintf "%s %s %s" (to_string domain) s_arrow (to_string cod_tval)
-      | CodDependent (id, _closure) -> Format.sprintf "(%s : %s) %s <closure>" (Ident.to_string id) (to_string domain) s_arrow
+      | CodDependent (id, _closure) -> Format.sprintf "(%s : %s) %s <codomain>" (Ident.to_string id) (to_string domain) s_arrow
       end
     | VTypeRecord map_body ->
       if Labels.Record.Map.is_empty map_body then "{:}" else
       Labels.Record.Map.to_list map_body
-      |> List.map (fun (key, data) -> Format.sprintf "%s : %s" (Labels.Record.to_string key) (to_string data))
+      |> List.map (fun (label, tau) -> Format.sprintf "%s : %s" (Labels.Record.to_string label) (to_string tau))
       |> String.concat " ; "
       |> Format.sprintf "{ %s }"
     | VTypeModule { captured = alist ; env = _ } ->
       alist
-      |> List.map (fun (label, _) -> Format.sprintf "val %s : <closure>" (Labels.Record.to_string label))
-      |> String.concat "\n"
+      |> List.map (fun (label, _closure) -> Format.sprintf "val %s" (Labels.Record.to_string label))
+      |> String.concat " "
       |> Format.sprintf "sig %s end"
     | VTypeVariant map_body ->
       Labels.Variant.Map.to_list map_body
-      |> List.map (fun (key, data) -> Format.sprintf "%s of %s" (Labels.Variant.to_string key) (to_string data))
+      |> List.map (fun (label, tau) -> Format.sprintf "%s of %s" (Labels.Variant.to_string label) (to_string tau))
       |> String.concat " | "
       |> Format.sprintf "(%s)"
     | VTypeRefine { var ; tau ; predicate = _closure } ->
-      Format.sprintf "{ %s : %s | <closure> }" (Ident.to_string var) (to_string tau)
+      Format.sprintf "{ %s : %s | <predicate> }" (Ident.to_string var) (to_string tau)
     | VTypeTuple (t1, t2) ->
       Format.sprintf "(%s * %s)" (to_string t1) (to_string t2)
     | VTypeSingle Any v ->
