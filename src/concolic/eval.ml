@@ -414,10 +414,13 @@ let eval
     EVALUATE RECURSIVE TYPE TO A NON-REC TYPE VALUE
     -----------------------------------------------
 
-    Vanishes if a cycle is detected. Example cycles include
+    Fails if a cycle is detected. Example cycles include
       mu t. t (* 1-cycle *)
     and
       mu t. let s = mu s. t in s (* 2-cycle *)
+    A cycle is not detected in
+      mu t. { a : int ; b : t }
+    and non-splayed any generation of it will diverge.
   *)
   and unroll_mu
     : 'env. Ident.t -> Ast.t Val.closure -> (Val.tval, 'env) m
@@ -429,7 +432,7 @@ let eval
       | VTypeMu { var ; closure } ->
         (* Check for cycle by looking for this type in what we've seen before *)
         if List.exists (Val.equal_closure closure) seen then
-          vanish
+          mismatch @@ non_contractive_type t_body
         else
           go (closure :: seen) var closure
       | _ ->
@@ -675,6 +678,9 @@ let eval
       | _ -> refute
       end
     | VTypeMu { var ; closure = ({ captured ; env } as closure) } -> (* don't force v *)
+      (* Begin by unrolling to ensure the type is contractive.
+        Noncontractive types are disallowed cause an error. *)
+      let* t_body = unroll_mu var closure in
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
         let* lazy_v = read_cell SLazy cell in
@@ -682,8 +688,6 @@ let eval
         | LValue any_v ->
           check any_v t
         | LLazy LGenList _ ->
-          (* Unroll this type in case it is a list, then check. *)
-          let* t_body = unroll_mu var closure in
           check v t_body
         | LLazy LGenMu { var = var' ; closure = { captured = captured' ; env = env' } } ->
           (* TODO: these names (with the "prime") go the other direction as the spec *)
@@ -695,9 +699,7 @@ let eval
           let* wrapped = wrap_multi wrapping_types genned in
           check wrapped t_body
         end
-      | _ ->
-        let* t_body = unroll_mu var closure in
-        check v t_body
+      | _ -> check v t_body
       end
     | VTypeList t_body -> (* don't force v *)
       begin match v with

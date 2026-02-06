@@ -1,0 +1,6 @@
+(* TEST 
+  include refutable;
+*)
+
+(* ERROR: this type is not contractive *)
+let _ : (mu x. x) -> list unit = fun x -> x
