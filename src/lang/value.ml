@@ -381,6 +381,10 @@ module Make (Atom_cell : Utils.Comparable.P1) = struct
     let shape_mismatch (v1 : any) (v2 : any) : string =
       Format.sprintf "Bad intensional equality: %s and %s are not of the same shape."
         (any_to_string v1) (any_to_string v2)
+
+    let non_contractive_type (t : tval) : string =
+      Format.sprintf "Bad type: %s is not contractive."
+        (to_string t)
   end
 
   module Match_result = struct

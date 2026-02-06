@@ -1,0 +1,20 @@
+(* TEST
+  typing = no-error;
+  speed = slow;
+*)
+
+(* It is impossible to construct a member of this ... *)
+let t = mu x. { a : int ; b : x }
+
+(* So generation diverges, and this is not refuted. *)
+let f : t -> int = fun _ -> true
+
+(*
+  We are not yet sure how we want to handle types like t.
+  This test just solidifies the current behavior:
+    - on a type like `mu x. x`, we flag the type as not
+      contractive, and we error.
+    - on a type like `t` above, we diverge when generating,
+      and any member of it written by the programmer would
+      also have diverged when evaluating. Hence it is empty.
+*)
