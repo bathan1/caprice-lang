@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 (* flatten the input down to just a list of ints and bools *)

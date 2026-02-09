@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* Here is part of an ngram program implementation that contains a type error I made along the way to implementing the full program. *)

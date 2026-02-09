@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let t a = mu t. list (a * t)

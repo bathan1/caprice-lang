@@ -1,5 +1,5 @@
 (* TEST
-  include finite-well-typed;
+  include exhaust;
   flags += " -w no";
 *)
 

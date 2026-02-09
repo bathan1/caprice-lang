@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
   skip; # have not yet implemented parameterized mu, so this is parse error for now
 *)
 

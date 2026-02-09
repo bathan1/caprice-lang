@@ -1,6 +1,5 @@
 (* TEST
-  include finite-well-typed;
-  positions = "6:1-6:39, 8:1-8:38, 10:1-23:26";
+  include exhaust;
 *)
 
 let _ : bool = false && (assert false)

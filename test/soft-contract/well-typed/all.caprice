@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let rec all (type a) (p : a -> bool) (xs : list a) : bool =

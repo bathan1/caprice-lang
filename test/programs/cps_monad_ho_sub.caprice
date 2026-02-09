@@ -1,5 +1,5 @@
 (* TEST
-  include refutable; # is a usage error caught by wrap.
+  include refute; # is a usage error caught by wrap.
 *)
 
 (*

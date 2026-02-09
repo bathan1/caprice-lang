@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* The well-typed version of this is the same as the well-typed of duck_typing_colors1 *)

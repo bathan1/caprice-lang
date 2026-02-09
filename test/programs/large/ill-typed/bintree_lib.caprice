@@ -1,7 +1,5 @@
 (* TEST
-  typing = ill-typed;
-  flags = " -s"; # the goal is to test that splaying finds errors
-  speed = fast;
+  include refute;
 *)
 
 let t a = mu t.

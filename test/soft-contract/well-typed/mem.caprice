@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let rec mem (x : int) (xs : list int) : bool =

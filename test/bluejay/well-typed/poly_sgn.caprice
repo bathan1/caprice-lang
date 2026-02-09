@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let sign : type = `Even of { even : bool } | `Odd of { odd : bool }

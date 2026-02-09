@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
   speed = slow; # about a second sometimes
 *)
 

@@ -23,8 +23,6 @@ let to_string = function
   | Exhausted_pruned -> "Exausted pruned tree"
   | Exhausted        -> "Exhausted"
 
-let is_signal_to_stop = function
-  (* If we found an error, then we don't want to do any more runs *)
+let is_error = function
   | Found_error _ -> true
-  (* ... otherwise, we still should try to pop another target *)
   | _ -> false

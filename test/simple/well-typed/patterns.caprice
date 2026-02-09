@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let ls = [ 1 ; 2 ; 3 ]

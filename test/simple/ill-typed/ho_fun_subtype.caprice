@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 let f (g : (int -> unit) -> unit) : ({ m : int | m == 10 } -> unit) -> unit =

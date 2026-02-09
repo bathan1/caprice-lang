@@ -7,28 +7,31 @@ type t = Preset of Ident.t [@@unboxed]
 let s (Ident.Ident id) = id
 
 (*
-  Preset: splaying can quickly prove this well typed.
+  Preset: splaying can quickly prove this well typed, or the program
+    has finitely many paths.
 
   (* TEST
     typing = exhausted;
     speed = fast;
-    flags += " -s -r";
+    flags += " -r";
     typecheck; 
   *)
     ===
   (* TEST 
-    include splayable;
+    include exhaust;
   *)
 *)
-let splayable : Ctl_ast.t =
+let exhaust : Ctl_ast.t =
   [ Env_stmt (Assign (speed, s fast))
   ; Env_stmt (Assign (typing, s exhausted))
-  ; Env_stmt (Append (flags, " -s -r"))
+  ; Env_stmt (Append (flags, " -r"))
   ; Test Typecheck
   ]
 
 (*
   Preset: there is a refutation, i.e. a path that shows the program is ill-typed.
+    First tries to type splay, which will go wrong. Then tries to refute without
+    type splaying, where an error is then found.
 
   (* TEST
     typing = ill-typed;
@@ -38,10 +41,10 @@ let splayable : Ctl_ast.t =
   *)
     ===
   (* TEST 
-    include refutable;
+    include refute;
   *)
 *)
-let refutable : Ctl_ast.t =
+let refute : Ctl_ast.t =
   [ Env_stmt (Assign (speed, s fast))
   ; Env_stmt (Assign (typing, s ill_typed))
   ; Env_stmt (Append (flags, " -r"))
@@ -49,29 +52,8 @@ let refutable : Ctl_ast.t =
   ]
 
 (*
-  Preset: there are naturally finitely many paths.
-
-  (* TEST
-    typing = exhausted;
-    speed = fast;
-    flags += " -r";
-    typecheck; 
-  *)
-    ===
-  (* TEST 
-    include finite-well-typed;
-  *)
-*)
-let finite_well_typed : Ctl_ast.t =
-  [ Env_stmt (Assign (speed, s fast))
-  ; Env_stmt (Assign (typing, s exhausted))
-  ; Env_stmt (Append (flags, " -r"))
-  ; Test Typecheck
-  ]
-
-(*
-  Preset: there are infinitely many paths, and splaying would be
-    incomplete; we are expecting timeout.
+  Preset: there are infinitely many paths, and splaying is
+    incomplete; we are expecting timeout on these tests.
 
   (* TEST
     typing = no-error;
@@ -92,8 +74,7 @@ let diverges : Ctl_ast.t =
   ]
 
 let lookup : ident -> Ctl_ast.t = function
-  | Ident "finite-well-typed" -> finite_well_typed
-  | Ident "splayable" -> splayable
-  | Ident "refutable" -> refutable
+  | Ident "exhaust" -> exhaust
+  | Ident "refute" -> refute
   | Ident "diverges" -> diverges
   | _ -> []

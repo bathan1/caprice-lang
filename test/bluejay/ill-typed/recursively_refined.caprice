@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
   skip; # recursive calls are not yet allowed in type annotations for that recursive function
 *)
 

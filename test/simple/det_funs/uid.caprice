@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* ERROR: the deterministic `uid` function can give the same "id" to different values. *)

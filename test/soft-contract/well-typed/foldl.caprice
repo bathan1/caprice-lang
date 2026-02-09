@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let rec foldl (f : int -> bool -> bool) (z : bool) (xs : list int) : bool =

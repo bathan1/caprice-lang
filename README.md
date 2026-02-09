@@ -74,10 +74,10 @@ To write programs in the Caprice language, it's suggested to install the VS Code
 Write Caprice programs in `.caprice` files. With the project built, you can run the type checker with the `./typecheck.exe` executable. For example,
 
 ```cmd
-./typecheck.exe filename.caprice -s
+./typecheck.exe filename.caprice
 ```
 
-type checks `filename.caprice` by type splaying (`-s`) to encourage termination. The output may contain one of several messages:
+type checks `filename.caprice`. The output may contain one of several messages:
 - `Exhausted`: every possible program path was run and exhausted, and **the program is well-typed**.
 - `Found error`: the type checker found some type refutation, so **the program is ill-typed**.
 - `Exhausted pruned tree`: many program paths were run, and the tree was exhausted up to some depth without error, but the program may still be ill-typed.

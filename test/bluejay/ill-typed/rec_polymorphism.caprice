@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 let rec f (type a') (a : a') (i : int) : a' =

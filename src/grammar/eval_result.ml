@@ -34,4 +34,5 @@ let to_answer = function
   (* finished to a value *)
   | Done -> Exhausted
 
-let is_signal_to_stop res = Answer.is_signal_to_stop @@ to_answer res
+(* stop on errors *)
+let is_signal_to_stop res = Answer.is_error @@ to_answer res

@@ -40,8 +40,8 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
   [ `Quit of Answer.t | `Cont of Target.t list * Answer.t ] =
   let rec collect acc_targets acc_answer = function
     | [] -> `Cont (acc_targets, acc_answer)
-    | run :: _ when Answer.is_signal_to_stop run.Logged_run.answer ->
-      `Quit run.answer
+    | run :: _ when Answer.is_error run.Logged_run.answer ->
+      `Quit run.answer (* an error is the goal, and we found it! *)
     | run :: tl ->
       let new_targets, is_pruned =
         make_targets run.target (Rev_stem.to_forward_path run.rev_stem) ~max_tree_depth
@@ -60,41 +60,59 @@ module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
 let loop ~(options : Options.t) ~(run_count : Utils.Counter.t)
   (pgm : Lang.Ast.program) : Answer.t Lwt.t =
   let open Lwt.Syntax in
-  let eval =
-    Eval.eval pgm ~max_step:options.max_step ~do_splay:options.do_splay
-      ~do_wrap:options.do_wrap
-  in
-  let rec loop tq =
-    let* () = Lwt.pause () in
-    match Target_queue.pop tq with
-    | Some (target, tq) ->
-      begin match Default_solver.solve target.target_formula with
-      | Sat model -> loop_on_model target tq model
-      | Unknown -> let+ a = loop tq in Answer.min Answer.Unknown a
-      | Unsat -> loop tq
-      end
-    | None -> Lwt.return Answer.Exhausted
 
-  and loop_on_model target tq model =
-    let run_num = Utils.Counter.next run_count in
-    let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
-    let* runs =
-      if run_num = 0 then
-        eval ienv target
-          ~default_int:(fun () -> 0)
-          ~default_bool:(fun () -> false)
-      else
-        eval ienv target
-          ~default_int:(fun () -> Random.int_in_range ~min:(-10) ~max:10)
-          ~default_bool:Random.bool
+  let run do_splay =
+    let eval =
+      Eval.eval pgm ~max_step:options.max_step ~do_splay
+        ~do_wrap:options.do_wrap
     in
-    match collect_logged_runs runs ~max_tree_depth:options.max_tree_depth with
-    | `Quit answer -> Lwt.return answer
-    | `Cont (targets, answer) ->
-      let+ a = loop (Target_queue.push_list tq targets) in
-      Answer.min a answer
+    let rec loop tq =
+      let* () = Lwt.pause () in
+      match Target_queue.pop tq with
+      | Some (target, tq) ->
+        begin match Default_solver.solve target.target_formula with
+        | Sat model -> loop_on_model target tq model
+        | Unknown -> let+ a = loop tq in Answer.min Answer.Unknown a
+        | Unsat -> loop tq
+        end
+      | None -> Lwt.return Answer.Exhausted
+
+    and loop_on_model target tq model =
+      let run_num = Utils.Counter.next run_count in
+      let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
+      let* runs =
+        if run_num = 0 then
+          eval ienv target
+            ~default_int:(fun () -> 0)
+            ~default_bool:(fun () -> false)
+        else
+          eval ienv target
+            ~default_int:(fun () -> Random.int_in_range ~min:(-10) ~max:10)
+            ~default_bool:Random.bool
+      in
+      match collect_logged_runs runs ~max_tree_depth:options.max_tree_depth with
+      | `Quit answer ->
+        Lwt.return answer
+      | `Cont (targets, answer) ->
+        let+ a = loop (Target_queue.push_list tq targets) in
+        Answer.min a answer
+    in
+    loop Target_queue.initial
   in
-  loop Target_queue.initial
+
+  match options.splay with
+  | Splay_only -> run true
+  | Never_splay -> run false
+  | Fallback ->
+    (* try to splay first *)
+    let* answer = run true in
+    if Answer.is_error answer then
+      (* The loop stopped due to error, so try without splaying in
+        case the error was due to incompleteness. *)
+      let () = Utils.Counter.reset run_count in
+      run false
+    else
+      Lwt.return answer
 
 let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
   (pgm : Lang.Ast.program) : Answer.t =
