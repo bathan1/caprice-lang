@@ -1,8 +1,5 @@
 (* TEST
-  typing = no-error;
-  flags = " -t 2.0 -w yes";
-  speed = slow;
-  typecheck;
+  include diverges;
 *)
 
 (* y combinator *)

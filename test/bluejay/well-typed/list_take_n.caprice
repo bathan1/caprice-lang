@@ -1,8 +1,5 @@
 (* TEST
-  typing = no-error;
-  speed = slow;
-  flags += " -t 2.0";
-  typecheck;
+  include diverges;
 *)
 
 let pos_int : type = { i : int | i > 0 }

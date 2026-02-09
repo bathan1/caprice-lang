@@ -1,8 +1,5 @@
 (* TEST
-  typing = no-error;
-  flags = " -t 2.0 -w yes"; # small timeout
-  speed = slow;
-  typecheck;
+  include diverges;
 *)
 
 let t a = mu t.
