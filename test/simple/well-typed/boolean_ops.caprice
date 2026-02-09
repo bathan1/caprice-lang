@@ -1,5 +1,6 @@
 (* TEST
   include exhaust;
+  positions = "6:1-6:39, 8:1-8:38, 10:1-23:26";
 *)
 
 let _ : bool = false && (assert false)
