@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* error is that xs should be nonempty *)

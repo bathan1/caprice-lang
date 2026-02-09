@@ -1,8 +1,9 @@
 (* TEST
-  include refutable;
-  flags += " -s"; 
-  # Adding splaying until we have a mode to splay all the
-  # well-typed stuff because the error here is at the bottom.
+  typing = ill-typed;
+  flags = " -s only";
+  speed = fast;
+  # The type checking pipeline does not efficiently find errors deep
+  # in non-splayed programs. For now, force this to splay.
 *)
 
 (*

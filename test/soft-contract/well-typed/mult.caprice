@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let rec mult (dep n : int | n > 0) (dep m : int | m >= 0) : { i : int | i == n * m } =

@@ -1,6 +1,6 @@
 
 (* TEST
-  include finite-well-typed;
+  include exhaust;
 *)
 
 let t : type -> type -> type = fun a r -> { continuation : (a -> r) -> r }

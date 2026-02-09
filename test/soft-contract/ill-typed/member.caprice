@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* type-error is base case doesn't return bool *)

@@ -1,7 +1,5 @@
 (* TEST
-  typing = ill-typed;
-  flags += " -s";
-  typecheck;
+  include refute;
 *)
 
 

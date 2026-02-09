@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* ERROR: the type of g misuses the argument. This is only caught when the argument is wrapped

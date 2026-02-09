@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 (* freer monads already do hkt parameters with mu, but this simplifies it a bit *)

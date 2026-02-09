@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* type error is that list can be empty and has no last. An `is_nonempty` predicate fixes it. *)

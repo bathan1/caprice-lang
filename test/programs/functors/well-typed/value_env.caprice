@@ -1,5 +1,5 @@
 (* TST
-  include splayable;
+  include exhaust;
 *)
 
 let Ident = struct

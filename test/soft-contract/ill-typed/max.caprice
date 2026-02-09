@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* error is that max is not performed on `x` but predicate relies on x *)

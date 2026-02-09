@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* Is this slow just because the negative case diverges and takes a while? *)

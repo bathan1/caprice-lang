@@ -1,5 +1,5 @@
 (* TEST
-  include splayable;
+  include exhaust;
 *)
 
 let rec sum (dep x : int | x >= 0) : { y : int | y == x * (x + 1) / 2 } =

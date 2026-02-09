@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 let f (a : bool) (b : bool) (c : bool) : { b : bool | b } =

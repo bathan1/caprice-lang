@@ -1,5 +1,5 @@
 (* TEST
-  include refutable;
+  include refute;
 *)
 
 (* ERROR: this checks if (int -> int) is in (int --> int). It's not. *)
