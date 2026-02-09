@@ -22,7 +22,7 @@ let exhausted_s = "exhausted"
 let ill_typed_s = "ill-typed"
 let no_error_s = "no-error"
 let flags_s = "flags"
-
+let positions_s = "positions"
 let typing = Ident typing_s
 let speed = Ident speed_s
 let fast = Ident fast_s
@@ -31,3 +31,4 @@ let exhausted = Ident exhausted_s
 let ill_typed = Ident ill_typed_s
 let no_error = Ident no_error_s
 let flags = Ident flags_s
+let positions = Ident positions_s

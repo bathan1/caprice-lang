@@ -48,7 +48,11 @@ and statement =
   | SLetRec of { name : Ident.t ; annot : annot ; param : Ident.t ; defn : t }
   [@@deriving eq, ord]
 
+type statement_with_pos = (statement * (Lexing.position * Lexing.position))
+
 type program = statement list
+
+type program_with_pos = statement_with_pos list
 
 module Tools = struct
   let id_of_stmt = function

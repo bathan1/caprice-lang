@@ -103,11 +103,17 @@
 %nonassoc IDENTIFIER
 
 %start <statement list> prog
+%start <statement_with_pos list> prog_with_pos
 
 %%
 
 prog:
   | statement+ EOF
+    { $1 }
+  ;
+
+prog_with_pos:
+  | statement_with_pos+ EOF
     { $1 }
   ;
 
@@ -129,6 +135,10 @@ statement:
   | LET REC b=binding EQUALS FUNCTION param=l_ident params=l_ident* ARROW body=expr
     { SLetRec { name = fst b ; annot = snd b ; param ; defn = mk_curried_fun params body } }
   ;
+
+statement_with_pos:
+  | s=statement
+    { (s, ($startpos, $endpos)) }
 
 %inline binding:
   | name=l_ident COLON tau=expr
