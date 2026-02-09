@@ -1,6 +1,5 @@
 (* TEST
-  typing = no-error;
-  typecheck;
+  include diverges;
 *)
 
 

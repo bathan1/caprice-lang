@@ -1,6 +1,5 @@
 (* TEST
-  typing = no-error;
-  speed = slow;
+  include diverges;
 *)
 
 (* It is impossible to construct a member of this ... *)

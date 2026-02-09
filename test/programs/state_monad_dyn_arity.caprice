@@ -1,8 +1,5 @@
 (* TEST
-  typing = no-error;
-  flags = " -t 3.0";
-  speed = slow;
-  typecheck;
+  include diverges;
 *)
 
 (* 
