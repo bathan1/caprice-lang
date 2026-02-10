@@ -1,7 +1,7 @@
 
 let make_one ~options fname =
   try 
-    let pgm = Lang.Parser.Plain.parse_file fname in
+    let pgm = Lang.Parser.parse_file fname in
     let run pgm =
       match
         Concolic.Loop.begin_ceval pgm

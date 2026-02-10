@@ -34,7 +34,7 @@ module Make(Parser_entry: PARSER_ENTRY) = struct
     parse_file src_file
 end
 
-module Plain = Make (struct
+include Make (struct
   type result = Ast.statement list
   let entry_point = Caprice_parser.prog
 end)
