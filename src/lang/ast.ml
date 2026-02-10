@@ -48,7 +48,9 @@ and statement =
   | SLetRec of { name : Ident.t ; annot : annot ; param : Ident.t ; defn : t }
   [@@deriving eq, ord]
 
-type statement_with_pos = (statement * (Lexing.position * Lexing.position))
+type pos_span = { begins : Lexing.position ; ends : Lexing.position }
+
+type statement_with_pos = statement * pos_span
 
 type program = statement list
 

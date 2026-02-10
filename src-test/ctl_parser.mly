@@ -9,6 +9,7 @@
 %token EQUAL
 %token INCLUDE
 %token TYPECHECK
+%token POSITIONCHECK
 %token SKIP
 %token SEMI
 %token <string> IDENTIFIER
@@ -32,6 +33,7 @@ ctl_item:
 
 test_item:
   | TYPECHECK { Typecheck }
+  | POSITIONCHECK { Positioncheck }
   | SKIP      { Skip }
 
 env_item:

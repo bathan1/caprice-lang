@@ -76,14 +76,16 @@ let line_col1 (p : Lexing.position) : (int * int) =
 let positions_test filename env = 
   match (get_var env positions "") with
   | "" -> true
-  | s -> 
-    let expect_positions = parse_positions s in
-    let statements_with_pos = Lang.Parser.Positioned.parse_file filename in
-    let positions =
-      statements_with_pos
-      |> List.map (fun (_statement, (start_pos, end_pos)) -> (line_col1 start_pos, line_col1 end_pos))
+  | expected_str -> 
+    let open Lang.Ast in
+    let expected = parse_positions expected_str in
+    let actual =
+      filename
+      |> Lang.Parser.Positioned.parse_file
+      |> List.map (fun (_statement, { begins ; ends }) ->
+          (line_col1 begins, line_col1 ends))
     in
-    if (expect_positions = positions) then true else false
+    expected = actual
 
 let check_true msg b =
   Alcotest.(check bool msg true b)
@@ -101,5 +103,8 @@ let make_test (filename : string) : unit Alcotest.test_case option =
         Alcotest.skip ()
       | Typecheck ->
         check_true "failed type check" @@
-        (compute_typecheck_test filename env && positions_test filename env)
+        compute_typecheck_test filename env
+      | Positioncheck ->
+        check_true "failed position check" @@
+        positions_test filename env
     )

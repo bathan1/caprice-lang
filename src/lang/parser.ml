@@ -2,6 +2,11 @@ open Lexing
 
 exception Parse_error of exn * int * int * string
 
+module type PARSER_ENTRY = sig
+  type result
+  val entry_point : (Lexing.lexbuf -> Caprice_parser.token) -> Lexing.lexbuf -> result
+end
+
 module Base = struct
   let handle_parse_error buf f =
     try f ()
@@ -29,18 +34,18 @@ module Base = struct
     file_parser src_file
 end
 
-module Plain = struct
-  let parse_program input : Ast.statement list = Base.parse_program Caprice_parser.prog input
-
-  let parse_file filename : Ast.statement list = Base.parse_file parse_program filename
-
+module Make(E: PARSER_ENTRY) = struct
+  let parse_program (input : in_channel) : E.result = Base.parse_program E.entry_point input
+  let parse_file (filename : string) : E.result = Base.parse_file parse_program filename
   let parse_program_from_argv = Base.parse_program_from_argv parse_file
 end
 
-module Positioned = struct
-  let parse_program input : Ast.statement_with_pos list = Base.parse_program Caprice_parser.prog_with_pos input
+module Plain = Make (struct
+  type result = Ast.statement list
+  let entry_point = Caprice_parser.prog
+end)
 
-  let parse_file filename : Ast.statement_with_pos list = Base.parse_file parse_program filename
-
-  let parse_program_from_argv = Base.parse_program_from_argv parse_file
-end
+module Positioned = Make (struct
+  type result = Ast.statement_with_pos list
+  let entry_point = Caprice_parser.prog_with_pos
+end)

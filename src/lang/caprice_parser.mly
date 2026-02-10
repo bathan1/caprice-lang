@@ -138,7 +138,7 @@ statement:
 
 statement_with_pos:
   | s=statement
-    { (s, ($startpos, $endpos)) }
+    { (s, { begins = $startpos ; ends = $endpos } ) }
 
 %inline binding:
   | name=l_ident COLON tau=expr
