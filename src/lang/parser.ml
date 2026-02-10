@@ -7,37 +7,31 @@ module type PARSER_ENTRY = sig
   val entry_point : (Lexing.lexbuf -> Caprice_parser.token) -> Lexing.lexbuf -> result
 end
 
-module Base = struct
-  let handle_parse_error buf f =
-    try f ()
-    with exn ->
-      let curr = buf.lex_curr_p in
-      let line = curr.pos_lnum in
-      let column = curr.pos_cnum - curr.pos_bol in
-      let tok = lexeme buf in
-      raise @@ Parse_error (exn, line, column, tok)
-  
-  let parse_program entry_point (input : in_channel) =
+let handle_parse_error buf f =
+  try f ()
+  with exn ->
+    let curr = buf.lex_curr_p in
+    let line = curr.pos_lnum in
+    let column = curr.pos_cnum - curr.pos_bol in
+    let tok = lexeme buf in
+    raise @@ Parse_error (exn, line, column, tok)
+
+module Make(Parser_entry: PARSER_ENTRY) = struct
+  let parse_program (input : in_channel) : Parser_entry.result = 
     let buf = Lexing.from_channel input in
     handle_parse_error buf @@ fun () ->
-    entry_point Caprice_lexer.token buf
-  
-  let parse_file parser (filename : string) =
-    In_channel.with_open_bin filename parser
-  
-  let parse_program_from_argv file_parser =
+    Parser_entry.entry_point Caprice_lexer.token buf
+
+  let parse_file (filename : string) : Parser_entry.result = 
+    In_channel.with_open_bin filename parse_program
+    
+  let parse_program_from_argv =
     let open Cmdliner.Term.Syntax in
     let+ src_file = 
       let open Cmdliner.Arg in
       required & pos 0 (some' file) None & info [] ~docv:"FILE" ~doc:"Input filename"
     in
-    file_parser src_file
-end
-
-module Make(E: PARSER_ENTRY) = struct
-  let parse_program (input : in_channel) : E.result = Base.parse_program E.entry_point input
-  let parse_file (filename : string) : E.result = Base.parse_file parse_program filename
-  let parse_program_from_argv = Base.parse_program_from_argv parse_file
+    parse_file src_file
 end
 
 module Plain = Make (struct
