@@ -13,22 +13,17 @@ let propagate_parse_error buf filename f =
     raise @@ Parse_error (exn, line, column, tok, filename)
 
 let has_test filename =
-  let input = In_channel.open_bin filename in
-  let buf = Lexing.from_channel input in
-  let b = Ctl_lexer.is_test buf in
-  In_channel.close input;
-  b
+  In_channel.with_open_bin filename @@ fun ic ->
+    ic
+    |> Lexing.from_channel
+    |>Ctl_lexer.is_test
 
 let parse_test_header (filename : string) : Ctl_ast.t option =
   if not (has_test filename) then
     None
   else begin
-    let input = In_channel.open_bin filename in
-    let buf = Lexing.from_channel input in
-    let res =
+    In_channel.with_open_bin filename @@ fun ic ->
+      let buf = Lexing.from_channel ic in
       propagate_parse_error buf filename @@ fun () ->
-      Some (Ctl_parser.ctl_script Ctl_lexer.token buf)
-    in
-    In_channel.close input;
-    res
+        Some (Ctl_parser.ctl_script Ctl_lexer.token buf)
   end
