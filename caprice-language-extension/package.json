@@ -2,7 +2,7 @@
   "name": "caprice-language",
   "displayName": "Caprice Language",
   "description": "Syntax highlighting for Caprice programming language",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "engines": {
     "vscode": "^1.74.0"
   },
@@ -32,6 +32,12 @@
         "language": "caprice",
         "scopeName": "source.caprice",
         "path": "./syntaxes/caprice.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "caprice",
+        "path": "./snippets/caprice.json"
       }
     ]
   }

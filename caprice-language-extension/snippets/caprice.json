@@ -1,0 +1,41 @@
+{
+	"match block": {
+		"prefix": "match",
+		"body": [
+			"match ${1:expr} with",
+			"| ${2:pattern} -> ${0:expr1}",
+			"end"
+		],
+		"description": "Start a full match expression (single case)"
+	},
+	"match block (2 cases)": {
+		"prefix": "match2",
+		"body": [
+			"match ${1:expr} with",
+			"| ${2:pattern1} -> ${3:expr1}",
+			"| ${4:pattern2} -> ${0:expr2}",
+			"end"
+		],
+		"description": "Start a full match expression (two cases)"
+  	},
+	"with block": {
+		"prefix": "with",
+		"body": [
+			"with",
+			"| ${1:pattern} -> ${0:expr1}",
+			"end"
+		],
+		"description": "Add a 'with' branch block to an existing construct"
+	},
+	
+	"with block (2 cases)": {
+		"prefix": "with2",
+		"body": [
+			"with",
+			"| ${1:pattern1} -> ${2:expr1}",
+			"| ${3:pattern2} -> ${0:expr2}",
+			"end"
+		],
+		"description": "Add a 'with' branch block with two cases"
+  	}
+}
