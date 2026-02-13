@@ -7,7 +7,7 @@ Caprice is a simple, semantically typed functional language with types as values
 
 The syntax of Caprice is OCaml-like, except if OCaml did not need special syntax for types and modules; types and modules are first class in Caprice.
 
-Caprice uses semantics types. The type system is not syntactic. Only explicitly type-annotated statements are checked, and they are checked semantically: an expression $e$ has type $\tau$ if $e$ evaluates to a value with type $\tau$. This is done with concolic evaluation to enumerate the evaluations of $e$ and attempt to find a resulting value $v$ that is _not_ in $\tau$. Remember: since only explicitly typed statements are checked, all code is otherwise completely untyped. There is no type inference.
+Caprice uses semantic types. The type system is not syntactic. Only explicitly type-annotated statements are checked, and they are checked semantically: an expression $e$ has type $\tau$ if, for every possible execution, $e$ evaluates to a value with type $\tau$. This is done with concolic evaluation to enumerate the evaluations of $e$ and attempt to find a resulting value $v$ that is _not_ in $\tau$. Remember: since only explicitly typed statements are checked, all code is otherwise completely untyped. There is no type inference.
 
 Every Caprice program is a module. Modules are statement lists, where a statement defines a binding.
 
@@ -15,7 +15,7 @@ Caprice's semantics are eager.
 
 ## Examples
 
-We will walk through a series of examples to demonstrate the syntax of Caprice.
+We will walk through a series of examples to demonstrate the syntax of Caprice. All code in this walkthrough is available [here](./res/examples.caprice).
 
 ### Programs are statement lists
 
@@ -54,7 +54,7 @@ end
 let x : T.t = 0
 ```
 
-Notice that there is no abstraction of the type `T.t`. The mirror program in OCaml would have a type error because `T.t` is abstract. However, with semantic type checking, this program always checks because it cannot go wrong.
+Notice that there is no abstraction of the type `T.t`. The mirror program in OCaml would have a type error because `T.t` is abstract. However, with semantic type checking, this program checks because `T.t` concretely evaluates to `int`.
 
 ### Functions
 
@@ -83,7 +83,7 @@ So how does one write polymorphic functions? Caprice has dependently typed funct
 let rec map (a : type) (b : type) (f : a -> b) (ls : list a) : list b = ...
 ```
 
-However, since the rest of the parameters _depend_ on `a` and `b`, they must be annotated as `dependent`, or `dep` for short.
+However, since the rest of the parameters _depend_ on `a` and `b`, they must be annotated as `dependent`, or `dep` for short. This annotation tells the type checker that the remainder of the function type can refer to that parameter.
 
 ```ocaml
 let rec map (dep a : type) (dep b : type) (f : a -> b) (ls : list a) : list b = ...
@@ -117,11 +117,11 @@ But notice that since types are values, and `map` takes two type arguments befor
 let _ = map int bool (fun i -> i % 2 == 0) [1;2;3]
 ```
 
-### Other types
+We saw here that Caprice has dependently typed functions: a function's codomain type can depend the value of its domain. Caprice has a number of other types, too, some of which we've already seen, including refinements, variants, records, modules, tuples, recursive types, `type`, unit, and singleton. We will cover some of those next.
 
-We saw above that Caprice has dependently typed functions: a function's codomain type can depend the value of its domain. Caprice has a number of other types, too, some of which we've already seen, including refinements, variants, records, modules, `type`, unit, and singleton.
+### Refinement types
 
-Let's cover the example from the [README](../README.md), one statement at a time.
+Let's cover the example from the [README](../README.md), one statement at a time, to see refinement types.
 
 First, we define a type `pos_int` that is a refinement on integers; it is the set of all positive integers.
 
@@ -174,4 +174,101 @@ let factors (dep n : pos_int) : Collection.t { m : pos_int | n % m == 0 } =
   factors 1
 ```
 
-Excerise to the reader: write this using `Collection'` instead. One will notice when doing so that it is beneficial to not have abstract types because with these refinements, it is very helpful to benefit from subtyping: e.g. `{ i : int | p } <: int` for any predicate `p`, and `list` is covariant.
+Exercise to the reader: write this using `Collection'` instead. One will notice when doing so that it is beneficial to not have abstract types because with these refinements, it is very helpful to benefit from subtyping: e.g. `{ i : int | p } <: int` for any predicate `p`, and `list` is covariant.
+
+Refinement predicates are arbitrary code that evaluates to a boolean. For example, one can define a functional queue where the front is empty only if the back is empty. Here, we use the binary operation `*` to create a tuple type.
+
+```ocaml
+let t a =
+  | `Queue of { t : list a * list a |
+    match t with
+    | [], _ :: _ -> false
+    | _ -> true
+    end
+  }
+
+let is_nonempty q =
+  match q with
+  | `Queue (_ :: _, _) -> true
+  | _ -> false
+  end
+```
+
+Then, with the help of the "smart constructor" `queue` (and appropriately defined list helper `list_rev`), we know that the following code is well typed by maintaining the invariant defined in the type function `t`.
+
+```ocaml
+let queue (type a) (t : list a * list a) : t a =
+  match t with
+  | [], r -> `Queue (list_rev a r, [])
+  | f, r -> `Queue (f, r)
+  end
+
+let snoc (type a) (q : t a) (x : a) : { q : t a | is_nonempty q } =
+  match q with
+  | `Queue (f, r) ->
+    queue a (f, x :: r)
+  end
+
+let tail (type a) (q : t a | is_nonempty q) : t a =
+  match q with
+  | `Queue (_ :: f, r) ->
+    queue a (f, r)
+  end
+```
+
+### Variants
+
+Variants don't need to be declared ahead of time. Remember that in semantic typing, if it works, it works! Just use variants inline (but note that all variants must have a payload).
+
+```ocaml
+let x : `A of int | `B of bool = `A 3
+```
+
+Or don't! Create an `option` type like this:
+
+```ocaml
+let option a =
+  | `None of unit
+  | `Some of a
+
+let example : option int = `Some 5
+
+let get (type a) (default : a) (opt : option a) : a =
+  match opt with
+  | `None () -> default
+  | `Some x -> x
+  end
+```
+
+### Records
+
+Record types are declared with a colon, and record expressions/values with an equals sign. Access fields with dot notation.
+
+```ocaml
+let point : { x : int ; y : int } = { x = 1 ; y = 2 }
+let _ : int = point.x
+```
+
+Note that it is not possible, for subtyping soundness reasons, to match on records or detect labels in them safely. One can only project the labels that are explicitly declared; anything else is a failure.
+
+### Recursive types
+
+Use `mu` to define recursive types. Note that parametric recursive types (to allow polymorphic recursion at the type level) are not yet supported.
+
+```ocaml
+let tree a = mu t.
+  | `Leaf of unit
+  | `Branch of { item : a ; left : t ; right : t }
+
+let rec size (type a) (t : tree a) : int =
+  match t with
+  | `Leaf () -> 0
+  | `Branch b -> 1 + size a b.left + size a b.right
+  end
+```
+
+## Wrap up
+
+There is plenty of sugar and many features that are not described here. This doc is only the tip of the Caprice iceberg. See the `test/` directory, specifically `test/programs` (and the subdirectories there) for complete examples combining many features.
+
+Remember to install the [language extension](../caprice-language-extension/) if you're going to code in Caprice!
