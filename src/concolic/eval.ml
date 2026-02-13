@@ -690,7 +690,6 @@ let eval
         | LLazy LGenList _ ->
           check v t_body
         | LLazy LGenMu { var = var' ; closure = { captured = captured' ; env = env' } } ->
-          (* TODO: these names (with the "prime") go the other direction as the spec *)
           let* a = allow_inputs (gen VType) in (* fresh type to use as a stub *)
           let* t_body = local' (Env.set var a env) (eval_type captured) in
           let* t_body' = local' (Env.set var' a env') (eval_type captured') in

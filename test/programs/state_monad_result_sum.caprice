@@ -3,7 +3,9 @@
   flags += " -w no";
 *)
 
-(* TODO: we would like this to be fast with wrap *)
+(* TODO: we would like this to be fast with wrap.
+    The problem is explained at the site.
+ *)
 
 (*
   This is well-typed because even though it looks like the
@@ -70,6 +72,9 @@ let sum n =
     then M.read (* read final state, which holds sum *)
     else
       let m = M.modify (fun i -> i + x) in (* add x to sum *)
+      (* Calling `bind` here does a wrap check on (fun _ -> ...), which has
+        to run the function. After that passes, the function is run again inside
+        of `bind`. That's two runs per recursive call, and hence exponential. *)
       M.bind unit int m (fun _ ->
         loop (x - 1)
       )
@@ -80,4 +85,5 @@ let sum n =
     (fun res state -> res) (* extract result *)
     0 (* initial state *)
 
+(* The running time (with wrap) is exponential in `n` for `sum n`. *)
 let x : { i : int | i == 55 } = sum 10
