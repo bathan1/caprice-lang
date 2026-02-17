@@ -17,10 +17,15 @@ let handle_parse_error buf f =
     raise @@ Parse_error (exn, line, column, tok)
 
 module Make(Parser_entry: PARSER_ENTRY) = struct
-  let parse_program (input : in_channel) : Parser_entry.result = 
-    let buf = Lexing.from_channel input in
+  let parse_lexbuf (buf : Lexing.lexbuf) : Parser_entry.result =
     handle_parse_error buf @@ fun () ->
     Parser_entry.entry_point Caprice_lexer.token buf
+
+  let parse_string (input : string) : Parser_entry.result =
+    parse_lexbuf (Lexing.from_string input)
+
+  let parse_program (input : in_channel) : Parser_entry.result =
+    parse_lexbuf (Lexing.from_channel input)
 
   let parse_file (filename : string) : Parser_entry.result = 
     In_channel.with_open_bin filename parse_program
