@@ -56,11 +56,12 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
 module Default_Z3 = Overlays.Typed_z3.Default
 module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
 
-(* Does not do its own timeout, even though timeout is passed in with options *)
-let loop ~(options : Options.t) ~(run_count : Utils.Counter.t)
-  (pgm : Lang.Ast.program) : Answer.t Lwt.t =
+let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * int =
   let open Lwt.Syntax in
 
+  let run_count = Utils.Counter.create () in
+
+  (* Run the program concolically in a loop *)
   let run do_splay =
     let eval =
       Eval.eval pgm ~max_step:options.max_step ~do_splay
@@ -100,35 +101,36 @@ let loop ~(options : Options.t) ~(run_count : Utils.Counter.t)
     loop Target_queue.initial
   in
 
-  match options.splay with
-  | Splay_only -> run true
-  | Never_splay -> run false
-  | Fallback ->
-    (* try to splay first *)
-    let* answer = run true in
-    if Answer.is_error answer then
-      (* The loop stopped due to error, so try without splaying in
-        case the error was due to incompleteness. *)
-      let () = Utils.Counter.reset run_count in
-      run false
-    else
-      Lwt.return answer
+  let run_splaying_modes () =
+    match options.splay with
+    | Splay_only -> run true
+    | Never_splay -> run false
+    | Fallback ->
+      (* try to splay first *)
+      let* answer = run true in
+      if Answer.is_error answer then
+        (* The loop stopped due to error, so try without splaying in
+          case the error was due to incompleteness. *)
+        let () = Utils.Counter.reset run_count in
+        run false
+      else
+        Lwt.return answer
+  in
 
-let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
-  (pgm : Lang.Ast.program) : Answer.t =
-  let run_count = Utils.Counter.create () in
-  if options.is_random then Random.self_init () else Random.init 999;
-  let go () =
+  let time_sec = Utils.Time.convert_span options.global_timeout ~to_:Mtime.Span.s in
+  let answer =
     try
-      let time_sec = Utils.Time.convert_span options.global_timeout ~to_:Mtime.Span.s in
-      Lwt_main.run (Lwt_unix.with_timeout time_sec @@ fun () ->
-        loop pgm ~options ~run_count
-      )
+      Lwt_main.run (Lwt_unix.with_timeout time_sec run_splaying_modes)
     with
     | Lwt_unix.Timeout -> Answer.Timeout options.global_timeout
   in
-  let span, answer = Utils.Time.time go () in
+  answer, Utils.Counter.get run_count
+
+let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
+  (pgm : Lang.Ast.program) : Answer.t =
+  if options.is_random then Random.self_init () else Random.init 999;
+  let span, (answer, run_count) = Utils.Time.time (begin_loop ~options) pgm in
   if print_outcome then
     Format.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
-      (Utils.Time.span_to_ms span) (Utils.Counter.get run_count) (Answer.to_string answer);
+      (Utils.Time.span_to_ms span) run_count (Answer.to_string answer);
   answer
