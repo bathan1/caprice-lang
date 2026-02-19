@@ -209,7 +209,10 @@ let rec subst
         not_ e''
     | And e_ls ->
       let e_ls' = List.map (subst v s) e_ls in
-      and_ e_ls'
+      if e_ls == e_ls' then
+        e
+      else
+        and_ e_ls'
     | Binop (op, e1, e2) ->
       let e1' = subst v s e1 in
       let e2' = subst v s e2 in
