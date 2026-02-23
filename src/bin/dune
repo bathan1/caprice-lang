@@ -4,6 +4,7 @@
   ; internal
   lang
   concolic
+  lsp
   ; external
   cmdliner
   benchmark

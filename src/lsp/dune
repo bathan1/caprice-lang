@@ -1,0 +1,4 @@
+(library
+ (name lsp)
+ (modules protocol)
+ (libraries yojson))
