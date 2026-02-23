@@ -16,14 +16,6 @@ let parse_speed = function
   | "slow" -> `Slow
   | "fast" | _ -> `Quick
 
-let parse_positions (s : string) : ((int * int) * (int * int)) list =
-  s
-  |> String.split_on_char ','
-  |> List.map String.trim
-  |> List.map (fun piece -> 
-      Scanf.sscanf piece "%d:%d-%d:%d"
-      (fun a b c d -> ((a, b), (c, d))))
-
 let interp_env (env : Environment.t) (ast : Ctl_ast.t) : Environment.t * testkind =
   let testkind = ref Typecheck in
   let rec interp env ast = 
@@ -74,18 +66,27 @@ let line_col1 (p : Lexing.position) : (int * int) =
   (p.pos_lnum, p.pos_cnum - p.pos_bol + 1)
 
 let positions_test filename env = 
-  match (get_var env positions "") with
-  | "" -> true
-  | expected_str -> 
-    let open Lang.Ast in
-    let expected = parse_positions expected_str in
-    let actual =
-      filename
-      |> Lang.Parser.Positioned.parse_file
-      |> List.map (fun (_statement, { begins ; ends }) ->
-          (line_col1 begins, line_col1 ends))
-    in
-    expected = actual
+  let open Lang.Ast in
+  let expected = Position_checks.parse_positions (get_var env positions "") in
+  let actual =
+    filename
+    |> Lang.Parser.Positioned.parse_file
+    |> List.map (fun (_statement, { begins ; ends }) ->
+        (line_col1 begins, line_col1 ends))
+  in
+  expected = actual
+
+let statement_index_test filename env =
+  let open Position_checks in
+  let spans = parse_spans_from_file filename in
+  let expected = parse_int_list (get_var env statement_indexes "") in
+  let actual =
+    parse_changes (get_var env changes "")
+    |> List.map (fun change ->
+      Lsp.Statement_matcher.compute_check_index spans [change]
+      |> Option.value ~default:(-1))
+  in
+  expected = actual
 
 let check_true msg b =
   Alcotest.(check bool msg true b)
@@ -107,4 +108,7 @@ let make_test (filename : string) : unit Alcotest.test_case option =
       | Positioncheck ->
         check_true "failed position check" @@
         positions_test filename env
+      | Statementindexcheck ->
+        check_true "failed statement index check" @@
+        statement_index_test filename env
     )

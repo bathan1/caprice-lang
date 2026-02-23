@@ -1,4 +1,6 @@
 (library
  (name lsp)
- (modules protocol)
- (libraries yojson))
+ (modules protocol positions statement_matcher)
+ (libraries
+  lang
+  yojson))

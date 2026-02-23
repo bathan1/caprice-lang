@@ -1,11 +1,8 @@
-type checker_position = {
-  line : int;
-  character : int;
-}
+open Positions
 
 type range = {
-  start_pos : checker_position;
-  end_pos : checker_position;
+  start_pos : pos;
+  end_pos : pos;
 }
 
 type checker_packet = {
@@ -15,7 +12,7 @@ type checker_packet = {
   changes : range list;
 }
 
-let parse_position json =
+let parse_position json : pos =
   let open Yojson.Safe.Util in
   {
     line = json |> member "line" |> to_int;

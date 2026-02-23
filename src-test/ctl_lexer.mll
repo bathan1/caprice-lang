@@ -33,6 +33,7 @@ and token = parse
   | "include"          { INCLUDE }
   | "typecheck"        { TYPECHECK }
   | "positioncheck"    { POSITIONCHECK }
+  | "statementindexcheck" { STATEMENTINDEXCHECK }
   | "skip"             { SKIP }
   | identchar* as s    { IDENTIFIER s }
   | ";"                { SEMI }

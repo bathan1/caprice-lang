@@ -7,13 +7,13 @@
 
 (library
  (name caprice_test)
- (public_name caprice.caprice_test)
  (synopsis "Caprice Test Language Definition and Semantics")
  (modules (:standard \ main))
  (libraries 
   ; internal
   lang
   concolic
+  lsp
   ; external
   cmdliner
   alcotest

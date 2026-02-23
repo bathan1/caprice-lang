@@ -3,9 +3,14 @@ let read_exactly ic n =
   really_input ic buf 0 n;
   Bytes.to_string buf
 
-let run_typecheck ~(options : Concolic.Options.t) source_text =
+let run_typecheck ~(options : Concolic.Options.t) (packet : Lsp.Protocol.checker_packet) =
   try
-    Lang.Parser.parse_string source_text
+    let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
+    let stmts = List.map fst stmts_with_pos in
+    let spans = List.map snd stmts_with_pos in
+    let check_index = Lsp.Statement_matcher.compute_check_index spans packet.changes in
+    let options = { options with check_index } in
+    Lang.Ast.Tools.filter_check_stmt stmts options.check_index
     |> Concolic.Loop.begin_ceval ~print_outcome:false ~options
     |> Grammar.Answer.to_string
     |> Printf.printf "ok:%s\n%!"
@@ -22,7 +27,7 @@ let process_one_change ~(options : Concolic.Options.t) =
     |> read_exactly stdin
   in
   match Lsp.Protocol.parse_checker_packet packet_text with
-  | Ok packet -> run_typecheck ~options packet.full_text
+  | Ok packet -> run_typecheck ~options packet
   | Error msg -> Printf.printf "protocol_error:%s\n%!" msg
 
 let rec server_loop ~(options : Concolic.Options.t) () =
