@@ -4,8 +4,7 @@ let typecheck_main =
   let open Cmdliner.Term.Syntax in
   let+ caprice_pgm = Lang.Parser.parse_program_from_argv
   and+ options = Concolic.Options.of_argv in
-  let filtered_pgm = Lang.Ast.Tools.filter_check_stmt caprice_pgm options.check_index in
-  Concolic.Loop.begin_ceval ~options filtered_pgm
+  Concolic.Loop.begin_ceval ~options caprice_pgm
 
 let () = 
   match Cmdliner.Cmd.eval_value' typecheck_main with

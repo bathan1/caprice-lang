@@ -16,6 +16,9 @@ let push_list (x : t) (ls : Target.t list) : t =
 let remove (BFS q : t) (target : Target.t) : t =
   BFS (Q.remove target q)
 
+let is_empty (BFS q : t) : bool =
+  Q.is_empty q
+
 let pop (BFS q : t) : (Target.t * t) option =
   match Q.pop q with
   | Some ((target, _), t) -> Some (target, BFS t)
@@ -24,4 +27,3 @@ let pop (BFS q : t) : (Target.t * t) option =
 (* contains only the empty target *)
 let initial : t =
   push_one empty Target.empty
-

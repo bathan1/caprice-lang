@@ -85,16 +85,22 @@ module Tools = struct
     match stmt with
     | SLet r -> SLet { r with annot = disable_annot_check r.annot }
     | SLetRec r -> SLetRec { r with annot = disable_annot_check r.annot }
+
+  let is_stmt_check_enabled (stmt : statement) : bool =
+    match stmt with
+    | SLet { annot = AType { do_check; tau = _ }; _ }
+    | SLetRec { annot = AType { do_check; tau = _ }; _ } -> do_check
+    | SLet { annot = ANone; _ }
+    | SLetRec { annot = ANone; _ } -> false
   
-  let filter_check_stmt (stmts : statement list) (target_idx : int option) : statement list =
-    match target_idx with
-    | None -> stmts
-    | Some target_idx ->
-      if (target_idx < 0 || target_idx >= List.length stmts) then
-        failwith (Printf.sprintf "Target index %d is out of bounds" target_idx)
-      else
-        List.mapi (fun i stmt ->
-          if i = target_idx then stmt
-          else disable_stmt_check stmt
-        ) stmts
+  let filter_check_stmt (stmts : statement list) (target_idx : int) : (statement list) option =
+    if (target_idx < 0 || target_idx >= List.length stmts) then
+      failwith (Printf.sprintf "Target index %d is out of bounds" target_idx)
+    else if not (is_stmt_check_enabled (List.nth stmts target_idx)) then
+      None
+    else
+      Some (List.mapi (fun i stmt ->
+        if i = target_idx then stmt
+        else disable_stmt_check stmt
+      ) stmts)
 end

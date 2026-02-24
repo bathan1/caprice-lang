@@ -10,7 +10,7 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Lsp.Protocol.checker
     let spans = List.map snd stmts_with_pos in
     let check_index = Lsp.Statement_matcher.compute_check_index spans packet.changes in
     let options = { options with check_index } in
-    Lang.Ast.Tools.filter_check_stmt stmts options.check_index
+    stmts
     |> Concolic.Loop.begin_ceval ~print_outcome:false ~options
     |> Grammar.Answer.to_string
     |> Printf.printf "ok:%s\n%!"
