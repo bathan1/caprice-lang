@@ -223,7 +223,7 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
     (fun res ->
       if Eval_result.is_signal_to_stop res
       then escape res (* propagate up the failure *)
-      else (Lwt_direct.yield (); return ()))
+      else ((* Lwt_direct.yield (); *) return ())) (* temporarily stop using Lwt *)
 
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind
