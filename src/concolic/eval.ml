@@ -41,7 +41,7 @@ let eval
   ~(default_bool : unit -> bool)
   ~(do_splay : bool)
   ~(do_wrap : bool)
-  : Logged_run.t list Lwt.t
+  : Logged_run.t list (* remove Lwt temporarily *)
   =
   (*
     Reads a tag from the input environment. If the tag was planned,
@@ -1287,7 +1287,7 @@ let eval
 
   in
 
-  let open Lwt.Syntax in
+  (* let open Lwt.Syntax in
   let* result, state = 
     Lwt_direct.spawn (fun () -> run (eval_statement_list pgm) target)
   in
@@ -1297,4 +1297,15 @@ let eval
     ; rev_stem = state.rev_stem
     ; answer }
   in
-  Lwt.return (this_logged_run :: state.runs)
+  Lwt.return (this_logged_run :: state.runs) *)
+  (* same code as above but without Lwt *)
+  let result, state = 
+    run (eval_statement_list pgm) target
+  in
+  let answer = Eval_result.to_answer result in
+  let this_logged_run =
+    { Logged_run.target 
+    ; rev_stem = state.rev_stem
+    ; answer }
+  in
+  this_logged_run :: state.runs
