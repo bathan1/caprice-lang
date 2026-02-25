@@ -28,3 +28,21 @@ let argv_span_conv =
         | None -> Error "Invalid time span as float seconds"
       )
     ~pp:Mtime.Span.pp
+
+type _ eff += Check_timeout : unit eff
+
+let yield_to_timer () = Effect.perform Check_timeout
+
+let with_timeout span f a =
+  let timer = Mtime_clock.counter () in
+  try
+    Ok (f a)
+  with
+  | effect Check_timeout, k ->
+    let t = Mtime_clock.count timer in
+    if Mtime.Span.is_longer t ~than:span then
+      let exception Timeout in
+      try Effect.Deep.discontinue k Timeout with
+      | Timeout -> Error t
+    else
+      Effect.Deep.continue k ()

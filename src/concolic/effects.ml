@@ -191,9 +191,9 @@ let target_to_here : 'env. (Target.t, 'env) m =
     step count. If [forked_m] is a failure case, then the result is a failure.
     Otherwise, the original state is restored, and the fork is logged as a
     run.
-    Calls [Lwt_direct.yield] because this is a good moment to check for time out.
-    Therefore, this function must be run inside an [Lwt_direct.spawn], which is
-    not guaranteed by the type system.
+    Calls [Utils.Time.yield_to_timer] because this is a good moment to check for
+    time out. Therefore, this function must be run inside [Utils.Time.with_timeout]
+    so that the effect is handled.
 *)
 let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
   let* target = target_to_here in
@@ -223,7 +223,7 @@ let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
     (fun res ->
       if Eval_result.is_signal_to_stop res
       then escape res (* propagate up the failure *)
-      else ((* Lwt_direct.yield (); *) return ())) (* temporarily stop using Lwt *)
+      else (Utils.Time.yield_to_timer (); return ()))
 
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind

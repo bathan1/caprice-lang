@@ -58,16 +58,6 @@ module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
 
 module Make (Y : sig val yield : unit -> unit end) = struct
   let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * int =
-    (* let open Lwt.Syntax in *)
-    (* hack to shadow Lwt so the following code doesn't really change *)
-    let (let+) x f = f x in
-    let (let*) x f = f x in
-    let module Lwt = struct
-      let return a = a
-      let pause () = ()
-    end
-    in
-
     let run_count = Utils.Counter.create () in
 
     (* Run the program concolically in a loop *)
@@ -77,21 +67,21 @@ module Make (Y : sig val yield : unit -> unit end) = struct
           ~do_wrap:options.do_wrap
       in
       let rec loop tq =
-        let* () = Lwt.pause () in
+        let () = Utils.Time.yield_to_timer () in
         let () = Y.yield () in
         match Target_queue.pop tq with
         | Some (target, tq) ->
           begin match Default_solver.solve target.target_formula with
           | Sat model -> loop_on_model target tq model
-          | Unknown -> let+ a = loop tq in Answer.min Answer.Unknown a
+          | Unknown -> let a = loop tq in Answer.min Answer.Unknown a
           | Unsat -> loop tq
           end
-        | None -> Lwt.return Answer.Exhausted
+        | None -> Answer.Exhausted
 
       and loop_on_model target tq model =
         let run_num = Utils.Counter.next run_count in
         let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
-        let* runs =
+        let runs =
           if run_num = 0 then
             eval ienv target
               ~default_int:(fun () -> 0)
@@ -103,9 +93,9 @@ module Make (Y : sig val yield : unit -> unit end) = struct
         in
         match collect_logged_runs runs ~max_tree_depth:options.max_tree_depth with
         | `Quit answer ->
-          Lwt.return answer
+          answer
         | `Cont (targets, answer) ->
-          let+ a = loop (Target_queue.push_list tq targets) in
+          let a = loop (Target_queue.push_list tq targets) in
           Answer.min a answer
       in
       loop Target_queue.initial
@@ -117,26 +107,21 @@ module Make (Y : sig val yield : unit -> unit end) = struct
       | Never_splay -> run false
       | Fallback ->
         (* try to splay first *)
-        let* answer = run true in
+        let answer = run true in
         if Answer.is_error answer then
           (* The loop stopped due to error, so try without splaying in
             case the error was due to incompleteness. *)
           let () = Utils.Counter.reset run_count in
           run false
         else
-          Lwt.return answer
+          answer
     in
 
-    (* let time_sec = Utils.Time.convert_span options.global_timeout ~to_:Mtime.Span.s in
     let answer =
-      try
-        Lwt_main.run (Lwt_unix.with_timeout time_sec run_splaying_modes)
-      with
-      | Lwt_unix.Timeout -> Answer.Timeout options.global_timeout
+      match Utils.Time.with_timeout options.global_timeout run_splaying_modes () with
+      | Ok a -> a
+      | Error t -> Answer.Timeout t
     in
-    answer, Utils.Counter.get run_count *)
-    (* don't do any timeout *)
-    let answer = run_splaying_modes () in
     answer, Utils.Counter.get run_count
 
   let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
@@ -178,7 +163,6 @@ type r =
 
 (* Now extend to work on many programs *)
 let ceval_many ~options pgms =
-  let open Lwt.Syntax in
   (* fencepost by beginning the evaluations *)
   let worklist =
     List.map (fun pgm ->

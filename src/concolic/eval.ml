@@ -28,9 +28,8 @@ open Grammar.Val.Error_messages
   [eval] returns the list of runs (evaluation) of the program.
   There are multiple runs because it sometimes forks the state
   to symbolically evaluate.
-  Every fork calls [Lwt_direct.yield] so that timeout can be
-  noticed reasonably frequently. This is why the return type is
-  [Lwt.t]. The caller is expected to set the timeout with [Lwt].
+  Every fork calls [Utils.Time.yield_to_timer] so that timeout can be
+  noticed reasonably frequently. Hence this must be run within a handler.
 *)
 let eval
   (pgm : Ast.statement list)
@@ -41,7 +40,7 @@ let eval
   ~(default_bool : unit -> bool)
   ~(do_splay : bool)
   ~(do_wrap : bool)
-  : Logged_run.t list (* remove Lwt temporarily *)
+  : Logged_run.t list
   =
   (*
     Reads a tag from the input environment. If the tag was planned,
@@ -1278,25 +1277,6 @@ let eval
 
   in
 
-  (* let open Lwt.Syntax in
-  let* result, state = 
-    Lwt_direct.spawn (fun () -> run (eval_statement_list pgm) target)
-  in
+  let result, state = run (eval_statement_list pgm) target in
   let answer = Eval_result.to_answer result in
-  let this_logged_run =
-    { Logged_run.target 
-    ; rev_stem = state.rev_stem
-    ; answer }
-  in
-  Lwt.return (this_logged_run :: state.runs) *)
-  (* same code as above but without Lwt *)
-  let result, state = 
-    run (eval_statement_list pgm) target
-  in
-  let answer = Eval_result.to_answer result in
-  let this_logged_run =
-    { Logged_run.target 
-    ; rev_stem = state.rev_stem
-    ; answer }
-  in
-  this_logged_run :: state.runs
+  { target ; rev_stem = state.rev_stem ; answer } :: state.runs
