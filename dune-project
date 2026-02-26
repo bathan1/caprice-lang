@@ -19,6 +19,7 @@
   alcotest
   baby
   benchmark
+  cmdliner
   menhir
   mtime
   (ocaml (>= 5.4.0))
