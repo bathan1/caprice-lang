@@ -786,8 +786,6 @@ let eval
     Check modules and records given a way to check each label and a default label.
   *)
   and check_struct
-  (* (check_label : Labels.Record.t -> 'env with_env failing)
-      ~(refute : ('a, 'env) m) ->  *)
     : type a env. (Labels.Record.t -> env with_env failing) -> refute:(a, env) m ->
       t_labels:Labels.Record.Set.t -> v_labels:Labels.Record.Set.t -> (a, env) m
     = fun check_label ~refute ~t_labels ~v_labels ->

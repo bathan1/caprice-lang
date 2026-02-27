@@ -48,7 +48,7 @@ let[@inline always][@specialise] incr_step
   { run = fun ~reject ~accept state step _ _ ->
       let step = Step.next step in
       if Step.(step > max_step)
-      then let e, s = Eval_result.fail_on_max_step step state in reject e s
+      then reject (Eval_result.Reach_max_step step) state
       else accept () state step
   }
 
@@ -59,7 +59,7 @@ let[@inline always][@specialise] incr_step
 let[@inline always] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
   { run = fun ~reject ~accept state step env _ ->
       match Env.find id env with
-      | None -> let e, s = Eval_result.fail_on_fetch id state in reject e s
+      | None -> reject (Eval_result.Unbound_variable id) state
       | Some v -> accept v state step
   }
 
@@ -201,7 +201,7 @@ let target_to_here : 'env. (Target.t, 'env) m =
     time out. Therefore, this function must be run inside [Utils.Time.with_timeout]
     so that the effect is handled.
 *)
-let fork (forked_m : (Utils.Empty.t, 'env with_env) t) : (unit, 'env) m =
+let fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
   let* target = target_to_here in
   let* s = get in
   let* ctx = read_ctx in

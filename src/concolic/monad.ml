@@ -65,9 +65,6 @@ let[@inline always][@specialise] local (f : 'env -> 'env) (x : ('a, < env : 'env
       x.run ~reject ~accept state step (f env)
   }
 
-type ('a, 'env, 'x) envt = ('a, < env : 'env ; err : 'err ; state : 'state ; ctx : 'ctx >) t
-  constraint 'x = 'err * 'state * 'ctx
-
 let local' (env : 'e) (x : ('a, < env : 'e ; .. >) t) : ('a, < env : 'env ; .. >) t =
   { run = fun ~reject ~accept state step _ ->
       x.run ~reject ~accept state step env
