@@ -3,6 +3,7 @@ open Lang
 open Effects
 open Grammar
 open Grammar.Val
+open Eval_result
 
 (* `Any` is unboxed, so this is zero overhead *)
 let[@inline always] return_any v = return (Any v)

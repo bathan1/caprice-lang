@@ -32,19 +32,24 @@ module Context = struct
     ; det_context : det_context }
 end
 
-(*
-  Make a monad out of the state and context and evaluation result.
-  - Has stateful State as well as step count
-  - Has a target as a context, and also a type parameter for the environment
-  - The error type is from Eval_result
-*)
-module M = Monad.Make (State) (Context) (Eval_result)
-include M
+include Monad
+
+type ('a, 'env) m = ('a, < err : Eval_result.t ; env : 'env ; state : State.t ; ctx : Context.t >) t
 
 module Matches = Val.Make_match (struct
-  type 'a m = ('a, Val.Env.t) M.m
-  include (M : Utils.Types.MONAD with type 'a m := 'a m)
+  type nonrec 'a m = ('a, Val.Env.t) m
+  include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
 end)
+
+let[@inline always][@specialise] incr_step 
+  : 'env. max_step:Step.t -> (unit, 'env) m
+  = fun ~max_step ->
+  { run = fun ~reject ~accept state step _ _ ->
+      let step = Step.next step in
+      if Step.(step > max_step)
+      then reject (Eval_result.Reach_max_step step) state
+      else accept () state step
+  }
 
 (**
   [fetch id] is the value associated with [id] in the environment,
@@ -53,7 +58,7 @@ end)
 let[@inline always] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
   { run = fun ~reject ~accept state step env _ ->
       match Env.find id env with
-      | None -> let e, s = Eval_result.fail_on_fetch id state in reject e s
+      | None -> reject (Eval_result.Unbound_variable id) state
       | Some v -> accept v state step
   }
 
@@ -66,7 +71,7 @@ let vanish : 'a 'env. ('a, 'env) m =
   { run = fun ~reject ~accept:_ state _ _ _ -> reject Vanish state }
 
 let mismatch : 'a 'env. string -> ('a, 'env) m = fun msg ->
-  escape (Mismatch msg)
+  escape (Eval_result.Mismatch msg)
 
 (**
   [assert_inputs_allowed] is a failure if the context disallows inputs.
@@ -85,8 +90,8 @@ let assert_inputs_allowed : 'env. (unit, 'env) m =
 *)
 let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'env) m =
   let* step = step in
-  let* { target ; _ } = read_ctx in
-  modify (fun s -> 
+  let* { Context.target ; _ } = read_ctx in
+  modify (fun (s : State.t) -> 
     { s with rev_stem = 
       let path_item =
         Path_item.Tag { tag ; alternatives ; key =
@@ -104,8 +109,8 @@ let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'e
 *)
 let push_and_log_tag (tag : Tag.t) : (unit, 'env) m =
   let* step = step in
-  let* { target ; _ } = read_ctx in
-  modify (fun s -> 
+  let* { Context.target ; _ } = read_ctx in
+  modify (fun (s : State.t) -> 
     { s with rev_stem = begin
       let path_item =
         Path_item.Tag { tag ; alternatives = [] ; key =
@@ -129,8 +134,8 @@ let push_formula_to_path ?(allow_flip : bool = true)
   if Smt.Formula.is_const formula
   then return ()
   else
-    let* { target ; _ } = read_ctx in
-    modify (fun s -> 
+    let* { Context.target ; _ } = read_ctx in
+    modify (fun (s : State.t) -> 
       { s with rev_stem =
         let path_item =
           if allow_flip then
@@ -164,7 +169,7 @@ let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
   let* () = assert_inputs_allowed in
   let* step = step in
   let log_input input = 
-    modify (fun s -> { s with logged_inputs =
+    modify (fun (s : State.t) -> { s with logged_inputs =
       Input_env.add kind (Stepkey step) input s.logged_inputs })
   in
   match Input_env.find kind (Stepkey step) input_env with
@@ -200,8 +205,8 @@ let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
   let* s = get in
   let* ctx = read_ctx in
   assert (
-    let n = s.rev_stem.total_priority in
-    let n' = Target.priority ctx.target in
+    let n = s.State.rev_stem.total_priority in
+    let n' = Target.priority ctx.Context.target in
     Path_priority.geq n n'
   );
   fork forked_m { target ; det_context = ctx.det_context }
@@ -231,7 +236,7 @@ type 'a suspension_kind =
 
 let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
   fun kind susp ->
-    let* s = get in
+    let* (s : State.t) = get in
     let map : a Suspension.Map.t =
       match kind with
       | SLazy -> s.lazies
@@ -241,7 +246,7 @@ let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
 
 let set_cell : type a env. a suspension_kind -> a Suspension.t -> a -> (unit, env) m =
   fun kind susp v ->
-    modify (fun s ->
+    modify (fun (s : State.t) ->
       match kind with
       | SLazy -> { s with lazies = Suspension.Map.add susp v s.lazies}
       | SAlist -> { s with detfun_alists = Suspension.Map.add susp v s.detfun_alists}
@@ -272,14 +277,14 @@ let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
     is a failure.
 *)
 let disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
-  local_ctx (fun ctx -> { ctx with det_context = Disallowed }) x
+  local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Disallowed }) x
 
 (**
   [allow_inputs x] runs [x] such that any [assert_inputs_allowed]
     is NOT a failure.
 *)
 let allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
-  local_ctx (fun ctx -> { ctx with det_context = Allowed }) x
+  local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Allowed }) x
 
 let run' (x : ('a, Val.Env.t) m) (target : Target.t) (s : State.t) (e : Val.Env.t) : Eval_result.t * State.t =
   match run x s e { target ; det_context = Allowed } with
