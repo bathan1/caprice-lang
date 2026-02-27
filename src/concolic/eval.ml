@@ -3,6 +3,7 @@ open Lang
 open Effects
 open Grammar
 open Grammar.Val
+open Eval_result
 
 (* `Any` is unboxed, so this is zero overhead *)
 let[@inline always] return_any v = return (Any v)
@@ -48,7 +49,7 @@ let eval
     path).
     Otherwise, fork on the left and continue on the right.
   *)
-  let fork_on_left (type a env) ~(left : (Eval_result.t, env) failing) ~(right : (a, env) m) ~reason =
+  let fork_on_left (type a env) ~(left : env with_env failing) ~(right : (a, env) m) ~reason =
     let* () = incr_step ~max_step in
     let* l_opt = allow_inputs (read_input KTag input_env) in
     match l_opt with
@@ -785,7 +786,9 @@ let eval
     Check modules and records given a way to check each label and a default label.
   *)
   and check_struct
-    : type a env. (Labels.Record.t -> (Eval_result.t, env) failing) -> refute:(a, env) m ->
+  (* (check_label : Labels.Record.t -> 'env with_env failing)
+      ~(refute : ('a, 'env) m) ->  *)
+    : type a env. (Labels.Record.t -> env with_env failing) -> refute:(a, env) m ->
       t_labels:Labels.Record.Set.t -> v_labels:Labels.Record.Set.t -> (a, env) m
     = fun check_label ~refute ~t_labels ~v_labels ->
       if Labels.Record.Set.subset t_labels v_labels then
@@ -802,7 +805,7 @@ let eval
             | Some label ->
               let* () = fork (check_label label).run_failing in
               go (Labels.Record.Set.Enum.tail enum)
-            | None -> escape Confirmation
+            | None -> escape Eval_result.Confirmation
           in
           go (Labels.Record.Set.Enum.enum t_labels)
       else
