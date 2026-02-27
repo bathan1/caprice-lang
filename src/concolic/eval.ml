@@ -48,13 +48,13 @@ let eval
     path).
     Otherwise, fork on the left and continue on the right.
   *)
-  let fork_on_left (type a env) ~(left : (Eval_result.t, env) failing) ~(right : (a, env) m) ~reason =
+  let fork_on_left (type a env) ~(left : 'a. ('a, env) m) ~(right : (a, env) m) ~reason =
     let* () = incr_step ~max_step in
     let* l_opt = allow_inputs (read_input KTag input_env) in
     match l_opt with
     | Some Left reason' when reason = reason' -> 
       let* () = push_and_log_tag @@ Left reason in
-      left.run_failing
+      left
     | Some Right reason' when reason = reason' ->
       let* () = push_and_log_tag @@ Right reason in
       right
@@ -63,7 +63,7 @@ let eval
     | None ->
       let* () = fork (
         let* () = push_and_log_tag @@ Left reason in
-        left.run_failing
+        left
       ) in
       let* () = push_and_log_tag @@ Right reason in
       right
@@ -115,12 +115,12 @@ let eval
       | Any (VGenFun { funtype = { domain ; _ } ; _ } as vfun) ->
         let* v_arg = eval arg in
         fork_on_left ~reason:ApplGenFun
-          ~left:{ run_failing = check v_arg domain }
+          ~left:(check v_arg domain)
           ~right:(eval_appl vfun v_arg)
       | Any (VWrapped { data ; tau } as self_fun) ->
         let* v_arg = eval arg in
         fork_on_left ~reason:ApplWrappedFun
-          ~left:{ run_failing = check v_arg tau.domain }
+          ~left:(check v_arg tau.domain)
           ~right:(
             let* v_res = eval_appl ~self_fun data v_arg in
             let* tval = eval_codomain tau.codomain v_arg in
@@ -519,7 +519,7 @@ let eval
         check res cod_tval
       | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; mode = mode' } ; _ } as v_candidate) ->
         fork_on_left ~reason:CheckGenFun
-          ~left:{ run_failing = domain <: domain' }
+          ~left:(domain <: domain')
           ~right:(
             if Val.equal_fun_cod codomain codomain' 
               && Funtype.equal_mode mode mode' then confirm else
@@ -558,7 +558,7 @@ let eval
           )
       | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' ; mode = mode' } } as self_fun) ->
         fork_on_left ~reason:CheckWrappedFun
-          ~left:{ run_failing = domain <: domain' }
+          ~left:(domain <: domain')
           ~right:(
             (*
               The left has already checked the domain, so we can assume the 
@@ -609,7 +609,7 @@ let eval
               check w cod_tval
             | VGenFun { funtype = { domain = domain'' ; codomain = _ ; mode = Det } ; _ } ->
               fork_on_left ~reason:CheckGenFun
-                ~left:{ run_failing = domain <: domain'' }
+                ~left:(domain <: domain'')
                 ~right:(
                   if Val.equal_fun_cod codomain codomain' then confirm else
                   let* v_arg = allow_inputs (gen domain) in
@@ -639,12 +639,10 @@ let eval
         let t_labels = Record.label_set record_t in
         let v_labels = Record.label_set record_v in
           let push_and_check label =
-            { run_failing =
-              let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
-              check
-                (Labels.Record.Map.find label record_v)
-                (Labels.Record.Map.find label record_t)
-            }
+            let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
+            check
+              (Labels.Record.Map.find label record_v)
+              (Labels.Record.Map.find label record_t)
           in
           check_struct push_and_check ~refute ~t_labels ~v_labels
       | _ -> refute
@@ -657,21 +655,19 @@ let eval
         let t_labels = Labels.Record.Set.of_list t_labels_ls in
         let v_labels = Record.label_set module_v in
         let push_and_check label =
-          { run_failing =
-            let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
-            let new_env, tau = 
-              (* think about sharing this computation because rn it is redone on every fork *)
-              Utils.List_utils.fold_left_until (fun env (label', tau) ->
-                if Labels.Record.equal label' label
-                then `Stop (env, tau)
-                else `Continue (
-                  Env.set (Labels.Record.to_ident label') (Labels.Record.Map.find label' module_v) env
-                )
-              ) (fun _ -> raise @@ InvariantException "Label not found in module type") env captured
-            in
-            let* t = local' new_env (eval_type tau) in
-            check (Labels.Record.Map.find label module_v) t
-          }
+          let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
+          let new_env, tau = 
+            (* think about sharing this computation because rn it is redone on every fork *)
+            Utils.List_utils.fold_left_until (fun env (label', tau) ->
+              if Labels.Record.equal label' label
+              then `Stop (env, tau)
+              else `Continue (
+                Env.set (Labels.Record.to_ident label') (Labels.Record.Map.find label' module_v) env
+              )
+            ) (fun _ -> raise @@ InvariantException "Label not found in module type") env captured
+          in
+          let* t = local' new_env (eval_type tau) in
+          check (Labels.Record.Map.find label module_v) t
         in
         check_struct push_and_check ~refute ~t_labels ~v_labels
       | _ -> refute
@@ -730,14 +726,14 @@ let eval
       | Any VEmptyList -> confirm
       | Any VListCons { hd ; tl } ->
         fork_on_left ~reason:CheckList
-          ~left:{ run_failing = check hd t_body }
+          ~left:(check hd t_body)
           ~right:(check (Any tl) t)
       | _ -> refute
       end
     | VTypeRefine { var ; tau ; predicate = { captured ; env } } ->
       (* Value is not directly used here, so we don't force it quite yet *)
       fork_on_left ~reason:CheckRefinementType
-        ~left:{ run_failing = check v tau }
+        ~left:(check v tau)
         ~right:(
           let* p = local' (Env.set var v env) (eval captured) in
           match p with
@@ -755,7 +751,7 @@ let eval
       begin match v with
       | Any VTuple (v1, v2) ->
         fork_on_left ~reason:CheckTuple
-          ~left:{ run_failing = check v1 t1 }
+          ~left:(check v1 t1)
           ~right:(check v2 t2)
       | _ -> refute
       end
@@ -766,7 +762,7 @@ let eval
           (* For type equality, check subsets *)
           if Val.equal tval' tval then confirm else
           fork_on_left ~reason:CheckSingleton
-            ~left:{ run_failing = tval' <: tval }
+            ~left:(tval' <: tval)
             ~right:(tval <: tval')
         | _ ->
           (* For non-type equality, use intensional equality *)
@@ -785,7 +781,7 @@ let eval
     Check modules and records given a way to check each label and a default label.
   *)
   and check_struct
-    : type a env. (Labels.Record.t -> (Eval_result.t, env) failing) -> refute:(a, env) m ->
+    : type a env. ('any. Labels.Record.t -> ('any, env) m) -> refute:(a, env) m ->
       t_labels:Labels.Record.Set.t -> v_labels:Labels.Record.Set.t -> (a, env) m
     = fun check_label ~refute ~t_labels ~v_labels ->
       if Labels.Record.Set.subset t_labels v_labels then
@@ -793,14 +789,14 @@ let eval
         let* () = incr_step ~max_step in
         let* l_opt = allow_inputs (read_input KTag input_env) in
         match l_opt with
-        | Some Label (id, Check) -> (check_label (Labels.Record.RecordLabel id)).run_failing
+        | Some Label (id, Check) -> (check_label (Labels.Record.RecordLabel id))
         | Some _ -> raise bad_input_env
         | None ->
           (* is in exploration mode, so we want to check every label *)
           let rec go enum =
             match Labels.Record.Set.Enum.head_opt enum with
             | Some label ->
-              let* () = fork (check_label label).run_failing in
+              let* () = fork (check_label label) in
               go (Labels.Record.Set.Enum.tail enum)
             | None -> escape Confirmation
           in
@@ -1187,7 +1183,7 @@ let eval
       let* tval = eval_type tau in
       let* v = eval defn in
       fork_on_left ~reason:CheckLetExpr
-        ~left:{ run_failing = check v tval }
+        ~left:(check v tval)
         ~right:(
           let* w = wrap v tval in
           return (name, w)
@@ -1210,7 +1206,7 @@ let eval
         )
       in
       fork_on_left ~reason:CheckLetExpr
-        ~left:{ run_failing = check v tval }
+        ~left:(check v tval)
         ~right:(
           let* w = wrap v tval in
           return (name, w)

@@ -195,7 +195,7 @@ let target_to_here : 'env. (Target.t, 'env) m =
     time out. Therefore, this function must be run inside [Utils.Time.with_timeout]
     so that the effect is handled.
 *)
-let fork (forked_m : (Eval_result.t, 'env) u) : (unit, 'env) m =
+let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
   let* target = target_to_here in
   let* s = get in
   let* ctx = read_ctx in

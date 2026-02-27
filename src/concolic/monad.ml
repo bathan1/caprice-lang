@@ -60,10 +60,6 @@ end) = struct
 
   (* type 'a s = ('a, Utils.Empty.t) t s for "safe": it cannot error *)
 
-  type ('err, 'env) u = (Utils.Empty.t, 'err, 'env) t (* u for "unsafe": it always errors *)
-
-  type ('err, 'env) failing = { run_failing : 'a. ('a, 'err, 'env) t } [@@unboxed]
-
   (* let make_unsafe (x : 'a s) : ('a, 'e) t =
     { run = fun ~reject:_ ~accept state step env ctx ->
           x.run state step env ctx ~reject:Utils.Empty.absurd ~accept
@@ -174,7 +170,7 @@ end) = struct
         else accept () state step
     }
 
-  let[@inline always][@specialise] fork (m : ('e, 'env) u) (fork_ctx : Ctx.t) (k : 'e -> ('a, 'env) m)
+  let[@inline always][@specialise] fork (m : 'a. ('a, 'env) m) (fork_ctx : Ctx.t) (k : 'e -> ('a, 'env) m)
     ~(setup_state : State.t -> State.t) 
     ~(restore_state : 'e -> og:State.t -> forked_state:State.t -> State.t) 
     : ('a, 'env) m =
