@@ -37,12 +37,10 @@ type t =
   | ETypeList of t
   | ETypeVariant of t Variant.t list
   | ETypeSingle of t
-  [@@deriving eq, ord]
 
 and statement =
   | SLet of { name : Ident.t ; annot : t option ; defn : t }
   | SLetRec of { name : Ident.t ; annot : t option ; param : Ident.t ; defn : t }
-  [@@deriving eq, ord]
 
 type program = statement list
 

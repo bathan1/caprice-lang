@@ -1,6 +1,5 @@
 
 type t = Priority of int [@@unboxed]
-  [@@deriving eq, ord]
 
 let zero = Priority 0
 

@@ -9,7 +9,6 @@ type t =
   | PDestructList of t * t
   | PPatternOr of t list
   | PPatternAs of t * Ident.t
-  [@@deriving eq, ord]
 
 let rec to_string (p : t) : string =
   match p with
