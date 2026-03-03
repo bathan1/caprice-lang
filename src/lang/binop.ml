@@ -13,7 +13,8 @@ type t =
   | BGeq
   | BAnd
   | BOr
-[@@deriving eq, ord]
+
+let equal = Repr.equal
 
 let to_string = function
   | BPlus -> "+"

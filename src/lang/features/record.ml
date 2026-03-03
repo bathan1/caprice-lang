@@ -1,6 +1,5 @@
 
 type 'a t = 'a Labels.Record.Map.t
-  [@@deriving eq, ord]
 
 let empty = Labels.Record.Map.empty
 
