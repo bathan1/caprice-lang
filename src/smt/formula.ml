@@ -323,7 +323,7 @@ module Set = struct
       EXE uses Union Find in practice to do this, though they describe the
       problem with connect components in a graph.
 
-      Since independent constraint sets are solved, there may not be repeat
+      Since independent constraint sets are solved, there may be repeat
       queries, and it could be beneficial to keep a cache of solved formulas.
       We do not yet do this, though.
     *)
