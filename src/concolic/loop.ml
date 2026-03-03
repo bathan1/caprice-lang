@@ -173,37 +173,35 @@ let ceval_with_pause ~options pgm =
     Effect.Deep.continue k ()
 
 type r =
-  | Done of Answer.t
-  | Cont of (unit, r) Effect.Deep.continuation
+  | Done of int * Answer.t
+  | Cont of int * (unit, r) Effect.Deep.continuation
 
 (* Now extend to work on many programs *)
-let ceval_many ~options pgms =
-  let open Lwt.Syntax in
+let ceval_many ~options ~spans pgms =
   (* fencepost by beginning the evaluations *)
   let worklist =
-    List.map (fun pgm ->
+    List.map (fun (stmt_idx, pgm) ->
       try
-        Done (fst (M.begin_loop ~options pgm))
+        Done (stmt_idx, fst (M.begin_loop ~options pgm))
       with
       | effect Pause, k ->
-        Cont k
+        Cont (stmt_idx, k)
     ) pgms
   in
   (* now go around until the work list is empty *)
   let rec round_robin = function
-    | [] -> []
-    | Done answer :: tl ->
-      (* the answer is not associated with any specific program, but
-        a little bit of bookkeeping can fix this *)
-      answer :: round_robin tl
-    | Cont k :: tl ->
+    | [] -> ()
+    | Done (i, answer) :: tl ->
+      Lsp.Print.print_answer ~spans i answer;
+      round_robin tl
+    | Cont (i, k) :: tl ->
       (* this program is not done. continue it once and catch the effect *)
       let r =
         try
           Effect.Deep.continue k ()
         with
         | effect Pause, k ->
-          Cont k
+          Cont (i, k)
       in
       (* put the continuation on the back of the work list and keep going *)
       round_robin (tl @ [ r ])

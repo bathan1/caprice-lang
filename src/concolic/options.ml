@@ -11,7 +11,6 @@ type t =
   ; splay          : splay
   ; do_wrap        : bool
   ; is_random      : bool
-  ; check_index    : int option
   }  
 
 let default : t =
@@ -21,7 +20,6 @@ let default : t =
   ; splay          = Fallback
   ; do_wrap        = true
   ; is_random      = false
-  ; check_index    = None
   }  
 
 let of_argv =
@@ -44,8 +42,6 @@ let of_argv =
     & info ["w"; "wrap"] ~doc:"Wrap flag: yes or no. Default is yes."
   and+ is_random = 
     value & flag & info ["r"; "random"] ~doc:"Randomize"
-  and+ check_index =
-    value & opt (some int) None & info ["i"; "check-index"]
   in
-  { max_tree_depth ; max_step ; global_timeout ; splay ; do_wrap ; is_random ; check_index }
+  { max_tree_depth ; max_step ; global_timeout ; splay ; do_wrap ; is_random }
 

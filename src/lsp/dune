@@ -1,6 +1,8 @@
 (library
  (name lsp)
- (modules protocol positions statement_matcher)
+ (public_name caprice.lsp)
+ (modules protocol print positions range_check stmt_check)
  (libraries
+  grammar
   lang
   yojson))

@@ -8,12 +8,10 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Lsp.Protocol.checker
     let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
     let stmts = List.map fst stmts_with_pos in
     let spans = List.map snd stmts_with_pos in
-    let check_index = Lsp.Statement_matcher.compute_check_index spans packet.changes in
-    let options = { options with check_index } in
+    let check_index = Lsp.Range_check.compute_check_index spans packet.changes in
     stmts
-    |> Concolic.Loop.begin_ceval ~print_outcome:false ~options
-    |> Grammar.Answer.to_string
-    |> Printf.printf "ok:%s\n%!"
+    |> Lsp.Stmt_check.generate_pgms_list ~target_idx:check_index
+    |> Concolic.Loop.ceval_many ~options ~spans
   with
   | Lang.Parser.Parse_error (_exn, line, col, tok) ->
     Printf.printf "parse_error:%d:%d:%s\n%!" line col tok
@@ -22,7 +20,8 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Lsp.Protocol.checker
 
 let process_one_change ~(options : Concolic.Options.t) =
   let packet_text =
-    input_line stdin
+    stdin
+    |> input_line
     |> int_of_string
     |> read_exactly stdin
   in
