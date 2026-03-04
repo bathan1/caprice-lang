@@ -209,7 +209,10 @@ let rec subst
         not_ e''
     | And e_ls ->
       let e_ls' = List.map (subst v s) e_ls in
-      and_ e_ls'
+      if e_ls == e_ls' then
+        e
+      else
+        and_ e_ls'
     | Binop (op, e1, e2) ->
       let e1' = subst v s e1 in
       let e2' = subst v s e2 in
@@ -305,10 +308,12 @@ end
 
 module Set = struct
   module Make (K : Symbol.KEY) = struct
-    include Baby.W.Set.Make (struct
+    module M = Utils.Set_map.Make_W (struct
       type nonrec t = (bool, K.t) t (* boolean formulas *)
       let compare = compare
     end)
+
+    include M.Set
 
     (*
       We use SCC for constraint set independence. This ideas originates in 
@@ -318,15 +323,14 @@ module Set = struct
       EXE uses Union Find in practice to do this, though they describe the
       problem with connect components in a graph.
 
-      Since independent constraint sets are solved, there may not be repeat
+      Since independent constraint sets are solved, there may be repeat
       queries, and it could be beneficial to keep a cache of solved formulas.
       We do not yet do this, though.
     *)
     let scc (formula : (bool, K.t) T.t) ~(wrt : t) : (bool, K.t) T.t =
       let formula_symbols = symbols formula in
       let all_with_symbols =
-        to_list wrt
-        |> List.map (fun e -> (e, symbols e))
+        list_map (fun e -> (e, symbols e)) wrt
       in
       let rec collect acc_symbols acc_scc remaining =
         let acc_symbols, acc_scc, any_newly_connected, remaining = 

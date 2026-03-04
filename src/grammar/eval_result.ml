@@ -14,12 +14,6 @@ type t =
   (* finish to value *)
   | Done
 
-let fail_on_fetch (i : Ident.t) (s : 'a) : t * 'a =
-  Unbound_variable i, s
-
-let fail_on_max_step (n : Step.t) (s : 'a) : t * 'a =
-  Reach_max_step n, s
-
 let to_answer = function
   (* error cases *)
   | Refutation (v, t) -> Answer.Found_error (Val.Error_messages.refutation v t)

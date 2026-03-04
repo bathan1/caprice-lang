@@ -1,6 +1,8 @@
 
 type t = Step of int [@@unboxed]
-  [@@deriving eq, ord]
+
+let compare (Step a) (Step b) =
+  Int.compare a b
 
 let zero = Step 0
 

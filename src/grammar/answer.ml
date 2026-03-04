@@ -5,13 +5,16 @@ type t =
   | Unknown                 (* solver timeout lead to unknown path *)
   | Exhausted_pruned        (* no more targets up to some depth *)
   | Exhausted               (* completely ran all possible paths *)
-  [@@deriving eq, ord]
-  (* comparison follows the listed ordering *)
 
-let min = function
-  | Exhausted -> fun b -> b (* CPS *)
-  | a -> fun b -> 
-    if compare a b < 0 then a else b
+let min a b =
+  match a, b with
+  (* First quickly enumerate the cases where a is smaller *)
+  | Exhausted_pruned, Exhausted
+  | Unknown, (Exhausted | Exhausted_pruned)
+  | Timeout _, (Exhausted | Exhausted_pruned | Unknown)
+  | Found_error _, _ -> a
+  (* Otherwise b is smaller *)
+  | _ -> b
 
 let prune a =
   min a Exhausted_pruned

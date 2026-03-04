@@ -28,8 +28,7 @@ let is_caprice_file fname = Filename.check_suffix fname "caprice"
 
 let find_caprice_files ~(recpaths : bool) (init : string list) : string list =
   if not recpaths then
-    List.flatten @@
-    List.map (fun fname ->
+    List.concat_map (fun fname ->
       if Sys.is_directory fname then
         List.filter is_caprice_file (ls_dir fname)
       else if is_caprice_file fname then

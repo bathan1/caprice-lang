@@ -4,9 +4,9 @@
   It is expected to be identity or a pair of concrete and
   symbolic components.
 *)
-module Make (Atom_cell : Utils.Comparable.P1) = struct
-  type data = private Data [@@deriving eq, ord]
-  type typeval = private Typeval [@@deriving eq, ord]
+module Make (Atom_cell : Utils.Types.P1) = struct
+  type data = private Data
+  type typeval = private Typeval
 
   (*
     Data values and type values are all the same type constructor

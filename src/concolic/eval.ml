@@ -3,6 +3,7 @@ open Lang
 open Effects
 open Grammar
 open Grammar.Val
+open Eval_result
 
 (* `Any` is unboxed, so this is zero overhead *)
 let[@inline always] return_any v = return (Any v)
@@ -28,9 +29,8 @@ open Grammar.Val.Error_messages
   [eval] returns the list of runs (evaluation) of the program.
   There are multiple runs because it sometimes forks the state
   to symbolically evaluate.
-  Every fork calls [Lwt_direct.yield] so that timeout can be
-  noticed reasonably frequently. This is why the return type is
-  [Lwt.t]. The caller is expected to set the timeout with [Lwt].
+  Every fork calls [Utils.Time.yield_to_timer] so that timeout can be
+  noticed reasonably frequently. Hence this must be run within a handler.
 *)
 let eval
   (pgm : Ast.statement list)
@@ -41,7 +41,7 @@ let eval
   ~(default_bool : unit -> bool)
   ~(do_splay : bool)
   ~(do_wrap : bool)
-  : Logged_run.t list (* remove Lwt temporarily *)
+  : Logged_run.t list
   =
   (*
     Reads a tag from the input environment. If the tag was planned,
@@ -49,7 +49,7 @@ let eval
     path).
     Otherwise, fork on the left and continue on the right.
   *)
-  let fork_on_left (type a env) ~(left : (Eval_result.t, env) failing) ~(right : (a, env) m) ~reason =
+  let fork_on_left (type a env) ~(left : env with_env failing) ~(right : (a, env) m) ~reason =
     let* () = incr_step ~max_step in
     let* l_opt = allow_inputs (read_input KTag input_env) in
     match l_opt with
@@ -690,7 +690,6 @@ let eval
         | LLazy LGenList _ ->
           check v t_body
         | LLazy LGenMu { var = var' ; closure = { captured = captured' ; env = env' } } ->
-          (* TODO: these names (with the "prime") go the other direction as the spec *)
           let* a = allow_inputs (gen VType) in (* fresh type to use as a stub *)
           let* t_body = local' (Env.set var a env) (eval_type captured) in
           let* t_body' = local' (Env.set var' a env') (eval_type captured') in
@@ -787,7 +786,7 @@ let eval
     Check modules and records given a way to check each label and a default label.
   *)
   and check_struct
-    : type a env. (Labels.Record.t -> (Eval_result.t, env) failing) -> refute:(a, env) m ->
+    : type a env. (Labels.Record.t -> env with_env failing) -> refute:(a, env) m ->
       t_labels:Labels.Record.Set.t -> v_labels:Labels.Record.Set.t -> (a, env) m
     = fun check_label ~refute ~t_labels ~v_labels ->
       if Labels.Record.Set.subset t_labels v_labels then
@@ -804,7 +803,7 @@ let eval
             | Some label ->
               let* () = fork (check_label label).run_failing in
               go (Labels.Record.Set.Enum.tail enum)
-            | None -> escape Confirmation
+            | None -> escape Eval_result.Confirmation
           in
           go (Labels.Record.Set.Enum.enum t_labels)
       else
@@ -1287,25 +1286,6 @@ let eval
 
   in
 
-  (* let open Lwt.Syntax in
-  let* result, state = 
-    Lwt_direct.spawn (fun () -> run (eval_statement_list pgm) target)
-  in
+  let result, state = run (eval_statement_list pgm) target in
   let answer = Eval_result.to_answer result in
-  let this_logged_run =
-    { Logged_run.target 
-    ; rev_stem = state.rev_stem
-    ; answer }
-  in
-  Lwt.return (this_logged_run :: state.runs) *)
-  (* same code as above but without Lwt *)
-  let result, state = 
-    run (eval_statement_list pgm) target
-  in
-  let answer = Eval_result.to_answer result in
-  let this_logged_run =
-    { Logged_run.target 
-    ; rev_stem = state.rev_stem
-    ; answer }
-  in
-  this_logged_run :: state.runs
+  { target ; rev_stem = state.rev_stem ; answer } :: state.runs

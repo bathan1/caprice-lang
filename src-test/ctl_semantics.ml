@@ -55,8 +55,6 @@ let compute_typecheck_test filename env =
   let expect = parse_expect (get_var env typing exhausted_s) in
   let options = options_of_env env in
   let pgm = Lang.Parser.parse_file filename in
-  (* let answer = Concolic.Loop.ceval_with_pause pgm ~options in *)
-  (* run the same program a few times to test the round robin *)
   let answer = Concolic.Loop.begin_ceval pgm ~options in
   match expect, answer with
   | Ill_typed, Grammar.Answer.Found_error _

@@ -2,7 +2,6 @@
 (* Identifier for a suspended value. *)
 module T = struct
   type 'a t = { id : int } [@@unboxed]
-    [@@deriving eq, ord]
 end
 
 include T

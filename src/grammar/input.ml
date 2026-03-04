@@ -12,7 +12,6 @@ type t =
   | IBool of bool
   | IInt of int
   | ITag of Tag.t
-  [@@deriving eq, ord]
 
 let extract_exn (type a) (kind : a Kind.t) (input : t) : a =
   match kind, input with
