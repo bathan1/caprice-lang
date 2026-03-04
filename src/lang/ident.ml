@@ -1,7 +1,12 @@
 
 module T = struct
   type t = Ident of string [@@unboxed]
-    [@@deriving eq, ord]
+
+  let compare (Ident a) (Ident b) =
+    String.compare a b
+    
+  let equal (Ident a) (Ident b) =
+    String.equal a b
 end
 
 include T

@@ -1,7 +1,12 @@
 
 module T = struct
   type t = Uid of int [@@unboxed]
-    [@@deriving eq, ord]
+
+  let compare (Uid a) (Uid b) =
+    Int.compare a b
+
+  let equal (Uid a) (Uid b) =
+    Int.equal a b
 end
 
 include T

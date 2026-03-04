@@ -13,7 +13,6 @@
     ["(", ")"],
     ["struct", " end"],
     ["sig", " end"],
-    ["with", "\n|\nend"],
     ["(*", "*)"]
   ],
   "surroundingPairs": [

@@ -37,7 +37,6 @@ type t =
   | ETypeList of t
   | ETypeVariant of t Variant.t list
   | ETypeSingle of t
-  [@@deriving eq, ord]
 
 and annot =
   | ANone

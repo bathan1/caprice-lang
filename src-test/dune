@@ -19,7 +19,6 @@
   alcotest
  )
  (instrumentation (backend landmarks --auto))
- (preprocess (pps ppx_deriving.eq ppx_deriving.ord))
 )
  
 (test

@@ -1,0 +1,146 @@
+
+(* programs are statement lists *)
+let x = 0
+
+let x : int = 0
+
+let t = int
+let x : t = 0
+
+let T : sig
+  val t : type
+end = struct
+  let t = int
+end
+
+let x : T.t = 0
+
+(* functions *)
+let f (x : int) : int = x
+let f : int -> int = fun x -> x
+
+
+let rec map (type a b) (f : a -> b) (ls : list a) : list b =
+  match ls with
+  | [] -> []
+  | hd :: tl -> f hd :: map a b f tl
+  end
+
+let _ = map int bool (fun i -> i % 2 == 0) [1;2;3]
+
+(* refinement types *)
+let pos_int : type = { i : int | i > 0 }
+
+let Collection : sig
+  val t : type -> type
+  val empty : (type a) -> t a
+  val add : (type a) -> a -> t a -> t a
+end = struct 
+  let t = list 
+  let empty _ = []
+  let add _ a c = a :: c
+end
+
+let Collection' : (type a) -> sig
+  val t : type
+  val empty : t
+  val add : a -> t -> t
+end = fun a -> struct 
+  let t = list a
+  let empty = []
+  let add a c = a :: c
+end
+
+let factors (dep n : pos_int) : Collection.t { m : pos_int | n % m == 0 } =
+  let rec factors (dep i : pos_int) : Collection.t { k : int | k >= i && n % k == 0 } =
+    if i > n then
+      Collection.empty int
+    else if n % i == 0 then
+      Collection.add int i (factors (i + 1))
+    else
+      factors (i + 1)
+  in
+  factors 1
+
+
+let t a =
+  | `Queue of { t : list a * list a |
+    match t with
+    | [], _ :: _ -> false
+    | _ -> true
+    end
+  }
+
+let is_nonempty q =
+  match q with
+  | `Queue (_ :: _, _) -> true
+  | _ -> false
+  end
+
+let list_rev (type a) (dep l : list a) : list a =
+  let rec aux (dep l : list a) (dep acc : list a) : { ls : list a |
+      match l, ls with
+      | _ :: _, _ :: _ -> true
+      | _ :: _, [] -> false
+      | [], _ ->
+        match acc, ls with
+        | [], []
+        | _ :: _, _ :: _ -> true
+        | _ -> false
+        end
+      end
+    } =
+    match l with
+    | [] -> acc
+    | hd :: tl -> aux tl (hd :: acc)
+    end
+  in
+  aux l []
+
+let queue (type a) (t : list a * list a) : t a =
+  match t with
+  | [], r -> `Queue (list_rev a r, [])
+  | f, r -> `Queue (f, r)
+  end
+
+let snoc (type a) (q : t a) (x : a) : { q : t a | is_nonempty q } =
+  match q with
+  | `Queue (f, r) ->
+    queue a (f, x :: r)
+  end
+
+let tail (type a) (q : t a | is_nonempty q) : t a =
+  match q with
+  | `Queue (_ :: f, r) ->
+    queue a (f, r)
+  end
+
+(* variants *)
+let x : `A of int | `B of bool = `A 3
+
+let option a =
+  | `None of unit
+  | `Some of a
+
+let example : option int = `Some 5
+
+let get (type a) (default : a) (opt : option a) : a =
+  match opt with
+  | `None () -> default
+  | `Some x -> x
+  end
+
+(* records *)
+let point : { x : int ; y : int } = { x = 1 ; y = 2 }
+let _ : int = point.x
+
+(* recursive types *)
+let tree a = mu t.
+  | `Leaf of unit
+  | `Branch of { item : a ; left : t ; right : t }
+
+let rec size (type a) (t : tree a) : int =
+  match t with
+  | `Leaf () -> 0
+  | `Branch b -> 1 + size a b.left + size a b.right
+  end

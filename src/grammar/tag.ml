@@ -10,7 +10,6 @@ type reason =
   | CheckLetExpr        (* type check a let-expression, or eval body *)
   | ApplGenFun          (* type check argument, or generate result *)
   | ApplWrappedFun      (* type check argument, or evaluate body *)
-  [@@deriving eq, ord]
 
 let reason_to_string = function
   | GenList             -> "Generate list"
@@ -27,13 +26,11 @@ let reason_to_string = function
 type dir =
   | Gen   (* the label is used to generate something *)
   | Check (* the label is used to check something *)
-  [@@deriving eq, ord, show]
 
 type t =
   | Left of reason
   | Right of reason
   | Label of Lang.Ident.t * dir
-  [@@deriving eq, ord]
 
 let of_variant_label dir vlabel =
   Label (Lang.Labels.Variant.to_ident vlabel, dir)
@@ -52,4 +49,5 @@ let priority = function
 let to_string = function
   | Left reason -> Format.sprintf "Left (%s)" (reason_to_string reason)
   | Right reason -> Format.sprintf "Right (%s)" (reason_to_string reason)
-  | Label (Ident s, dir) -> Format.sprintf "%s (%s)" s (show_dir dir)
+  | Label (Ident s, Check) -> Format.sprintf "%s (Check)" s
+  | Label (Ident s, Gen) -> Format.sprintf "%s (Gen)" s
