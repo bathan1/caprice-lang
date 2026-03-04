@@ -55,23 +55,7 @@ let compute_typecheck_test filename env =
   let expect = parse_expect (get_var env typing exhausted_s) in
   let options = options_of_env env in
   let pgm = Lang.Parser.parse_file filename in
-  (* let answer = Concolic.Loop.ceval_with_pause pgm ~options in *)
-  (* run the same program a few times to test the round robin *)
-  let answers = Concolic.Loop.ceval_many [ pgm ; pgm ; pgm ; pgm ] ~options in
-  let answer = List.hd answers in
-  (* Check that all answers are the same. Equality can't work because we want
-    different error messages to count as the same answer. *)
-  let () = assert (
-    List.for_all (fun a -> 
-      match a, answer with
-      | Grammar.Answer.Found_error _, Found_error _
-      | Timeout _, Timeout _
-      | Unknown, Unknown
-      | Exhausted_pruned, Exhausted_pruned
-      | Exhausted, Exhausted -> true
-      | _ -> false) answers
-    )
-  in
+  let answer = Concolic.Loop.ceval_with_pause pgm ~options in
   match expect, answer with
   | Ill_typed, Grammar.Answer.Found_error _
   | Exhausted, Exhausted

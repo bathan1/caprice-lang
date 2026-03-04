@@ -149,10 +149,10 @@ end
 module M = Make (Pause_effect)
 
 (* Example ceval one program *)
-(* This is identical to begin_ceval in the default behavior above *)
+(* This is observably equivalent to begin_ceval in the default behavior above *)
 let ceval_with_pause ~options pgm =
   try
-    M.begin_ceval ~print_outcome:false ~options pgm
+    M.begin_ceval ~options pgm
   with
   | effect Pause, k ->
     Effect.Deep.continue k ()
@@ -161,35 +161,33 @@ type r =
   | Done of Answer.t
   | Cont of (unit, r) Effect.Deep.continuation
 
-(* Now extend to work on many programs *)
-let ceval_many ~options pgms =
-  (* fencepost by beginning the evaluations *)
-  let worklist =
-    List.map (fun pgm ->
-      try
-        Done (fst (M.begin_loop ~options pgm))
-      with
-      | effect Pause, k ->
-        Cont k
-    ) pgms
+type work_item =
+  { id : int ; task : unit -> r }
+
+let round_robin (fs : work_item list) : (int * Answer.t) list =
+  let run_q = Queue.of_seq (List.to_seq fs) in
+  let enqueue id k =
+    let task () = Effect.Deep.continue k () in
+    Queue.push { id ; task } run_q
   in
-  (* now go around until the work list is empty *)
-  let rec round_robin = function
-    | [] -> []
-    | Done answer :: tl ->
-      (* the answer is not associated with any specific program, but
-        a little bit of bookkeeping can fix this *)
-      answer :: round_robin tl
-    | Cont k :: tl ->
-      (* this program is not done. continue it once and catch the effect *)
+  let rec dequeue () =
+    match Queue.take_opt run_q with
+    | None -> []
+    | Some { id ; task } ->
       let r =
-        try
-          Effect.Deep.continue k ()
-        with
+        try task () with
         | effect Pause, k ->
           Cont k
       in
-      (* put the continuation on the back of the work list and keep going *)
-      round_robin (tl @ [ r ])
+      match r with
+      | Done a -> (id, a) :: dequeue ()
+      | Cont k -> enqueue id k; dequeue ()
   in
-  round_robin worklist
+  dequeue ()
+
+let ceval_many ~options pgms =
+  round_robin (
+    List.mapi (fun id pgm ->
+      { id ; task = fun () -> Done (M.begin_ceval ~options pgm) }
+    ) pgms
+  )
