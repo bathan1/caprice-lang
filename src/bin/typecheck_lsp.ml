@@ -27,7 +27,8 @@ let process_one_change ~(options : Concolic.Options.t) =
   in
   match Lsp.Protocol.parse_checker_packet packet_text with
   | Ok packet -> run_typecheck ~options packet
-  | Error msg -> Printf.printf "protocol_error:%s\n%!" msg
+  | Error msg -> Printf.printf "protocol_error:%s\n%!" msg;
+  Printf.printf "done\n%!"
 
 let rec server_loop ~(options : Concolic.Options.t) () =
   try

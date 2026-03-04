@@ -8,25 +8,61 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { TextDocumentContentChangeEvent } from 'vscode-languageserver/node';
-import { spawn } from 'child_process';
+import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 
 import type { CheckerPacket } from './protocol';
+import { parseLine } from './protocol';
+import { DiagnosticsManager } from './diagnostics';
 
 const connection = createConnection(ProposedFeatures.all);
-
 const docs = new Map<string, TextDocument>();
+const diagnostics = new DiagnosticsManager(connection);
 
 const typecheckerPath = path.join(__dirname, '..', '..', '..', 'typecheck_lsp.exe');
-const ocamlChecker = spawn(typecheckerPath);
+let ocamlChecker: ChildProcessWithoutNullStreams;
+let buffer = '';
+let currentUri = '';
+let checkerBusy = false;
+ 
+function startChecker(): ChildProcessWithoutNullStreams {
+	const checker = spawn(typecheckerPath);
 
-ocamlChecker.stdout.on('data', (data) => {
-	connection.console.log(`OCaml response: ${data}`);
-});
+	checker.stdout.on('data', (data) => {
+		console.log(data.toString());
+		
+		buffer += data.toString();
+		const lines = buffer.split('\n');
+		buffer = lines.pop()!;
+		for (const line of lines) {
+			const msg = parseLine(line);
+			if (!msg) {
+				connection.console.warn(`unparsed: ${line}`);
+				continue;
+			}
+			if (msg.tag === 'done') {
+				checkerBusy = false;
+				continue;
+			}
+			diagnostics.handle(currentUri, msg);
+		}
+	});
 
-ocamlChecker.stderr.on('data', (data) => {
-	connection.console.error(`OCaml error: ${data}`);
-});
+	checker.stderr.on('data', (data) => {
+		connection.console.error(`OCaml error: ${data}`);
+	});
+
+	return checker;
+}
+
+function restartChecker(): void {
+	ocamlChecker.kill();
+	buffer = '';
+	checkerBusy = false;
+	ocamlChecker = startChecker();
+}
+
+ocamlChecker = startChecker();
 
 function updateDocument(params: DidChangeTextDocumentParams): TextDocument | undefined {
 	const doc = docs.get(params.textDocument.uri);
@@ -44,6 +80,7 @@ function writeFramedMessage(message: CheckerPacket): void {
 	const body = JSON.stringify(message);
 	const len = Buffer.byteLength(body, 'utf8');
 	ocamlChecker.stdin.write(`${len}\n${body}`, 'utf8');
+	checkerBusy = true;
 }
 
 connection.onInitialize((params: InitializeParams) => {
@@ -94,6 +131,8 @@ connection.onDidChangeTextDocument((params) => {
 	if (!updated) return;
 
 	try {
+		if (checkerBusy) restartChecker();
+		currentUri = params.textDocument.uri;
 		const packet = buildDidChangePacket(params, updated);
 		writeFramedMessage(packet);
 	} catch (error) {
