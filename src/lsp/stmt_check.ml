@@ -10,8 +10,7 @@ let is_stmt_check_enabled (stmt : statement) : bool =
 let disable_annot_check (annot : annot) : annot =
   match annot with
   | ANone -> ANone
-  (* Not sure which way: | AType r -> AType { r with do_check = false } *)
-  | AType _ -> ANone
+  | AType r -> AType { r with do_check = false }
   
 let disable_stmt_check (stmt : statement) : statement =
   match stmt with
