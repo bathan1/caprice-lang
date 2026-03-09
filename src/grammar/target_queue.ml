@@ -1,13 +1,12 @@
 
-module Q = Psq.Make (Target) (Int)
+module Q = Psq.Make (Target) (Path_priority)
 
-type k = Stepkey.t
 type t = BFS of Q.t [@@unboxed]
 
 let empty : t = BFS Q.empty
 
 let push_one (BFS q : t) (target : Target.t) : t =
-  let priority = Path_priority.to_int (Target.priority target) in
+  let priority = Target.priority target in
   BFS (Q.push target priority q)
 
 let push_list (x : t) (ls : Target.t list) : t =
