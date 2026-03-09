@@ -42,7 +42,7 @@ module Matches = Val.Make_match (struct
   include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
 end)
 
-let[@inline always][@specialise] incr_step 
+let[@inline always] incr_step 
   : 'env. max_step:Step.t -> (unit, 'env) m
   = fun ~max_step ->
   { run = fun ~reject ~accept state step _ _ ->
@@ -201,7 +201,7 @@ let target_to_here : 'env. (Target.t, 'env) m =
     time out. Therefore, this function must be run inside [Utils.Time.with_timeout]
     so that the effect is handled.
 *)
-let fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
+let[@inline always] fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
   let* target = target_to_here in
   let* s = get in
   let* ctx = read_ctx in
@@ -277,14 +277,14 @@ let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
   [disallow_inputs x] runs [x] such that any [assert_inputs_allowed]
     is a failure.
 *)
-let disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
+let[@inline always] disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Disallowed }) x
 
 (**
   [allow_inputs x] runs [x] such that any [assert_inputs_allowed]
     is NOT a failure.
 *)
-let allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
+let[@inline always] allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Allowed }) x
 
 (**
