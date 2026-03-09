@@ -1,6 +1,6 @@
 
 open Lang
-open Effects
+open Semantics
 open Grammar
 open Grammar.Val
 open Eval_result
@@ -799,7 +799,7 @@ let eval
             | Some label ->
               let* () = fork (check_label label) in
               go (Labels.Record.Set.Enum.tail enum)
-            | None -> escape Confirmation
+            | None -> escape Eval_result.Confirmation
           in
           go (Labels.Record.Set.Enum.enum t_labels)
       else

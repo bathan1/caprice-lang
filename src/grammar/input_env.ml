@@ -1,7 +1,5 @@
 
 module Make (K : Smt.Symbol.KEY) = struct
-  module K = Smt.Symbol.Make_comparable_key (K)
-
   type t = Input.t Utils.Uid.Map.t
 
   let empty : t = Utils.Uid.Map.empty

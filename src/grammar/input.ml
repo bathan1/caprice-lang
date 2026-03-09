@@ -20,13 +20,6 @@ let extract_exn (type a) (kind : a Kind.t) (input : t) : a =
   | KTag, ITag t -> t
   | _ -> raise ExtractionException
 
-let extract_opt (type a) (kind : a Kind.t) (input : t) : a option =
-  match kind, input with
-  | KBool, IBool b -> Some b
-  | KInt, IInt i -> Some i
-  | KTag, ITag t -> Some t
-  | _ -> None
-
 let to_string = function
   | IBool b -> Bool.to_string b
   | IInt i -> Int.to_string i

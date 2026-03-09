@@ -41,7 +41,7 @@ module Matches = Val.Make_match (struct
   include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
 end)
 
-let[@inline always][@specialise] incr_step 
+let[@inline always] incr_step 
   : 'env. max_step:Step.t -> (unit, 'env) m
   = fun ~max_step ->
   { run = fun ~reject ~accept state step _ _ ->
@@ -276,24 +276,21 @@ let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
   [disallow_inputs x] runs [x] such that any [assert_inputs_allowed]
     is a failure.
 *)
-let disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
+let[@inline always] disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Disallowed }) x
 
 (**
   [allow_inputs x] runs [x] such that any [assert_inputs_allowed]
     is NOT a failure.
 *)
-let allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
+let[@inline always] allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Allowed }) x
-
-let run' (x : ('a, Val.Env.t) m) (target : Target.t) (s : State.t) (e : Val.Env.t) : Eval_result.t * State.t =
-  match run x s e { target ; det_context = Allowed } with
-  | Ok _, state -> Done, state
-  | Error e, state -> e, state
 
 (**
   [run x target] runs [x] with [target] as the context, beginning with
     empty state and environment.
 *)
 let run (x : ('a, Val.Env.t) m) (target : Target.t) : Eval_result.t * State.t =
-  run' x target State.empty Env.empty
+  match run x State.empty Env.empty { target ; det_context = Allowed } with
+  | Ok _, state -> Done, state
+  | Error e, state -> e, state

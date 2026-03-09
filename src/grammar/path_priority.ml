@@ -1,6 +1,8 @@
 
 type t = Priority of int [@@unboxed]
 
+let compare (Priority a) (Priority b) = Int.compare a b
+
 let zero = Priority 0
 
 let to_int (Priority n) = n

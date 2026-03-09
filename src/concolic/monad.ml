@@ -37,7 +37,7 @@ type ('a, 'x) t = {
 (* There is a bug on the 5.5.0~alpha1 switch that means I have to box this type.
   See OCaml issue #14603 *)
 
-let[@inline always][@specialise] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : ('b, 'x) t =
+let[@inline always] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : ('b, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->
       x.run state step env ctx ~reject ~accept:(fun x state step ->
           (f x).run ~reject ~accept state step env ctx
@@ -46,7 +46,7 @@ let[@inline always][@specialise] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : 
 
 let ( let* ) = bind
 
-let[@inline always][@specialise] return (a : 'a) : ('a, 'x) t =
+let[@inline always] return (a : 'a) : ('a, 'x) t =
   { run = fun ~reject:_ ~accept state step _ _ ->
       accept a state step
   }
@@ -62,7 +62,7 @@ let read : ('env, < env : 'env ; .. >) t =
       accept env state step
   }
 
-let[@inline always][@specialise] local (f : 'env -> 'env) (x : ('a, < env : 'env ; .. > as 'x) t) : ('a, 'x) t =
+let[@inline always] local (f : 'env -> 'env) (x : ('a, < env : 'env ; .. > as 'x) t) : ('a, 'x) t =
   { run = fun ~reject ~accept state step env ->
       x.run ~reject ~accept state step (f env)
   }
@@ -81,7 +81,7 @@ let local' (env : 'e) (x : ('a, < env : 'e ; .. >) t) : ('a, < env : 'env ; .. >
 let read_ctx : ('ctx, < ctx : 'ctx ; .. >) t =
   { run = fun ~reject:_ ~accept state step _ ctx -> accept ctx state step }
 
-let[@inline always][@specialise] local_ctx (f : 'ctx -> 'ctx)
+let[@inline always] local_ctx (f : 'ctx -> 'ctx)
   (x : ('a, < ctx : 'ctx ; .. >) t) : ('a, < ctx : 'ctx ; .. >) t =
   { run = fun ~reject ~accept state step env ctx ->
       x.run ~reject ~accept state step env (f ctx)
@@ -98,7 +98,7 @@ let get : ('state, < state : 'state ; .. >) t =
       accept state state step
   }
 
-let[@inline always][@specialise] modify (f : 'state -> 'state) : (unit, < state : 'state ; .. >) t =
+let[@inline always] modify (f : 'state -> 'state) : (unit, < state : 'state ; .. >) t =
   { run = fun ~reject:_ ~accept state step _ _ ->
       accept () (f state) step
   }
@@ -109,8 +109,8 @@ let[@inline always][@specialise] modify (f : 'state -> 'state) : (unit, < state 
   -----
 *)
 
-let[@inline always][@specialise] escape (err : 'err) : ('a, < err : 'err ; .. >) t =
-  { run = fun ~reject ~accept:_ state step _ _ ->
+let[@inline always] escape (err : 'err) : ('a, < err : 'err ; .. >) t =
+  { run = fun ~reject ~accept:_ state _ _ _ ->
       reject err state
   }
 
