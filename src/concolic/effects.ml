@@ -287,14 +287,11 @@ let disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
 let allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Allowed }) x
 
-let run' (x : ('a, Val.Env.t) m) (target : Target.t) (s : State.t) (e : Val.Env.t) : Eval_result.t * State.t =
-  match run x s e { target ; det_context = Allowed } with
-  | Ok _, state -> Done, state
-  | Error e, state -> e, state
-
 (**
   [run x target] runs [x] with [target] as the context, beginning with
     empty state and environment.
 *)
 let run (x : ('a, Val.Env.t) m) (target : Target.t) : Eval_result.t * State.t =
-  run' x target State.empty Env.empty
+  match run x State.empty Env.empty { target ; det_context = Allowed } with
+  | Ok _, state -> Done, state
+  | Error e, state -> e, state

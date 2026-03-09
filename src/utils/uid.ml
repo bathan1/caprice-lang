@@ -18,5 +18,4 @@ let counter = Counter.create ()
 
 let make_new () = Uid (Counter.next counter)
 
-module Map = Baby.W.Map.Make (T)
-module Set = Baby.W.Set.Make (T)
+include Set_map.Make_W (T)
