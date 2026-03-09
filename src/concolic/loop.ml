@@ -3,12 +3,13 @@ open Grammar
 
 let make_targets ~(max_tree_depth : int) (target : Target.t)
   (stem : Path.t) : Target.t list * bool =
+  let max_prio = Path_priority.Priority max_tree_depth in
   let rec make acc_prio acc_formulas = function
     | [] -> [], false (* done and did not prune *)
-    | _ when Path_priority.to_int acc_prio > max_tree_depth -> [], true (* prune *)
+    | _ when Path_priority.geq acc_prio max_prio -> [], true (* prune *)
     | p_item :: tl ->
       let path_priority =
-        Path_priority.plus_int acc_prio (Path_item.to_priority p_item)
+        Path_priority.plus acc_prio (Path_item.to_priority p_item)
       in
       match p_item with
       | Nonflipping formula ->

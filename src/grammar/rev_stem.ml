@@ -18,7 +18,7 @@ let discard_stem ({ total_priority ; _ } : t) : t =
   { empty with total_priority }
 
 let cons (p_item : Path_item.t) ~(if_exceeds : Path_priority.t) (t : t) : t =
-  { total_priority = Path_priority.plus_int t.total_priority (Path_item.to_priority p_item)
+  { total_priority = Path_priority.plus t.total_priority (Path_item.to_priority p_item)
   ; rev_stem =
     if Path_priority.geq t.total_priority if_exceeds then
       Path.cons p_item t.rev_stem
