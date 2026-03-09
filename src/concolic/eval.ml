@@ -1,6 +1,6 @@
 
 open Lang
-open Effects
+open Semantics
 open Grammar
 open Grammar.Val
 open Eval_result
