@@ -33,4 +33,5 @@ let generate_pgms_list (pgm : program) ~(target_idx : int option) : (int * progr
   | None -> []
   | Some start_idx ->
     List.init (List.length pgm - start_idx) (fun offset -> start_idx + offset)
+    |> (if start_idx > 0 then List.cons (start_idx - 1) else Fun.id)
     |> List.map (fun i -> (i, filter_check_stmt pgm i))
