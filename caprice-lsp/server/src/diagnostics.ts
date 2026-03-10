@@ -16,34 +16,21 @@ function toSeverity(tag: OcamlMessage['tag']): DiagnosticSeverity | null {
 }
 
 export class DiagnosticsManager {
-  private byStmt = new Map<string, Map<number, Diagnostic>>();
+  private byStmt = new Map<number, Diagnostic>();
 
   constructor(private connection: Connection) {}
 
   private flush(uri: string): void {
-    const stmtMap = this.byStmt.get(uri);
-    const diagnostics =
-      stmtMap === undefined
-        ? []
-        : Array.from(stmtMap.entries()).map(([, d]) => d);
-
     this.connection.sendDiagnostics({
       uri,
-      diagnostics,
+      diagnostics: Array.from(this.byStmt.values()),
     });
   }
 
-  private shouldIgnore(msg: OcamlMessage): boolean {
-    return msg.tag === 'error' && /^Unbound variable:/.test(msg.msg);
-  }
-
-  private clearStmt(uri: string, idx: number): void {
-    const stmtMap = this.byStmt.get(uri);
-    if (stmtMap) {
-      stmtMap.delete(idx);
-      this.byStmt.set(uri, stmtMap);
+  private invalidateFrom(idx: number): void {
+    for (const key of this.byStmt.keys()) {
+      if (key >= idx) this.byStmt.delete(key);
     }
-    this.flush(uri);
   }
 
   handle(uri: string, msg: OcamlMessage): void {
@@ -52,32 +39,27 @@ export class DiagnosticsManager {
       case 'timeout':
       case 'unknown':
       case 'exhausted_pruned': {
-        if (this.shouldIgnore(msg)) {
-          this.clearStmt(uri, msg.idx);
-          break;
-        }
-
+        this.invalidateFrom(msg.idx);
         const severity = toSeverity(msg.tag)!;
-        const stmtMap = this.byStmt.get(uri) ?? new Map<number, Diagnostic>();
-        stmtMap.set(msg.idx, {
+        const diagnostic: Diagnostic = {
           range: msg.range,
           message: msg.tag === 'error' ? msg.msg : msg.tag,
           severity,
-        });
-        this.byStmt.set(uri, stmtMap);
+        };
+        this.byStmt.set(msg.idx, diagnostic);
         this.flush(uri);
         break;
       }
-      
+
       case 'ok': {
-        this.clearStmt(uri, msg.idx);
+        this.invalidateFrom(msg.idx);
+        this.flush(uri);
         break;
       }
     }
   }
 
-  clear(uri: string): void {
-    this.byStmt.delete(uri);
-    this.flush(uri);
+  clear(): void {
+    this.byStmt.clear();
   }
 }
