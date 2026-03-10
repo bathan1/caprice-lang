@@ -42,6 +42,8 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
   let rec collect acc_targets acc_answer = function
     | [] -> `Cont (acc_targets, acc_answer)
     | run :: _ when Answer.is_error run.Logged_run.answer ->
+      (* TODO: use the input environment from the run to confirm that Errortrace.errortrace
+          can return the same answer. *)
       `Quit run.answer (* an error is the goal, and we found it! *)
     | run :: tl ->
       let new_targets, is_pruned =

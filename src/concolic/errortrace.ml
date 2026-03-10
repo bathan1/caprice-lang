@@ -1,0 +1,1199 @@
+
+(*
+  This file copies code from Eval in order to recreate errors
+  during type checking.
+*)
+
+open Lang
+open Trace_semantics
+open Grammar
+open Grammar.Val
+open Eval_result
+
+(* `Any` is unboxed, so this is zero overhead *)
+let[@inline always] return_any v = return (Any v)
+
+let bad_input_env =
+  InvariantException "Input environment is ill-formed"
+
+(**
+  [ctx_of_mode mode] is an environment in which to run a
+    monadic expression based on the [mode] of the function
+    type that is being checked.
+
+    The context disallows inputs if the mode is deterministic.
+*)
+let ctx_of_mode (mode : Funtype.mode) =
+  match mode with
+  | Nondet -> Fun.id
+  | Det -> disallow_inputs (* deterministic functions must run without inputs *)
+
+open Grammar.Val.Error_messages
+
+(**
+  [errortrace] type checks the program along only the trace specified
+    by the input environment.
+*)
+let errortrace
+  (pgm : Ast.statement list)
+  (input_env : Input_env.t)
+  ~(do_splay : bool)
+  ~(do_wrap : bool)
+  : Answer.t
+  =
+  (*
+    Reads a tag from the input environment and runs left or right accordingly.
+  *)
+  let branch (type a env) ~(left : (a, env) m) ~(right : (a, env) m) ~reason =
+    let* () = incr_step in
+    let* l = allow_inputs (read_input_exn KTag input_env) in
+    match l with
+    | Left reason' -> assert (reason = reason'); left
+    | Right reason' -> assert (reason = reason'); right
+    | _ -> raise bad_input_env
+  in
+
+  (*
+    ----------------------------
+    EVALUATE EXPRESSION TO VALUE 
+    ----------------------------
+
+    Uses the environment, so the type parameter for the environment in
+    the monad is instantiated with Val.Env.t.
+  *)
+  let rec eval (expr : Ast.t) : (Val.any, Val.Env.t) m =
+    let* () = incr_step in
+    match expr with
+    (* concrete values *)
+    | EUnit -> return_any VUnit
+    | EInt i -> return_any (VInt (i, Smt.Formula.const_int i))
+    | EBool b -> return_any (VBool (b, Smt.Formula.const_bool b))
+    | EVar id -> fetch id
+    | EFunction { param ; body } ->
+      let* env = read in
+      return_any (VFunClosure { param ; closure = { captured = body ; env }})
+    | ERecord e_record_body -> 
+      let* record_body =
+        Record.fold (fun l e acc_m ->
+          let* acc = acc_m in
+          let* v = eval e in
+          return (Labels.Record.Map.add l v acc)
+        ) (return Record.empty) e_record_body
+      in
+      return_any (VRecord record_body)
+    | EModule stmt_ls ->
+      eval_statement_list stmt_ls
+    | ETypeModule items ->
+      let* env = read in
+      return_any (VTypeModule { captured = items ; env })
+    | ELet { stmt ; body } ->
+      let* (binding, v) = eval_statement stmt in
+      local (Env.set binding v) (eval body)
+    | EAppl { func ; arg } ->
+      let* v_func = force_eval func in
+      begin match v_func with
+      | Any (VFunClosure _ as vfun)
+      | Any (VFunFix _ as vfun) ->
+        let* v_arg = eval arg in
+        eval_appl vfun v_arg
+      | Any (VGenFun { funtype = { domain ; _ } ; _ } as vfun) ->
+        let* v_arg = eval arg in
+        branch ~reason:ApplGenFun
+          ~left:(check v_arg domain)
+          ~right:(eval_appl vfun v_arg)
+      | Any (VWrapped { data ; tau } as self_fun) ->
+        let* v_arg = eval arg in
+        branch ~reason:ApplWrappedFun
+          ~left:(check v_arg tau.domain)
+          ~right:(
+            let* v_res = eval_appl ~self_fun data v_arg in
+            let* tval = eval_codomain tau.codomain v_arg in
+            wrap v_res tval
+          )
+      | _ -> mismatch @@ apply_non_function v_func
+      end
+    | EMatch { subject ; patterns } ->
+      let* v = force_eval subject in
+      let rec find_match = function
+        | [] -> mismatch @@ missing_pattern v (List.map fst patterns)
+        | (pat, body) :: tl ->
+          let* res = Matches.match_any pat v ~resolve_lazy in
+          begin match res with
+          | Match env' -> local (fun env -> Env.extend env env') (eval body)
+          | No_match -> find_match tl
+          | Failure msg -> escape (Mismatch msg)
+          end
+      in
+      find_match patterns
+    | EProject { record ; label } ->
+      let* v = force_eval record in
+      begin match v with
+      | Any VRecord map_body
+      | Any VModule map_body ->
+        begin match Labels.Record.Map.find_opt label map_body with
+        | Some v' -> return v'
+        | None -> mismatch @@ missing_label v label
+        end
+      | _ -> mismatch @@ project_non_record v label
+      end
+    | EVariant { label ; payload } ->
+      let* v = eval payload in
+      return_any (VVariant { label ; payload = v })
+    | ETuple (e1, e2) ->
+      let* v1 = eval e1 in
+      let* v2 = eval e2 in
+      return_any (VTuple (v1, v2))
+    | EEmptyList ->
+      return_any VEmptyList
+    | EListCons { hd ; tl } ->
+      let* hd = eval hd in
+      let* v_tl = eval tl in (* don't force eval because want to allow cons to lazy list *)
+      let cons_with_v1 tl = return_any (VListCons { hd ; tl }) in
+      begin match v_tl with
+      | Any (VEmptyList as tl)
+      | Any (VListCons _ as tl) -> cons_with_v1 tl
+      | Any (VLazy { cell ; _ } as tl) ->
+        let* v_lazy = read_cell SLazy cell in
+        begin match v_lazy with
+        | LLazy LGenList _
+        | LValue Any VEmptyList
+        | LValue Any VListCons _ -> cons_with_v1 tl
+        | _ -> mismatch @@ cons_non_list hd v_tl 
+        end
+      | _ -> mismatch @@ cons_non_list hd v_tl
+      end
+    | EAbstractType ->
+      gen VType
+    | ETypeSingle e ->
+      let* v = eval e in
+      return_any (VTypeSingle v)
+    (* symbolic values and branching *)
+    | EPick_i ->
+      let* step = step in
+      let* i = read_input_exn KInt input_env in
+      return_any (VInt (i, Stepkey.int_symbol step))
+    | ENot e ->
+      let* v = force_eval e in
+      begin match v with
+      | Any VBool (b, s) -> return_any (VBool (not b, Smt.Formula.not_ s))
+      | _ -> mismatch @@ not_non_bool v
+      end
+    | EBinop { left ; binop ; right } ->
+      eval_binop left binop right
+    | EIf { if_ ; then_ ; else_ } ->
+      let* v = force_eval if_ in
+      begin match v with
+      | Any VBool (true, _) -> eval then_
+      | Any VBool (false, _) -> eval else_
+      | _ -> mismatch @@ if_non_bool v
+      end
+    | EAssert e ->
+      let* v = force_eval e in
+      begin match v with
+      | Any VBool (true, _) -> return_any VUnit
+      | Any VBool (false, _) -> escape Assert_false
+      | _ -> mismatch @@ assert_non_bool v
+      end
+    | EAssume e ->
+      let* v = force_eval e in
+      begin match v with
+      | Any VBool (true, _) -> return_any VUnit
+      | Any VBool (false, _) -> escape Vanish
+      | _ -> mismatch @@ assume_non_bool v
+      end
+    (* types *)
+    | EType -> return_any VType
+    | ETypeInt -> return_any VTypeInt
+    | ETypeBool -> return_any VTypeBool
+    | ETypeTop -> return_any VTypeTop
+    | ETypeBottom -> return_any VTypeBottom
+    | ETypeUnit -> return_any VTypeUnit
+    | ETypeRecord t_record_body -> 
+      let* record_body =
+        Record.fold (fun l e acc_m ->
+          let* acc = acc_m in
+          let* tval = eval_type e in
+          return (Labels.Record.Map.add l tval acc)
+        ) (return Record.empty) t_record_body
+      in
+      return_any (VTypeRecord record_body)
+    | ETypeFun { domain = None, tau ; codomain ; mode } ->
+      let* dom_t = eval_type tau in
+      let* cod_t = eval_type codomain in
+      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t ; mode })
+    | ETypeFun { domain = Some id, tau ; codomain ; mode } ->
+      let* dom_t = eval_type tau in
+      let* env = read in
+      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) ; mode })
+    | ETypeRefine { var ; tau ; predicate } ->
+      let* tval = eval_type tau in
+      let* env = read in
+      return_any (VTypeRefine { var ; tau = tval ; predicate = { captured = predicate ; env }})
+    | ETypeMu { var ; body } ->
+      let* env = read in
+      return_any (VTypeMu { var ; closure = { captured = body ; env } })
+    | ETypeList e ->
+      let* t = eval_type e in
+      return_any (VTypeList t)
+    | ETypeVariant ls ->
+      let* variant_bodies =
+        List.fold_left (fun acc_m { Variant.label ; payload } ->
+          let* acc = acc_m in
+          let* tval = eval_type payload in
+          return (Labels.Variant.Map.add label tval acc)
+        ) (return Labels.Variant.Map.empty) ls
+      in
+      return_any (VTypeVariant variant_bodies)
+    
+  (*
+    ----------------------------------
+    EVALUATE BINARY OPERATION TO VALUE
+    ----------------------------------
+
+    Uses environment during evaluation.
+  *)
+  and eval_binop (left : Ast.t) (op : Binop.t) (right : Ast.t) : (Val.any, Val.Env.t) m =
+    let* vleft = force_eval left in
+    let eval_short_circuit vleft =
+      match vleft with
+      | Any VBool (b, _) when (not b && op = BAnd) || (b && op = BOr) ->
+        (* Cases here are: false AND rhs, true OR rhs *)
+        return vleft
+      | Any VBool (b, _) ->
+        (* Need to evaluate RHS here *)
+        let* vright = force_eval right in
+        begin match vright with
+        | Any VBool _ -> return vright
+        | _ -> mismatch @@ bad_binop vleft op vright
+        end
+      | _ -> mismatch @@ bad_binop vleft op (Any VUnit) (* placeholder because there is no expr printing yet *)
+    in
+    match op with
+    | BAnd | BOr -> eval_short_circuit vleft
+    | _ ->
+      let* vright = force_eval right in
+      let fail_binop () = (* delay this so as not to eagerly construct the string *)
+        mismatch @@ bad_binop vleft op vright in
+      let k f s1 s2 op =
+        return_any @@ f (Smt.Formula.binop op s1 s2)
+      in
+      let v_int n s = VInt (n, s) in
+      let v_bool n s = VBool (n, s) in
+      match op, vleft, vright with
+      | BPlus       , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_int (n1 + n2)) e1 e2 Plus
+      | BMinus      , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_int (n1 - n2)) e1 e2 Minus
+      | BTimes      , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_int (n1 * n2)) e1 e2 Times
+      | BEqual      , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_bool (n1 = n2)) e1 e2 Equal
+      | BEqual      , Any VBool (b1, e1), Any VBool (b2, e2) -> k (v_bool (b1 = b2)) e1 e2 Equal
+      | BNeq        , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_bool (n1 <> n2)) e1 e2 Not_equal
+      | BLessThan   , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_bool (n1 < n2)) e1 e2 Less_than
+      | BLeq        , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_bool (n1 <= n2)) e1 e2 Less_than_eq
+      | BGreaterThan, Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_bool (n1 > n2)) e1 e2 Greater_than
+      | BGeq        , Any VInt (n1, e1) , Any VInt (n2, e2)  -> k (v_bool (n1 >= n2)) e1 e2 Greater_than_eq
+      | BDivide, Any VInt (n1, e1), Any VInt (n2, e2) when n2 <> 0 ->
+        k (v_int (n1 / n2)) e1 e2 Divide
+      | BModulus, Any VInt (n1, e1), Any VInt (n2, e2) when n2 <> 0 ->
+        k (v_int (n1 mod n2)) e1 e2 Modulus
+      | BTimes, v1, v2 ->
+        (* Make tuple if v1 and v2 are types. Note that integer muliplication is handled above. *)
+        handle_two v1 v2 (function
+          | `Types (t1, t2) -> return_any @@ VTypeTuple (t1, t2)
+          | _ -> fail_binop ()
+        )
+      | _ -> fail_binop ()
+
+  (*
+    ---------------------
+    EVALUATE APPLICATIONS
+    ---------------------
+
+    Always takes the evaluation side. Does not do any checking.
+    Does not push any labels corresponding to the evaluation.
+    Does not wrap the result. Does not accept wrapped values as
+    function to apply.
+
+    ?self_fun is the optional value to put in the environment as
+    the self for recursive functions, in case of wrapping.
+    The default value is the actual fixed function.
+
+    This does not use a monadic environment, so the environment is
+    universally quantified.
+  *)
+  and eval_appl 
+    : 'env. Val.dval -> ?self_fun:Val.dval -> Val.any -> (Val.any, 'env) m
+    = fun v_func ?(self_fun = v_func) v_arg ->
+    match v_func with
+    | VFunClosure { param ; closure = { captured ; env } } ->
+      local' (Env.set param v_arg env) (eval captured)
+    | VFunFix { fvar ; param ; closure = { captured ; env } } ->
+      if do_splay && is_any_symbolic v_arg then
+        mismatch (
+          Format.sprintf "Called rec fun with symbolic value %s while splaying"
+            (Val.any_to_string v_arg)
+          )
+      else
+        local' (
+          Env.set fvar (Any self_fun) env
+          |> Env.set param v_arg
+        ) (eval captured)
+    | VGenFun { funtype = { domain = _ ; codomain ; mode = Nondet } ; _ } ->
+      let* cod_tval = eval_codomain codomain v_arg in
+      gen cod_tval
+    | VGenFun { funtype = { domain = _ ; codomain ; mode = Det } ; alist ; _ } ->
+      let* mappings = read_cell SAlist (Option.get alist) in
+      let rec loop = function
+        | [] ->
+          let* cod_tval = eval_codomain codomain v_arg in
+          let* genned = allow_inputs (gen cod_tval) in
+          let* () = set_cell SAlist (Option.get alist) ((v_arg, genned) :: mappings) in
+          return genned
+        | (input, output) :: tl ->
+          begin match Val.intensional_equal v_arg input with
+          | Value (true, _) -> return output
+          | Value (false, _) -> loop tl
+          | ShapeMismatch -> mismatch @@ shape_mismatch v_arg input
+          end
+      in
+      loop mappings
+    | _ -> mismatch @@ apply_non_function (Any v_func)
+    
+  (*
+    ---------------------------------
+    EVALUATE EXPRESSION TO TYPE VALUE
+    ---------------------------------
+
+    Uses environment to evaluate.
+  *)
+  and eval_type (expr : Ast.t) : (Val.tval, Val.Env.t) m =
+    let* v = force_eval expr in
+    handle_any v
+      ~data:(fun d -> mismatch @@ non_type_value d)
+      ~typeval:return
+
+  (*
+    -----------------------------------------------
+    EVALUATE RECURSIVE TYPE TO A NON-REC TYPE VALUE
+    -----------------------------------------------
+
+    Fails if a cycle is detected. Example cycles include
+      mu t. t (* 1-cycle *)
+    and
+      mu t. let s = mu s. t in s (* 2-cycle *)
+    A cycle is not detected in
+      mu t. { a : int ; b : t }
+    and non-splayed any generation of it will diverge.
+  *)
+  and unroll_mu
+    : 'env. Ident.t -> Ast.t Val.closure -> (Val.tval, 'env) m
+    = fun var closure ->
+    let rec go seen var closure =
+      let t = VTypeMu { var ; closure } in
+      let* t_body = local' (Env.set var (Any t) closure.env) (eval_type closure.captured) in
+      match t_body with
+      | VTypeMu { var ; closure } ->
+        (* Check for cycle by looking for this type in what we've seen before *)
+        if List.exists (Val.equal_closure closure) seen then
+          mismatch @@ non_contractive_type t_body
+        else
+          go (closure :: seen) var closure
+      | _ ->
+        return t_body
+    in
+    go [] var closure
+
+  (*
+    --------------------------
+    EVALUATE FUNCTION CODOMAIN
+    --------------------------
+
+    Given a witness value of the domain type, evaluate the codomain
+    (whether it is already a type value or it depends on the witness)
+    to a type value.
+
+    Does not use environment.
+  *)
+  and eval_codomain
+    : 'env. Val.fun_cod -> Val.any -> (Val.tval, 'env) m
+    = fun cod dom_witness ->
+    match cod with
+    | CodValue cod_tval ->
+      return cod_tval
+    | CodDependent (id, { captured ; env }) ->
+      local' (Env.set id dom_witness env) (eval_type captured)
+
+  (*
+    -------------------------
+    CHECK FOR TYPE REFUTATION
+    -------------------------
+
+    Does not use environment.
+  *)
+  and check
+    : type a env. Val.any -> Val.tval -> (a, env) m
+    = fun v t ->
+    let refute = escape (Refutation (v, t)) in
+    let confirm = escape Confirmation in
+    let* () = incr_step in
+    (* In just about every case except checking mu type, we want to force the value. *)
+    (* Even though it is wordy, we do this forcing inside each case. *)
+    match t with
+    | VTypeInt ->
+      let* v = force_value v in
+      begin match v with
+      | Any VInt _ -> confirm
+      | _ -> refute
+      end
+    | VTypeBool ->
+      let* v = force_value v in
+      begin match v with
+      | Any VBool _ -> confirm
+      | _ -> refute
+      end
+    | VTypeUnit ->
+      let* v = force_value v in
+      begin match v with
+      | Any VUnit -> confirm
+      | _ -> refute
+      end
+    | VTypeTop -> (* don't force v *)
+      (* Everything is in top *)
+      confirm
+    | VTypeBottom -> (* don't force v *)
+      (* Nothing is in bottom *)
+      refute
+    | VTypePoly { id } ->
+      let* v = force_value v in
+      begin match v with
+      | Any VGenPoly { id = id' ; nonce = _ } when id = id' -> confirm
+      | _ -> refute
+      end
+    | VType ->
+      let* v = force_value v in
+      handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
+    | VTypeFun { domain ; codomain ; mode } ->
+      let* v = force_value v in
+      begin match v with
+      | Any (VFunClosure _ as vfun)
+      | Any (VFunFix _ as vfun) ->
+        let* genned = allow_inputs (gen domain) in
+        let* res = ctx_of_mode mode (eval_appl vfun genned) in
+        let* cod_tval = eval_codomain codomain genned in
+        check res cod_tval
+      | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; mode = mode' } ; _ } as v_candidate) ->
+        branch ~reason:CheckGenFun
+          ~left:(domain <: domain')
+          ~right:(
+            if Val.equal_fun_cod codomain codomain' 
+              && Funtype.equal_mode mode mode' then confirm else
+            match mode' with
+            | Nondet ->
+              let* cod_tval, cod_tval' =
+                match codomain, codomain' with
+                | CodValue cod_tval, CodValue cod_tval' -> 
+                  return (cod_tval, cod_tval')
+                | _ ->
+                  let* genned = allow_inputs (gen domain) in
+                  let* cod_tval = eval_codomain codomain genned in
+                  (*
+                    Since we can assume domain <: domain', it's possible
+                    that codomain' can misuse genned with respect to
+                    domain. We must therefore wrap genned with domain to
+                    check that codomain' does not misuse it.
+                  *)
+                  let* wrapped = wrap genned domain' in
+                  let* cod_tval' = eval_codomain codomain' wrapped in
+                  return (cod_tval, cod_tval')
+              in
+              begin match mode with
+              | Nondet -> cod_tval' <: cod_tval
+              | Det ->
+                (* inlining this until it's clear we can extract *)
+                (* it looks a lot like `cod_tval' <: cod_tval` but disallowing inputs. *)
+                let* genned = disallow_inputs (gen cod_tval') in
+                check genned cod_tval
+              end
+            | Det ->
+              let* v_arg = allow_inputs (gen domain) in
+              let* res = eval_appl v_candidate v_arg in
+              let* cod_tval = eval_codomain codomain v_arg in
+              check res cod_tval
+          )
+      | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' ; mode = mode' } } as self_fun) ->
+        branch ~reason:CheckWrappedFun
+          ~left:(domain <: domain')
+          ~right:(
+            (*
+              The left has already checked the domain, so we can assume the 
+              domain side is well-typed.
+
+              We can skip the work on the right if the codomains are equal
+                because the wrapper means it has been checked.
+            *)
+            if Val.equal_fun_cod codomain codomain'
+              && Funtype.equal_mode mode mode' then confirm else
+            (* TODO: remove this duplication with all the above cases
+              (this is almost just the "right" side of checking functions but
+              with wrapping the result in the wrapping codomain'). *)
+            match data with
+            | VFunClosure _
+            | VFunFix _ ->
+              let* genned = allow_inputs (gen domain) in
+              let* cod_tval = eval_codomain codomain genned in
+              let* wrapped = wrap genned domain' in
+              let* res = ctx_of_mode mode (eval_appl data ~self_fun genned) in
+              let* cod_tval' = eval_codomain codomain' wrapped in
+              let* w_res = wrap res cod_tval' in
+              check w_res cod_tval
+            | VGenFun { funtype = { domain = _ ; codomain = codomain'' ; mode = Nondet } ; _ } ->
+              let* cod_tval, cod_tval', cod_tval'' =
+                match codomain, codomain', codomain'' with
+                | CodValue cod_tval, CodValue cod_tval', CodValue cod_tval'' -> 
+                  return (cod_tval, cod_tval', cod_tval'')
+                | _ ->
+                  let* genned = allow_inputs (gen domain) in
+                  let* cod_tval = eval_codomain codomain genned in
+                  let* wrapped = wrap genned domain' in
+                  let* cod_tval' = eval_codomain codomain' wrapped in
+                  (*
+                    Since codomain'' has already been evaluated depending on any
+                    v in domain' wrapped with domain'', we know that codomain''
+                    does not misuse any value in domain'' with respect to the type
+                    domain'. Hence there is no need to wrap with domain' before
+                    evaluating codomain'' because it cannot possibly go wrong.
+                  *)
+                  let* cod_tval'' = eval_codomain codomain'' wrapped in
+                  return (cod_tval, cod_tval', cod_tval'')
+              in
+              if Funtype.equal_mode mode Nondet
+                && Val.equal cod_tval cod_tval'' then confirm else
+              let* genned = ctx_of_mode mode (gen cod_tval'') in
+              let* w = wrap genned cod_tval' in
+              check w cod_tval
+            | VGenFun { funtype = { domain = domain'' ; codomain = _ ; mode = Det } ; _ } ->
+              branch ~reason:CheckGenFun
+                ~left:(domain <: domain'')
+                ~right:(
+                  if Val.equal_fun_cod codomain codomain' then confirm else
+                  let* v_arg = allow_inputs (gen domain) in
+                  let* w_arg = wrap v_arg domain' in
+                  let* res = eval_appl data w_arg in
+                  let* cod_tval = eval_codomain codomain v_arg in
+                  check res cod_tval
+                )
+            | _ -> refute
+          )
+      | _ -> refute
+      end
+    | VTypeVariant variant_t ->
+      let* v = force_value v in
+      begin match v with
+      | Any VVariant { label ; payload } ->
+        begin match Labels.Variant.Map.find_opt label variant_t with
+        | Some t -> check payload t
+        | None -> refute
+        end
+      | _ -> refute
+      end
+    | VTypeRecord record_t ->
+      let* v = force_value v in
+      begin match v with
+      | Any VRecord record_v ->
+        let t_labels = Record.label_set record_t in
+        let v_labels = Record.label_set record_v in
+          let check_label label =
+            check
+              (Labels.Record.Map.find label record_v)
+              (Labels.Record.Map.find label record_t)
+          in
+          check_struct check_label ~refute ~t_labels ~v_labels
+      | _ -> refute
+      end
+    | VTypeModule { captured ; env } ->
+      let* v = force_value v in
+      begin match v with
+      | Any VModule module_v ->
+        let t_labels_ls = List.map fst captured in
+        let t_labels = Labels.Record.Set.of_list t_labels_ls in
+        let v_labels = Record.label_set module_v in
+        let check_label label =
+          let new_env, tau = 
+            Utils.List_utils.fold_left_until (fun env (label', tau) ->
+              if Labels.Record.equal label' label
+              then `Stop (env, tau)
+              else `Continue (
+                Env.set (Labels.Record.to_ident label') (Labels.Record.Map.find label' module_v) env
+              )
+            ) (fun _ -> raise @@ InvariantException "Label not found in module type") env captured
+          in
+          let* t = local' new_env (eval_type tau) in
+          check (Labels.Record.Map.find label module_v) t
+        in
+        check_struct check_label ~refute ~t_labels ~v_labels
+      | _ -> refute
+      end
+    | VTypeMu { var ; closure = ({ captured ; env } as closure) } -> (* don't force v *)
+      (* Begin by unrolling to ensure the type is contractive.
+        Noncontractive types are disallowed cause an error. *)
+      let* t_body = unroll_mu var closure in
+      begin match v with
+      | Any VLazy { cell ; wrapping_types } ->
+        let* lazy_v = read_cell SLazy cell in
+        begin match lazy_v with
+        | LValue any_v ->
+          check any_v t
+        | LLazy LGenList _ ->
+          check v t_body
+        | LLazy LGenMu { var = var' ; closure = { captured = captured' ; env = env' } } ->
+          let* a = allow_inputs (gen VType) in (* fresh type to use as a stub *)
+          let* t_body = local' (Env.set var a env) (eval_type captured) in
+          let* t_body' = local' (Env.set var' a env') (eval_type captured') in
+          if Val.equal t_body t_body' && wrapping_types = [] then confirm else
+          let* genned = allow_inputs (gen t_body') in
+          let* wrapped = wrap_multi wrapping_types genned in
+          check wrapped t_body
+        end
+      | _ -> check v t_body
+      end
+    | VTypeList t_body -> (* don't force v *)
+      begin match v with
+      | Any VLazy { cell ; wrapping_types } ->
+        let* lazy_v = read_cell SLazy cell in
+        begin match lazy_v with
+        | LValue any_v ->
+          let* wrapped = wrap_multi wrapping_types any_v in
+          check wrapped t
+        | LLazy LGenMu { var ; closure } ->
+          (* Unroll the type and check to see if it is a list. *)
+          let* tval_mu_body = unroll_mu var closure in
+          tval_mu_body <: t
+        | LLazy LGenList t' ->
+          if wrapping_types = [] && Val.equal t' t_body then confirm else
+          let* genned = allow_inputs (gen t') in
+          (* genned is only a single element of the list, so wrap it
+            by extracting the type bodies out of the list type *)
+          let* wrapping_bodies =
+            List.fold_right (fun twrap acc_m ->
+              let* acc = acc_m in
+              match twrap with
+              | VTypeList tval -> return (tval :: acc)
+              | _ -> mismatch "Wrap list with non-list type"
+            ) wrapping_types (return [])
+          in
+          let* wrapped = wrap_multi wrapping_bodies genned in
+          check wrapped t_body
+        end
+      | Any VEmptyList -> confirm
+      | Any VListCons { hd ; tl } ->
+        branch ~reason:CheckList
+          ~left:(check hd t_body)
+          ~right:(check (Any tl) t)
+      | _ -> refute
+      end
+    | VTypeRefine { var ; tau ; predicate = { captured ; env } } ->
+      (* Value is not directly used here, so we don't force it quite yet *)
+      branch ~reason:CheckRefinementType
+        ~left:(check v tau)
+        ~right:(
+          let* p = local' (Env.set var v env) (eval captured) in
+          match p with
+          | Any VBool (true, _) -> confirm
+          | Any VBool (false, _) -> refute
+          | _ -> mismatch @@ non_bool_predicate p
+        )
+    | VTypeTuple (t1, t2) ->
+      let* v = force_value v in
+      begin match v with
+      | Any VTuple (v1, v2) ->
+        branch ~reason:CheckTuple
+          ~left:(check v1 t1)
+          ~right:(check v2 t2)
+      | _ -> refute
+      end
+    | VTypeSingle v_single ->
+      let* v = force_value v in
+      handle_two v_single v (function
+        | `Types (tval, tval') ->
+          (* For type equality, check subsets *)
+          if Val.equal tval' tval then confirm else
+          branch ~reason:CheckSingleton
+            ~left:(tval' <: tval)
+            ~right:(tval <: tval')
+        | _ ->
+          (* For non-type equality, use intensional equality *)
+          match Val.intensional_equal v_single v with
+          | Value (true, _) -> confirm
+          | Value (false, _)
+          | ShapeMismatch -> refute
+      )
+
+  (*
+    Check modules and records given a way to check each label and a default label.
+  *)
+  and check_struct
+    : type a env. (Labels.Record.t -> (a, env) m) -> refute:(a, env) m ->
+      t_labels:Labels.Record.Set.t -> v_labels:Labels.Record.Set.t -> (a, env) m
+    = fun check_label ~refute ~t_labels ~v_labels ->
+      if Labels.Record.Set.subset t_labels v_labels then
+        (* incr step because about to read an input *)
+        let* () = incr_step in
+        let* l = allow_inputs (read_input_exn KTag input_env) in
+        match l with
+        | Label (id, Check) -> check_label (Labels.Record.RecordLabel id)
+        | _ -> raise bad_input_env
+      else
+        refute
+
+  (*
+    -------------
+    CHECK SUBTYPE
+    -------------
+
+    [t1 <: t2] can be a refutation if t1 is not
+      a subtype of t2. It is a confirmation on failure to
+      find such refutation.
+
+    Does not use the environment.
+  *)
+  and (<:)
+    : 'a 'env. Val.tval -> Val.tval -> ('a, 'env) m
+    = fun t1 t2 ->
+      if Val.equal t1 t2 then
+        escape Confirmation
+      else
+        let* genned = allow_inputs (gen t1) in
+        check genned t2
+
+  (*
+    -------------------------
+    GENERATE MEMBER OF A TYPE
+    -------------------------
+
+    Does not use the environment.
+  *)
+  and gen 
+    : 'env. Val.tval -> (Val.any, 'env) m
+    = fun t ->
+    let* () = incr_step in
+    match t with
+    | VTypeUnit ->
+      return_any VUnit
+    | VTypeInt ->
+      let* step = step in
+      let* i = read_input_exn KInt input_env in
+      return_any (VInt (i, Stepkey.int_symbol step))
+    | VTypeBool ->
+      let* step = step in
+      let* b = read_input_exn KBool input_env in
+      return_any (VBool (b, Stepkey.bool_symbol step))
+    | VTypeFun funtype ->
+      let* Step nonce = step in
+      begin match funtype.mode with
+      | Nondet -> return_any (VGenFun { funtype ; nonce ; alist = None })
+      | Det ->
+        let* cell = make_alist in
+        return_any (VGenFun { funtype ; nonce ; alist = Some cell })
+      end
+    | VType ->
+      let* Step id = step in (* will use step for a fresh integer *)
+      return_any (VTypePoly { id })
+    | VTypePoly { id } ->
+      let* Step nonce = step in (* will use step for a fresh nonce *)
+      return_any (VGenPoly { id ; nonce })
+    | VTypeTop ->
+      (* parametric polymorphism is enough here *)
+      let* newtype = gen VType in
+      handle_any newtype
+        ~data:(fun _ -> raise @@ InvariantException "`type` generated data value")
+        ~typeval:gen
+    | VTypeBottom -> escape Vanish
+    | VTypeRecord record_t ->
+      let* genned_body =
+        Record.fold (fun l t acc_m ->
+          let* acc = acc_m in
+          let* v = gen t in
+          return (Labels.Record.Map.add l v acc)
+        ) (return Record.empty) record_t
+      in
+      return_any (VRecord genned_body)
+    | VTypeVariant variant_t ->
+      let* l = read_input_exn KTag input_env in
+      begin match l with
+      | Label (id, Gen) ->
+        let to_gen = Labels.Variant.of_ident id in
+        let t = Labels.Variant.Map.find to_gen variant_t in
+        let* payload = gen t in
+        return_any (VVariant { label = to_gen ; payload })
+      | _ -> raise bad_input_env
+      end
+    | VTypeList t ->
+      if do_splay then
+        let* () = assert_inputs_allowed in
+        let* l = make_lazy (LGenList t) in
+        return_any l
+      else
+        force_gen_list t
+    | VTypeRefine { var ; tau ; predicate = { captured ; env } } ->
+      let* v = gen tau in
+      let* p = local' (Env.set var v env) (eval captured) in
+      begin match p with
+      | Any VBool (true, _) -> return v
+      | Any VBool (false, _) -> escape Vanish
+      | _ -> mismatch @@ non_bool_predicate p
+      end 
+    | VTypeMu { var ; closure } ->
+      if do_splay then
+        (* Be overly cautious and assume that the generated value
+          will have several choices and hence uses an input. *)
+        let* () = assert_inputs_allowed in
+        let* lgen = make_lazy (LGenMu { var ; closure }) in
+        return_any lgen
+      else
+        force_gen_mu var closure
+    | VTypeTuple (t1, t2) ->
+      let* v1 = gen t1 in
+      let* v2 = gen t2 in
+      return_any (VTuple (v1, v2))
+    | VTypeModule { captured ; env } ->
+      let rec fold_labels acc_m = function
+        | [] -> acc_m
+        | (label, tau) :: tl ->
+          let* acc = acc_m in
+          let* tval = eval_type tau in
+          let* v = gen tval in
+          local (Env.set (Labels.Record.to_ident label) v) (
+            fold_labels (return @@ Labels.Record.Map.add label v acc) tl
+          )
+      in
+      let* genned_body =
+        local' env (
+          fold_labels (return Labels.Record.Map.empty) captured
+        )
+      in
+      return_any (VModule genned_body)
+    | VTypeSingle v ->
+      return v
+
+  (*
+    Generate a list. Makes an actual list instead of a symbol for a lazy one.
+
+    Does not use the environment.
+  *)
+  and force_gen_list 
+    : 'env. Val.tval -> (Val.any, 'env) m
+    = fun body ->
+    let* l = read_input_exn KTag input_env in
+    match l with
+    | Left GenList ->
+      let* () = incr_step in (* doesn't call gen, so need to increment step manually *)
+      return_any VEmptyList
+    | Right GenList ->
+      let* hd = gen body in
+      let* Any v_tl = gen (VTypeList body) in
+      handle v_tl
+        ~data:(fun tl -> return_any @@ VListCons { hd ; tl })
+        ~typeval:(fun _ -> raise @@ InvariantException "List generation makes a type value")
+    | _ -> raise bad_input_env
+
+  (*
+    Generate a member of a recursive type. Does not make a symbol for a lazy member.
+
+    Does not use the environment.
+  *)
+  and force_gen_mu 
+    : 'env. Ident.t -> Ast.t Val.closure -> (Val.any, 'env) m
+    = fun var closure ->
+    let* t_body = unroll_mu var closure in
+    match t_body with
+    | VTypeList t -> force_gen_list t
+    | _ -> gen t_body (* not mu type because of behavior of unroll_mu *)
+
+  (*
+    ----
+    WRAP
+    ----
+
+    Does not use the environment.
+
+    Does not fail with any type mismatches if the wrapping type
+    is wrong for the value. In such a case, it simply returns the
+    value unaffected. This is useful for checking recursive types
+    by putting a polymorphic type in place of the recursive type,
+    and letting wrapping gloss over that polymorphic value.
+  *)
+  and wrap 
+    : 'env. Val.any -> Val.tval -> (Val.any, 'env) m
+    = fun v t ->
+    if not do_wrap then return v else
+    match t with
+    | VType
+    | VTypePoly _
+    | VTypeUnit
+    | VTypeTop
+    | VTypeInt
+    | VTypeBool
+    | VTypeSingle _ -> return v
+    | VTypeBottom -> mismatch @@ wrap_bottom v
+    | VTypeMu { var ; closure } ->
+      let* tval = unroll_mu var closure in
+      begin match v with
+      | Any VLazy vlazy ->
+        (* Always lazily wrap, even if the value is forced already. *)
+        (* It is safe to put this off because the act itself of wrapping
+          is never the sole way to find an error. *)
+        if does_wrap_matter tval then
+          return_any (VLazy { vlazy with wrapping_types = tval :: vlazy.wrapping_types })
+        else
+          return v
+      | _ -> 
+        wrap v tval
+      end
+    | VTypeList t_body ->
+      begin match v with
+      | Any VLazy vlazy when does_wrap_matter t ->
+        return_any (VLazy { vlazy with wrapping_types = t :: vlazy.wrapping_types })
+      | Any VListCons { hd ; tl } ->
+        let* w_hd = wrap hd t_body in
+        let* Any w_tl = wrap (Any tl) t in
+        handle w_tl
+          ~data:(fun w_tl_data -> 
+            if w_hd == hd && w_tl_data == tl then
+              return v
+            else
+              return_any (VListCons { hd = w_hd ; tl = w_tl_data })
+          )
+          ~typeval:(fun _ -> raise @@ InvariantException "Wrapped list is not data")
+      | Any VLazy _ (* wrap must not matter due to pattern guard above *)
+      | Any VEmptyList (* wrapping empty list does nothing *)
+      | _ -> (* ignore mismatches, and just do nothing *)
+        return v
+      end
+    | VTypeFun tfun ->
+      begin match v with
+      | Any VWrapped { data ; tau = _ } ->
+        return_any (VWrapped { data ; tau = tfun })
+      | Any v' ->
+        handle v'
+          ~data:(fun data -> return_any (VWrapped { data ; tau = tfun }))
+          ~typeval:(fun _ -> return v)
+      end
+    | VTypeRecord t_body ->
+      begin match v with
+      | Any VRecord v_body ->
+        let* w_body =
+          Labels.Record.Map.fold (fun k t acc_m ->
+            let* acc = acc_m in
+            match Labels.Record.Map.find_opt k v_body with
+            | Some v' -> 
+              let* w = wrap v' t in
+              return (Labels.Record.Map.add k w acc)
+            | None -> return acc
+          ) t_body (return Labels.Record.Map.empty)
+        in
+        return_any (VRecord w_body)
+      | _ ->
+        return v
+      end
+    | VTypeModule { captured = t_ls ; env } ->
+      begin match v with
+      | Any VModule v_body ->
+        let rec fold_labels acc_m = function
+          | [] -> acc_m
+          | (label, tau) :: tl ->
+            let* acc = acc_m in
+            begin match Labels.Record.Map.find_opt label v_body with
+            | Some v' ->
+              let* tval = eval_type tau in
+              let* v = wrap v' tval in
+              local (Env.set (Labels.Record.to_ident label) v) (
+                fold_labels (return @@ Labels.Record.Map.add label v acc) tl
+              )
+            | None ->
+              return acc
+            end
+        in
+        let* wrapped_body =
+          local' env (
+            fold_labels (return Labels.Record.Map.empty) t_ls
+          )
+        in
+        return_any (VModule wrapped_body)
+      | _ ->
+        return v
+      end
+    | VTypeVariant t_body ->
+      begin match v with
+      | Any VVariant { label ; payload } ->
+        begin match Labels.Variant.Map.find_opt label t_body with
+        | Some t ->
+          let* w = wrap payload t in
+          if w == payload then
+            return v (* return value unchanged because wrapping did nothing *)
+          else
+            return_any (VVariant { label ; payload = w })
+        | None -> 
+          return v
+        end
+      | _ ->
+        return v
+      end
+    | VTypeTuple (t1, t2) ->
+      begin match v with
+      | Any VTuple (v1, v2) ->
+        let* w1 = wrap v1 t1 in
+        let* w2 = wrap v2 t2 in
+        if w1 == v1 && w2 == v2 then
+          return v (* return value unchanged because wrapping did nothing *)
+        else
+          return_any (VTuple (w1, w2))
+      | _ ->
+        return v
+      end
+    | VTypeRefine { var = _ ; tau ; predicate = _ } ->
+      wrap v tau
+
+  (*
+    Wrap with FIFO queue of types, represented as a list.
+    That is, the last type in the list wraps first.
+  *)
+  and wrap_multi
+    : 'env. Val.tval list -> Val.any -> (Val.any, 'env) m
+    = fun queue v ->
+    List.fold_right (fun twrap acc_m ->
+      let* acc = acc_m in
+      wrap acc twrap
+    ) queue (return v)
+
+  (*
+    ---------------------------------------
+    EVALUATE LIST OF STATEMENTS TO A MODULE
+    ---------------------------------------
+
+    Uses the environment when evaluating.
+  *)
+  and eval_statement_list (statements : Ast.statement list) : (Val.any, Val.Env.t) m =
+    let rec fold_stmts acc_m = function
+      | [] -> acc_m
+      | stmt :: tl ->
+        let* acc = acc_m in
+        let* (id, v) = eval_statement stmt in
+        local (Env.set id v) (
+          fold_stmts (return @@ Labels.Record.Map.add (Labels.Record.of_ident id) v acc) tl
+        )
+    in
+    let* module_body =
+      fold_stmts (return Labels.Record.Map.empty) statements
+    in
+    return_any (VModule module_body)
+
+  (*
+    -------------------------------
+    EVALUATE STATEMENT TO A BINDING
+    -------------------------------
+
+    Uses the environment when evaluating.
+  *)
+  and eval_statement (stmt : Ast.statement) : (Ident.t * Val.any, Val.Env.t) m =
+    match stmt with
+    | SLet { name ; annot = None ; defn } ->
+      let* v = eval defn in
+      return (name, v)
+    | SLetRec { name ; annot = None ; param ; defn } ->
+      let* env = read in
+      let v = to_any (VFunFix { fvar = name ; param ; closure = { captured = defn ; env } }) in
+      return (name, v)
+    | SLet { name ; annot = Some tau ; defn } ->
+      let* tval = eval_type tau in
+      let* v = eval defn in
+      branch ~reason:CheckLetExpr
+        ~left:(check v tval)
+        ~right:(
+          let* w = wrap v tval in
+          return (name, w)
+        )
+    | SLetRec { name ; annot = Some tau ; param ; defn } ->
+      let* tval = eval_type tau in
+      let* env = read in
+      let* v =
+        let* self =
+          if do_splay then
+            gen tval
+          else
+            wrap (Any (
+              VFunFix { fvar = name ; param ; closure = { captured = defn ; env } }
+            )) tval
+        in
+        (* we don't just return a wrapped fix fun because that would skip the check *)
+        return_any (VFunClosure { param ; closure =
+          { captured = defn ; env = Env.set name self env } }
+        )
+      in
+      branch ~reason:CheckLetExpr
+        ~left:(check v tval)
+        ~right:(
+          let* w = wrap v tval in
+          return (name, w)
+        )
+
+  (*
+    -------------------------------
+    EVALUATE SYMBOLS TO WHNF VALUES
+    -------------------------------
+
+    Uses the environment when evaluating.
+  *)
+  and force_eval (expr : Ast.t) : (Val.any, Val.Env.t) m =
+    let* v = eval expr in
+    force_value v
+  
+  (*
+    --------------------
+    FORCE VALUES TO WHNF
+    --------------------
+
+    Does not use the environment.
+  *)
+  and force_value 
+    : 'env. Val.any -> (Val.any, 'env) m
+    = fun v ->
+    if do_splay then
+      match v with 
+      | Any VLazy vlazy -> resolve_lazy vlazy
+      | _ -> return v
+    else
+      (* without splaying, nothing is ever delayed because it would be incomplete *)
+      return v
+
+  (*
+    Forces the value to weak head normal form and wraps
+    with any lazily-done wrappings.
+
+    Since it is asserted that inputs are allowed when the
+    lazy value is made, we allow all inputs here. The inputs
+    here only realize any choices that could have been made
+    when the lazy value was first created.
+  *)
+  and resolve_lazy
+    : 'env. Val.lazy_cell -> (Val.any, 'env) m
+    = fun { cell ; wrapping_types } ->
+    assert do_splay;
+    let* v_any =
+      let* lazy_v = read_cell SLazy cell in
+      match lazy_v with
+      | LLazy lv ->
+        let* genned =
+          allow_inputs @@
+          match lv with
+          | LGenMu { var ; closure } -> force_gen_mu var closure
+          | LGenList t -> force_gen_list t
+        in
+        let* () = set_cell SLazy cell (LValue genned) in
+        return genned
+      | LValue v_any ->
+        return v_any
+    in
+    wrap_multi wrapping_types v_any
+
+  in
+
+  let result = run (eval_statement_list pgm) in
+  Eval_result.to_answer result
