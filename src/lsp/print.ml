@@ -6,5 +6,11 @@ let print_answer ~(spans : Lang.Ast.pos_span list) i answer =
   match answer with
   | Grammar.Answer.Found_error msg ->
     Printf.printf "error:%s:%s\n%!" pos msg
-  | _ ->
+  | Grammar.Answer.Timeout _ ->
+    Printf.printf "timeout:%s\n%!" pos
+  | Grammar.Answer.Unknown ->
+    Printf.printf "unknown:%s\n%!" pos
+  | Grammar.Answer.Exhausted_pruned ->
+    Printf.printf "exhausted_pruned:%s\n%!" pos
+  | Grammar.Answer.Exhausted ->
     Printf.printf "ok:%s\n%!" pos
