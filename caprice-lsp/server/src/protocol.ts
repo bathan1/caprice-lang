@@ -33,6 +33,7 @@ export function parseLine(line: string): OcamlMessage | null {
   switch (parts[0]) {
     case 'ok': return { tag: 'ok', ...parseIndexed(parts) };
     case 'error': return { tag: 'error', ...parseIndexed(parts), msg: parts.slice(6).join(':') };
+    case 'parse_error': return { tag: 'parse_error', line: +parts[1], col: +parts[2], tok: parts[3] };
     case 'timeout': return { tag: 'timeout', ...parseIndexed(parts) };
     case 'unknown': return { tag: 'unknown', ...parseIndexed(parts) };
     case 'exhausted_pruned': return { tag: 'exhausted_pruned', ...parseIndexed(parts) };

@@ -117,6 +117,7 @@ function buildDidChangePacket(
 }
 
 connection.onDidOpenTextDocument(({ textDocument }) => {
+	diagnostics.clear();
 	const doc = TextDocument.create(
 		textDocument.uri,
 		textDocument.languageId,
