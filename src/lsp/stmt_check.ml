@@ -20,13 +20,13 @@ let disable_stmt_check (stmt : statement) : statement =
 let filter_check_stmt (stmts : program) (target_idx : int) : program =
   if (target_idx < 0 || target_idx >= List.length stmts) then
     failwith (Printf.sprintf "Target index %d is out of bounds" target_idx)
-  (* else if not (is_stmt_check_enabled (List.nth stmts target_idx)) then
-    None *)
   else
-    List.mapi (fun i stmt ->
+    stmts
+    |> List.filteri (fun i _ -> i <= target_idx)
+    |> List.mapi (fun i stmt ->
       if i = target_idx then stmt
       else disable_stmt_check stmt
-    ) stmts
+    )
 
 let generate_pgms_list (pgm : program) ~(target_idx : int option) : (int * program) list =
   match target_idx with
