@@ -126,6 +126,18 @@ export class DiagnosticsManager {
     }
   }
 
+  onNewCheck(uri: string, isNewDoc: boolean): void {
+    if (this.pendingParseError !== null) {
+      clearTimeout(this.pendingParseError.timer);
+      this.pendingParseError = null;
+    }
+    if (isNewDoc) {
+      this.byStmt.clear();
+    } else if (this.byStmt.delete(Number.MAX_SAFE_INTEGER)) {
+      this.flush(uri);
+    }
+  }
+
   cancelPendingTimers(uri: string): void {
     if (this.pendingParseError !== null) {
       clearTimeout(this.pendingParseError.timer);
