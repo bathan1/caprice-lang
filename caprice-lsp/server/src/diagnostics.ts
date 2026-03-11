@@ -32,6 +32,7 @@ function toSeverity(tag: OcamlMessage['tag']): DiagnosticSeverity | null {
 export class DiagnosticsManager {
   private byStmt = new Map<number, Diagnostic>();
   private pending: { idx: number; diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
+  private pendingTimers = new Map<number, NodeJS.Timeout>();
 
   constructor(private connection: Connection) {}
 
@@ -56,10 +57,29 @@ export class DiagnosticsManager {
       clearTimeout(this.pending.timer);
       this.pending = null;
     }
+    const t = this.pendingTimers.get(idx);
+    if (t !== undefined) {
+      clearTimeout(t);
+      this.pendingTimers.delete(idx);
+    }
   }
 
   handle(uri: string, msg: OcamlMessage): void {
     switch (msg.tag) {
+      case 'pending': {
+        const existing = this.pendingTimers.get(msg.idx);
+        if (existing !== undefined) clearTimeout(existing);
+        this.pendingTimers.set(msg.idx, setTimeout(() => {
+          this.pendingTimers.delete(msg.idx);
+          this.byStmt.set(msg.idx, {
+            range: msg.range,
+            message: 'checking...',
+            severity: DiagnosticSeverity.Warning,
+          });
+          this.flush(uri);
+        }, 250));
+        break;
+      }
       case 'parse_error': {
         const diagnostic = parseErrorDiagnostic(msg);
         if (this.pending !== null) {
@@ -106,6 +126,8 @@ export class DiagnosticsManager {
       clearTimeout(this.pending.timer);
       this.pending = null;
     }
+    for (const t of this.pendingTimers.values()) clearTimeout(t);
+    this.pendingTimers.clear();
     this.byStmt.clear();
   }
 }

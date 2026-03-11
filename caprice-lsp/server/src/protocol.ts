@@ -10,6 +10,7 @@ export type CheckerPacket = {
 
 // OCaml -> TypeScript
 export type OcamlMessage =
+  | { tag: 'pending';          idx: number; range: Range }
   | { tag: 'ok';               idx: number; range: Range }
   | { tag: 'error';            idx: number; range: Range; msg: string }
   | { tag: 'timeout';          idx: number; range: Range }
@@ -31,6 +32,7 @@ function parseIndexed(parts: string[]) {
 export function parseLine(line: string): OcamlMessage | null {
   const parts = line.split(':');
   switch (parts[0]) {
+    case 'pending': return { tag: 'pending', ...parseIndexed(parts) };
     case 'ok': return { tag: 'ok', ...parseIndexed(parts) };
     case 'error': return { tag: 'error', ...parseIndexed(parts), msg: parts.slice(6).join(':') };
     case 'parse_error': return { tag: 'parse_error', line: +parts[1], col: +parts[2], tok: parts[3] };

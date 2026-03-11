@@ -189,6 +189,8 @@ let round_robin ~spans (fs : work_item list) : unit =
 let ceval_many ~options ~spans pgms =
   round_robin ~spans (
     List.map (fun (id, pgm) ->
-      { id ; task = fun () -> Done (M.begin_ceval ~print_outcome:false ~options pgm) }
+      { id ; task = fun () ->
+          Lsp.Print.print_pending ~spans id;
+          Done (M.begin_ceval ~print_outcome:false ~options pgm) }
     ) pgms
   )
