@@ -12,6 +12,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 
 import type { CheckerPacket } from './protocol';
+import type { Range } from 'vscode-languageserver-types';
 import { parseLine } from './protocol';
 import { DiagnosticsManager } from './diagnostics';
 
@@ -92,10 +93,22 @@ connection.onInitialize((params: InitializeParams) => {
 	return result;
 });
 
-function buildDidChangePacket(
-	params: DidChangeTextDocumentParams,
-	updated: TextDocument
-): CheckerPacket {
+function sendPacket(doc: TextDocument, changes: Range[]): void {
+	try {
+		if (checkerBusy) restartChecker();
+		currentUri = doc.uri;
+		writeFramedMessage({
+			uri: doc.uri,
+			version: doc.version,
+			fullText: doc.getText(),
+			changes
+		});
+	} catch (error) {
+		connection.console.error(`protocol_error:${String(error)}`);
+	}
+}
+
+function extractChanges(params: DidChangeTextDocumentParams): Range[] {
 	const incrementalChanges = params.contentChanges.filter(
 		TextDocumentContentChangeEvent.isIncremental
 	);
@@ -106,14 +119,7 @@ function buildDidChangePacket(
 		);
 	}
 
-	const changes = incrementalChanges.map((change) => change.range);
-
-	return {
-		uri: params.textDocument.uri,
-		version: params.textDocument.version,
-		changes,
-		fullText: updated.getText()
-	};
+	return incrementalChanges.map((change) => change.range);
 }
 
 connection.onDidOpenTextDocument(({ textDocument }) => {
@@ -125,20 +131,15 @@ connection.onDidOpenTextDocument(({ textDocument }) => {
 		textDocument.text
 	);
 	docs.set(textDocument.uri, doc);
+
+	sendPacket(doc, [{ start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }]);
 });
 
 connection.onDidChangeTextDocument((params) => {
 	const updated = updateDocument(params);
 	if (!updated) return;
 
-	try {
-		if (checkerBusy) restartChecker();
-		currentUri = params.textDocument.uri;
-		const packet = buildDidChangePacket(params, updated);
-		writeFramedMessage(packet);
-	} catch (error) {
-		connection.console.error(`protocol_error:${String(error)}`);
-	}
+	sendPacket(updated, extractChanges(params));
 });
 
 connection.onDidCloseTextDocument(({ textDocument }) => {
