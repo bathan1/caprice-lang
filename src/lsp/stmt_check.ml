@@ -17,6 +17,9 @@ let disable_stmt_check (stmt : statement) : statement =
   | SLet r -> SLet { r with annot = disable_annot_check r.annot }
   | SLetRec r -> SLetRec { r with annot = disable_annot_check r.annot }
 
+let disable_all_checks (stmts : program) : program =
+  List.map disable_stmt_check stmts
+
 let filter_check_stmt (stmts : program) (target_idx : int) : program =
   if (target_idx < 0 || target_idx >= List.length stmts) then
     failwith (Printf.sprintf "Target index %d is out of bounds" target_idx)

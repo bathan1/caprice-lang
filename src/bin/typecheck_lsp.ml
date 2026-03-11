@@ -3,15 +3,38 @@ let read_exactly ic n =
   really_input ic buf 0 n;
   Bytes.to_string buf
 
+let find_and_print_baseline_error ~options ~spans stmts =
+  let all_disabled = Lsp.Stmt_check.disable_all_checks stmts in
+  let n = List.length all_disabled in
+  let rec loop i =
+    if i >= n then
+      Printf.printf "error:baseline scan exhausted without finding error\n%!"
+    else
+      all_disabled
+      |> List.filteri (fun j _ -> j <= i)
+      |> Concolic.Loop.begin_ceval ~print_outcome:false ~options
+      |> (function
+          | Grammar.Answer.Exhausted -> loop (i + 1)
+          | answer -> Lsp.Print.print_answer ~spans i answer)
+  in
+  loop 0
+
 let run_typecheck ~(options : Concolic.Options.t) (packet : Lsp.Protocol.checker_packet) =
   try
     let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
     let stmts = List.map fst stmts_with_pos in
     let spans = List.map snd stmts_with_pos in
     let check_index = Lsp.Range_check.compute_check_index spans packet.changes in
-    stmts
-    |> Lsp.Stmt_check.generate_pgms_list ~target_idx:check_index
-    |> Concolic.Loop.ceval_many ~options ~spans
+    let baseline = Concolic.Loop.begin_ceval ~print_outcome:false ~options
+      (Lsp.Stmt_check.disable_all_checks stmts)
+    in
+    match baseline with
+    | Grammar.Answer.Found_error _ ->
+      find_and_print_baseline_error ~options ~spans stmts
+    | _ ->
+      stmts
+      |> Lsp.Stmt_check.generate_pgms_list ~target_idx:check_index
+      |> Concolic.Loop.ceval_many ~options ~spans
   with
   | Lang.Parser.Parse_error (_exn, line, col, tok) ->
     Printf.printf "parse_error:%d:%d:%s\n%!" line col tok

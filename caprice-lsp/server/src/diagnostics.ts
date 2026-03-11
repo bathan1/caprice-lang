@@ -108,6 +108,11 @@ export class DiagnosticsManager {
           severity,
         };
 
+        if (msg.tag === 'error' && msg.msg.includes('Unbound variable')) {
+          for (const key of this.byStmt.keys()) {
+            if (key >= msg.idx) this.byStmt.delete(key);
+          }
+        }
         this.byStmt.set(msg.idx, diagnostic);
         this.flush(uri);
         break;
