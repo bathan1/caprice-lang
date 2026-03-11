@@ -60,6 +60,7 @@ function restartChecker(): void {
 	ocamlChecker.kill();
 	buffer = '';
 	checkerBusy = false;
+	diagnostics.cancelPendingTimers(currentUri);
 	ocamlChecker = startChecker();
 }
 
@@ -96,6 +97,7 @@ connection.onInitialize((params: InitializeParams) => {
 function sendPacket(doc: TextDocument, changes: Range[]): void {
 	try {
 		if (checkerBusy) restartChecker();
+		if (doc.uri !== currentUri) diagnostics.resetForNewDoc();
 		currentUri = doc.uri;
 		writeFramedMessage({
 			uri: doc.uri,

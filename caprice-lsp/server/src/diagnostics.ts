@@ -4,6 +4,7 @@ import {
   Connection,
 } from 'vscode-languageserver/node';
 import type { OcamlMessage } from './protocol';
+import type { Range } from 'vscode-languageserver-types';
 
 function parseErrorDiagnostic(msg: Extract<OcamlMessage, { tag: 'parse_error' }>): Diagnostic {
   const [start, end] = msg.tok.length > 0
@@ -32,7 +33,7 @@ function toSeverity(tag: OcamlMessage['tag']): DiagnosticSeverity | null {
 export class DiagnosticsManager {
   private byStmt = new Map<number, Diagnostic>();
   private pending: { idx: number; diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
-  private pendingTimers = new Map<number, NodeJS.Timeout>();
+  private inFlight = new Map<number, { range: Range; timer: NodeJS.Timeout }>();
 
   constructor(private connection: Connection) {}
 
@@ -44,7 +45,7 @@ export class DiagnosticsManager {
   }
 
   private commitPending(uri: string): void {
-    if (this.pending === null) return;
+    if (!this.pending) return;
     const { idx, diagnostic } = this.pending;
     this.pending = null;
     this.byStmt.set(idx, diagnostic);
@@ -53,31 +54,30 @@ export class DiagnosticsManager {
 
   private invalidate(idx: number): void {
     this.byStmt.delete(idx);
+    const entry = this.inFlight.get(idx);
+    if (entry !== undefined) { clearTimeout(entry.timer); this.inFlight.delete(idx); }
     if (this.pending !== null && this.pending.idx >= idx) {
       clearTimeout(this.pending.timer);
       this.pending = null;
-    }
-    const t = this.pendingTimers.get(idx);
-    if (t !== undefined) {
-      clearTimeout(t);
-      this.pendingTimers.delete(idx);
     }
   }
 
   handle(uri: string, msg: OcamlMessage): void {
     switch (msg.tag) {
       case 'pending': {
-        const existing = this.pendingTimers.get(msg.idx);
-        if (existing !== undefined) clearTimeout(existing);
-        this.pendingTimers.set(msg.idx, setTimeout(() => {
-          this.pendingTimers.delete(msg.idx);
-          this.byStmt.set(msg.idx, {
-            range: msg.range,
-            message: 'checking...',
-            severity: DiagnosticSeverity.Warning,
-          });
-          this.flush(uri);
-        }, 250));
+        const existing = this.inFlight.get(msg.idx);
+        if (existing !== undefined) clearTimeout(existing.timer);
+        this.inFlight.set(msg.idx, {
+          range: msg.range,
+          timer: setTimeout(() => {
+            this.byStmt.set(msg.idx, {
+              range: msg.range,
+              message: 'checking...',
+              severity: DiagnosticSeverity.Warning,
+            });
+            this.flush(uri);
+          }, 250),
+        });
         break;
       }
       case 'parse_error': {
@@ -121,13 +121,29 @@ export class DiagnosticsManager {
     }
   }
 
-  clear(): void {
-    if (this.pending !== null) {
-      clearTimeout(this.pending.timer);
-      this.pending = null;
+  private cancelTimers(): void {
+    if (this.pending !== null) { clearTimeout(this.pending.timer); this.pending = null; }
+    for (const { timer } of this.inFlight.values()) clearTimeout(timer);
+  }
+
+  cancelPendingTimers(uri: string): void {
+    this.cancelTimers();
+    for (const [idx, { range }] of this.inFlight) {
+      this.byStmt.set(idx, {
+        range,
+        message: 'timeout',
+        severity: DiagnosticSeverity.Warning,
+      });
     }
-    for (const t of this.pendingTimers.values()) clearTimeout(t);
-    this.pendingTimers.clear();
+    this.inFlight.clear();
+    this.flush(uri);
+  }
+
+  resetForNewDoc(): void {
     this.byStmt.clear();
+  }
+
+  clear(): void {
+    this.cancelTimers();
   }
 }
