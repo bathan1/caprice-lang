@@ -125,7 +125,6 @@ function extractChanges(params: DidChangeTextDocumentParams): Range[] {
 }
 
 connection.onDidOpenTextDocument(({ textDocument }) => {
-	diagnostics.clear();
 	const doc = TextDocument.create(
 		textDocument.uri,
 		textDocument.languageId,

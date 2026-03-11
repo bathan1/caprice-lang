@@ -32,7 +32,7 @@ function toSeverity(tag: OcamlMessage['tag']): DiagnosticSeverity | null {
 
 export class DiagnosticsManager {
   private byStmt = new Map<number, Diagnostic>();
-  private pending: { idx: number; diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
+  private pendingParseError: { idx: number; diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
   private inFlight = new Map<number, { range: Range; timer: NodeJS.Timeout }>();
 
   constructor(private connection: Connection) {}
@@ -45,9 +45,9 @@ export class DiagnosticsManager {
   }
 
   private commitPending(uri: string): void {
-    if (!this.pending) return;
-    const { idx, diagnostic } = this.pending;
-    this.pending = null;
+    if (!this.pendingParseError) return;
+    const { idx, diagnostic } = this.pendingParseError;
+    this.pendingParseError = null;
     this.byStmt.set(idx, diagnostic);
     this.flush(uri);
   }
@@ -56,9 +56,9 @@ export class DiagnosticsManager {
     this.byStmt.delete(idx);
     const entry = this.inFlight.get(idx);
     if (entry !== undefined) { clearTimeout(entry.timer); this.inFlight.delete(idx); }
-    if (this.pending !== null && this.pending.idx >= idx) {
-      clearTimeout(this.pending.timer);
-      this.pending = null;
+    if (this.pendingParseError !== null && this.pendingParseError.idx >= idx) {
+      clearTimeout(this.pendingParseError.timer);
+      this.pendingParseError = null;
     }
   }
 
@@ -82,14 +82,14 @@ export class DiagnosticsManager {
       }
       case 'parse_error': {
         const diagnostic = parseErrorDiagnostic(msg);
-        if (this.pending !== null) {
-          clearTimeout(this.pending.timer);
+        if (this.pendingParseError !== null) {
+          clearTimeout(this.pendingParseError.timer);
           this.commitPending(uri);
         }
         if (this.byStmt.delete(Number.MAX_SAFE_INTEGER)) {
           this.flush(uri);
         }
-        this.pending = {
+        this.pendingParseError = {
           idx: Number.MAX_SAFE_INTEGER, diagnostic,
           timer: setTimeout(() => { this.commitPending(uri); }, 1000),
         };
@@ -126,14 +126,13 @@ export class DiagnosticsManager {
     }
   }
 
-  private cancelTimers(): void {
-    if (this.pending !== null) { clearTimeout(this.pending.timer); this.pending = null; }
-    for (const { timer } of this.inFlight.values()) clearTimeout(timer);
-  }
-
   cancelPendingTimers(uri: string): void {
-    this.cancelTimers();
-    for (const [idx, { range }] of this.inFlight) {
+    if (this.pendingParseError !== null) {
+      clearTimeout(this.pendingParseError.timer);
+      this.pendingParseError = null;
+    }
+    for (const [idx, { range, timer }] of this.inFlight) {
+      clearTimeout(timer);
       this.byStmt.set(idx, {
         range,
         message: 'timeout',
@@ -146,9 +145,5 @@ export class DiagnosticsManager {
 
   resetForNewDoc(): void {
     this.byStmt.clear();
-  }
-
-  clear(): void {
-    this.cancelTimers();
   }
 }
