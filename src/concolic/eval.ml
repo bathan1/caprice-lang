@@ -362,7 +362,7 @@ let eval
     | VFunFix { fvar ; param ; closure = { captured ; env } } ->
       if do_splay && is_any_symbolic v_arg then
         mismatch (
-          Format.sprintf "Called rec fun with symbolic value %s while splaying"
+          Printf.sprintf "Called rec fun with symbolic value %s while splaying"
             (Val.any_to_string v_arg)
           )
       else
