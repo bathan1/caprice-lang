@@ -128,6 +128,6 @@ let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
   if options.is_random then Random.self_init () else Random.init 999;
   let span, (answer, ~run_count) = Utils.Time.time (begin_loop ~options) pgm in
   if print_outcome then
-    Format.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
+    Printf.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
       (Utils.Time.span_to_ms span) run_count (Answer.to_string answer);
   answer

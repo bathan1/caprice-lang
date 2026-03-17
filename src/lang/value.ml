@@ -210,41 +210,41 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VBool b ->
       Atom_cell.to_string Bool.to_string b
     | VFunClosure { param ; closure = _ } ->
-      Format.sprintf "(fun %s -> <body>)" (Ident.to_string param)
+      Printf.sprintf "(fun %s -> <body>)" (Ident.to_string param)
     | VVariant { label ; payload } -> 
-      Format.sprintf "(%s %s)" (Labels.Variant.to_string label) (any_to_string payload)
+      Printf.sprintf "(%s %s)" (Labels.Variant.to_string label) (any_to_string payload)
     | VRecord map_body ->
       Labels.Record.Map.to_list map_body
-      |> List.map (fun (key, data) -> Format.sprintf "%s = %s" (Labels.Record.to_string key) (any_to_string data))
+      |> List.map (fun (key, data) -> Printf.sprintf "%s = %s" (Labels.Record.to_string key) (any_to_string data))
       |> String.concat " ; "
-      |> Format.sprintf "{ %s }"
+      |> Printf.sprintf "{ %s }"
     | VModule map_body ->
       Labels.Record.Map.to_list map_body
-      |> List.map (fun (key, data) -> Format.sprintf "let %s = %s" (Labels.Record.to_string key) (any_to_string data))
+      |> List.map (fun (key, data) -> Printf.sprintf "let %s = %s" (Labels.Record.to_string key) (any_to_string data))
       |> String.concat " "
-      |> Format.sprintf "struct %s end"
+      |> Printf.sprintf "struct %s end"
     | VTuple (v1, v2) ->
-      Format.sprintf "(%s, %s)" (any_to_string v1) (any_to_string v2)
+      Printf.sprintf "(%s, %s)" (any_to_string v1) (any_to_string v2)
     | VFunFix { fvar ; param ; closure = _ } ->
-      Format.sprintf "(fix %s(%s). <body>)" (Ident.to_string fvar) (Ident.to_string param)
+      Printf.sprintf "(fix %s(%s). <body>)" (Ident.to_string fvar) (Ident.to_string param)
     | VEmptyList ->
       "[]"
     | VListCons { hd ; tl } ->
-      Format.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
+      Printf.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
     | VGenFun { funtype ; nonce ; alist = _ } ->
-      Format.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) nonce
+      Printf.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) nonce
     | VGenPoly { id ; nonce } ->
-      Format.sprintf "G(poly id : %d, nonce : %d)" id nonce
+      Printf.sprintf "G(poly id : %d, nonce : %d)" id nonce
     | VWrapped { data ; tau } ->
-      Format.sprintf "W(%s, %s)" (to_string data) (to_string (VTypeFun tau))
+      Printf.sprintf "W(%s, %s)" (to_string data) (to_string (VTypeFun tau))
     | VLazy { cell = _ ; wrapping_types } ->
       List.fold_right (fun t acc ->
-        Format.sprintf "W(%s, %s)" acc (to_string t)
+        Printf.sprintf "W(%s, %s)" acc (to_string t)
       ) wrapping_types "<lazy>"
     | VType ->
       "type"
     | VTypePoly { id } ->
-      Format.sprintf "(poly id : %d)" id
+      Printf.sprintf "(poly id : %d)" id
     | VTypeUnit ->
       "unit"
     | VTypeTop ->
@@ -256,100 +256,100 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeBool -> 
       "bool"
     | VTypeMu { var ; closure = _ } ->
-      Format.sprintf "(mu %s. <body>)" (Ident.to_string var)
+      Printf.sprintf "(mu %s. <body>)" (Ident.to_string var)
     | VTypeList t ->
-      Format.sprintf "(list %s)" (to_string t)
+      Printf.sprintf "(list %s)" (to_string t)
     | VTypeFun { domain ; codomain ; mode } ->
       let s_arrow = match mode with Funtype.Nondet -> "->" | Det -> "-->" in
       begin match codomain with
-      | CodValue cod_tval -> Format.sprintf "%s %s %s" (to_string domain) s_arrow (to_string cod_tval)
-      | CodDependent (id, _closure) -> Format.sprintf "(%s : %s) %s <codomain>" (Ident.to_string id) (to_string domain) s_arrow
+      | CodValue cod_tval -> Printf.sprintf "%s %s %s" (to_string domain) s_arrow (to_string cod_tval)
+      | CodDependent (id, _closure) -> Printf.sprintf "(%s : %s) %s <codomain>" (Ident.to_string id) (to_string domain) s_arrow
       end
     | VTypeRecord map_body ->
       if Labels.Record.Map.is_empty map_body then "{:}" else
       Labels.Record.Map.to_list map_body
-      |> List.map (fun (label, tau) -> Format.sprintf "%s : %s" (Labels.Record.to_string label) (to_string tau))
+      |> List.map (fun (label, tau) -> Printf.sprintf "%s : %s" (Labels.Record.to_string label) (to_string tau))
       |> String.concat " ; "
-      |> Format.sprintf "{ %s }"
+      |> Printf.sprintf "{ %s }"
     | VTypeModule { captured = alist ; env = _ } ->
       alist
-      |> List.map (fun (label, _closure) -> Format.sprintf "val %s" (Labels.Record.to_string label))
+      |> List.map (fun (label, _closure) -> Printf.sprintf "val %s" (Labels.Record.to_string label))
       |> String.concat " "
-      |> Format.sprintf "sig %s end"
+      |> Printf.sprintf "sig %s end"
     | VTypeVariant map_body ->
       Labels.Variant.Map.to_list map_body
-      |> List.map (fun (label, tau) -> Format.sprintf "%s of %s" (Labels.Variant.to_string label) (to_string tau))
+      |> List.map (fun (label, tau) -> Printf.sprintf "%s of %s" (Labels.Variant.to_string label) (to_string tau))
       |> String.concat " | "
-      |> Format.sprintf "(%s)"
+      |> Printf.sprintf "(%s)"
     | VTypeRefine { var ; tau ; predicate = _closure } ->
-      Format.sprintf "{ %s : %s | <predicate> }" (Ident.to_string var) (to_string tau)
+      Printf.sprintf "{ %s : %s | <predicate> }" (Ident.to_string var) (to_string tau)
     | VTypeTuple (t1, t2) ->
-      Format.sprintf "(%s * %s)" (to_string t1) (to_string t2)
+      Printf.sprintf "(%s * %s)" (to_string t1) (to_string t2)
     | VTypeSingle Any v ->
-      Format.sprintf "(singleton %s)" (to_string v)
+      Printf.sprintf "(singleton %s)" (to_string v)
 
   and any_to_string (Any any) = to_string any
 
   module Error_messages = struct
     let refutation (v : any) (t : tval) : string =
-      Format.sprintf "Refutation: %s does not have type %s"
+      Printf.sprintf "Refutation: %s does not have type %s"
         (any_to_string v) (to_string t)
 
     let bad_binop (v1 : any) (op : Binop.t) (v2 : any) : string =
-      Format.sprintf "Bad binop: %s %s %s"
+      Printf.sprintf "Bad binop: %s %s %s"
         (any_to_string v1) (Binop.to_string op) (any_to_string v2)
 
     let apply_non_function (v : any) : string =
-      Format.sprintf "Bad application: %s is not a function"
+      Printf.sprintf "Bad application: %s is not a function"
         (any_to_string v)
 
     let missing_pattern (v : any) (patterns : Pattern.t list) : string =
       List.map Pattern.to_string patterns
       |> String.concat " | "
-      |> Format.sprintf "Bad match: %s is not in pattern list %s" (any_to_string v)
+      |> Printf.sprintf "Bad match: %s is not in pattern list %s" (any_to_string v)
 
     let missing_label (v : any) (label : Labels.Record.t) : string =
-      Format.sprintf "Missing label: %s does not have label %s"
+      Printf.sprintf "Missing label: %s does not have label %s"
         (any_to_string v) (Labels.Record.to_string label)
 
     let project_non_record (v : any) (label : Labels.Record.t) : string =
-      Format.sprintf "Bad projection: %s is not a record/module; tried to project label %s"
+      Printf.sprintf "Bad projection: %s is not a record/module; tried to project label %s"
         (any_to_string v) (Labels.Record.to_string label)
 
     let cons_non_list (v_hd : any) (v_tl : any) : string =
-      Format.sprintf "Bad cons: tried to put %s on front of %s, which is not a list"
+      Printf.sprintf "Bad cons: tried to put %s on front of %s, which is not a list"
         (any_to_string v_hd) (any_to_string v_tl)
 
     let not_non_bool (v : any) : string =
-      Format.sprintf "Bad not: %s is not a boolean and cannot be negated"
+      Printf.sprintf "Bad not: %s is not a boolean and cannot be negated"
         (any_to_string v)
       
     let if_non_bool (v : any) : string =
-      Format.sprintf "Bad if: %s is not a boolean and cannot be used as a condition"
+      Printf.sprintf "Bad if: %s is not a boolean and cannot be used as a condition"
         (any_to_string v)
 
     let assert_non_bool (v : any) : string =
-      Format.sprintf "Bad assert: %s is not a boolean and cannot be used for an assertion"
+      Printf.sprintf "Bad assert: %s is not a boolean and cannot be used for an assertion"
         (any_to_string v)
 
     let assume_non_bool (v : any) : string =
-      Format.sprintf "Bad assume: %s is not a boolean and cannot be used for an assumption"
+      Printf.sprintf "Bad assume: %s is not a boolean and cannot be used for an assumption"
         (any_to_string v)
 
     let non_type_value (v : data t) : string =
-      Format.sprintf "Bad type: %s is expected to be a type value"
+      Printf.sprintf "Bad type: %s is expected to be a type value"
         (to_string v)
 
     let non_bool_predicate (v : any) : string =
-      Format.sprintf "Bad predicate: the refinement predicate %s is expected to be a boolean"
+      Printf.sprintf "Bad predicate: the refinement predicate %s is expected to be a boolean"
         (any_to_string v)
 
     let bad_wrap s v t =
-      Format.sprintf "Bad wrap: %s is not %s; tried to wrap with type %s"
+      Printf.sprintf "Bad wrap: %s is not %s; tried to wrap with type %s"
         s (any_to_string v) (to_string t)
 
     let wrap_bottom (v : any) : string =
-      Format.sprintf "Bad wrap: tried to wrap %s with type bottom"
+      Printf.sprintf "Bad wrap: tried to wrap %s with type bottom"
         (any_to_string v)
       
     let wrap_non_list (v : any) (tlist : tval) : string =
@@ -359,7 +359,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       bad_wrap "a function" (Any t) tfun
 
     let wrap_missing_label (v : any) (label : Labels.Record.t) : string =
-      Format.sprintf "Bad wrap: Missing label: %s does not have label %s"
+      Printf.sprintf "Bad wrap: Missing label: %s does not have label %s"
         (any_to_string v) (Labels.Record.to_string label)
 
     let wrap_non_record (v : any) (t : tval) : string =
@@ -369,7 +369,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       bad_wrap "a module" v t
 
     let wrap_missing_constructor (v : any) (t : tval) : string =
-      Format.sprintf "Bad wrap: Missing constructor: %s is not a constructor in type %s"
+      Printf.sprintf "Bad wrap: Missing constructor: %s is not a constructor in type %s"
         (any_to_string v) (to_string t)
 
     let wrap_non_variant (v : any) (t : tval) : string =
@@ -379,11 +379,11 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       bad_wrap "a tuple" v t
 
     let shape_mismatch (v1 : any) (v2 : any) : string =
-      Format.sprintf "Bad intensional equality: %s and %s are not of the same shape."
+      Printf.sprintf "Bad intensional equality: %s and %s are not of the same shape."
         (any_to_string v1) (any_to_string v2)
 
     let non_contractive_type (t : tval) : string =
-      Format.sprintf "Bad type: %s is not contractive."
+      Printf.sprintf "Bad type: %s is not contractive."
         (to_string t)
   end
 
@@ -442,7 +442,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
         | p, VGenPoly _ -> 
           (* generated polymorphic values cannot be inspected *)
           return @@ Failure 
-            (Format.sprintf "Bad match: matching polymorphic value with pattern %s" 
+            (Printf.sprintf "Bad match: matching polymorphic value with pattern %s" 
               (Pattern.to_string p))
         | PVariant { label = pattern_label ; payload = payload_pattern },
           VVariant { label = subject_label ; payload = Any v } ->

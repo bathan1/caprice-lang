@@ -20,8 +20,8 @@ let prune a =
   min a Exhausted_pruned
 
 let to_string = function
-  | Found_error msg  -> Format.sprintf "Found error: %s" msg
-  | Timeout span     -> Format.sprintf "Timeout in %0.3fs" (Utils.Time.convert_span span ~to_:Mtime.Span.s)
+  | Found_error msg  -> Printf.sprintf "Found error: %s" msg
+  | Timeout span     -> Printf.sprintf "Timeout in %0.3fs" (Utils.Time.convert_span span ~to_:Mtime.Span.s)
   | Unknown          -> "Unknown"
   | Exhausted_pruned -> "Exausted pruned tree"
   | Exhausted        -> "Exhausted"

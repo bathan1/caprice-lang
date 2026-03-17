@@ -47,7 +47,7 @@ let priority = function
     | _ -> Path_priority.zero
 
 let to_string = function
-  | Left reason -> Format.sprintf "Left (%s)" (reason_to_string reason)
-  | Right reason -> Format.sprintf "Right (%s)" (reason_to_string reason)
-  | Label (Ident s, Check) -> Format.sprintf "%s (Check)" s
-  | Label (Ident s, Gen) -> Format.sprintf "%s (Gen)" s
+  | Left reason -> Printf.sprintf "Left (%s)" (reason_to_string reason)
+  | Right reason -> Printf.sprintf "Right (%s)" (reason_to_string reason)
+  | Label (Ident s, Check) -> Printf.sprintf "%s (Check)" s
+  | Label (Ident s, Gen) -> Printf.sprintf "%s (Gen)" s
