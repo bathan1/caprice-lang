@@ -6,7 +6,7 @@ open Grammar.Val
 open Eval_result
 
 (* `Any` is unboxed, so this is zero overhead *)
-let[@inline always] return_any v = return (Any v)
+let[@inline] return_any v = return (Any v)
 
 let bad_input_env =
   InvariantException "Input environment is ill-formed"

@@ -84,9 +84,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
   type dval = data t
   type tval = typeval t
 
-  let[@inline always] to_any : type a. a t -> any = fun v -> Any v
+  let[@inline] to_any : type a. a t -> any = fun v -> Any v
 
-  let[@inline always] handle (type a b) (v : a t) ~(data : data t -> b) ~(typeval : typeval t -> b) : b =
+  let[@inline] handle (type a b) (v : a t) ~(data : data t -> b) ~(typeval : typeval t -> b) : b =
     match v with
     | ( VUnit
       | VInt _
@@ -120,10 +120,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       | VTypeTuple _
       | VTypeSingle _) as x -> typeval x
 
-  let[@inline always] handle_any (type a) (Any v : any) ~(data : data t -> a) ~(typeval : typeval t -> a) : a =
+  let[@inline] handle_any (type a) (Any v : any) ~(data : data t -> a) ~(typeval : typeval t -> a) : a =
     handle v ~data ~typeval
 
-  let[@inline always] handle_two (v1 : any) (v2 : any)
+  let[@inline] handle_two (v1 : any) (v2 : any)
     (f : [ `Data of dval * dval | `Types of tval * tval | `Mismatch of any * any ] -> 'a) : 'a =
     handle_any v1
       ~data:(fun d1 ->
