@@ -19,19 +19,17 @@ let make_targets ~(max_tree_depth : int) (target : Target.t)
           Target.make (Formula.not_ cond) acc_formulas logged_inputs
             ~path_priority
         in
-        let ret_targets, is_pruned = make path_priority (Formula.BSet.add cond acc_formulas) tl in
+        let ret_targets, is_pruned =
+          make path_priority (Formula.BSet.add cond acc_formulas) tl
+        in
         new_target :: ret_targets, is_pruned
       | Tag { tag = _ ; alternatives ; key ; logged_inputs } ->
-        let new_targets =
-          List.map (fun alt_tag ->
-            assert (Tag.priority alt_tag = Path_item.to_priority p_item);
-            Target.make 
-              Formula.trivial
-              acc_formulas
-              (Input_env.add KTag key alt_tag logged_inputs)
-              ~path_priority
-          ) alternatives
+        let target_of_tag tag =
+          assert (Tag.priority tag = Path_item.to_priority p_item);
+          Target.make Formula.trivial acc_formulas
+            (Input_env.add KTag key tag logged_inputs) ~path_priority
         in
+        let new_targets = List.map target_of_tag alternatives in
         let ret_targets, is_pruned = make path_priority acc_formulas tl in
         List.rev_append new_targets ret_targets, is_pruned
   in
@@ -66,38 +64,38 @@ let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * int 
       Eval.eval pgm ~max_step:options.max_step ~do_splay
         ~do_wrap:options.do_wrap
     in
-    let rec loop tq =
+    (* explore the target queue *)
+    let rec explore tq =
       let () = Utils.Time.yield_to_timer () in
       match Target_queue.pop tq with
-      | Some (target, tq) ->
-        begin match Default_solver.solve target.target_formula with
-        | Sat model -> loop_on_model target tq model
-        | Unknown -> let a = loop tq in Answer.min Answer.Unknown a
-        | Unsat -> loop tq
-        end
+      | Some (target, tq) -> handle_target target tq
       | None -> Answer.Exhausted
+    
+    (* solve and run the target, or continue exploring if unsat *)
+    and handle_target target tq =
+      match Default_solver.solve target.target_formula with
+      | Sat model -> handle_model target tq model
+      | Unknown -> Answer.min Answer.Unknown (explore tq)
+      | Unsat -> explore tq
 
-    and loop_on_model target tq model =
+    (* evaluate with the model, then continue exploring *)
+    and handle_model target tq model =
       let run_num = Utils.Counter.next run_count in
-      let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
-      let runs =
+      let default_int, default_bool =
         if run_num = 0 then
-          eval ienv target
-            ~default_int:(fun () -> 0)
-            ~default_bool:(fun () -> false)
+          (fun () -> 0), (fun () -> false)
         else
-          eval ienv target
-            ~default_int:(fun () -> Random.int_in_range ~min:(-10) ~max:10)
-            ~default_bool:Random.bool
+          (fun () -> Random.int_in_range ~min:(-10) ~max:10), Random.bool
       in
+      let ienv = Input_env.extend target.i_env (Input_env.of_model model) in
+      let runs = eval ienv target ~default_int ~default_bool in
       match collect_logged_runs runs ~max_tree_depth:options.max_tree_depth with
       | `Quit answer ->
         answer
       | `Cont (targets, answer) ->
-        let a = loop (Target_queue.push_list tq targets) in
-        Answer.min a answer
+        Answer.min answer (explore (Target_queue.push_list tq targets))
     in
-    loop Target_queue.initial
+    explore Target_queue.initial
   in
 
   let run_splaying_modes () =
