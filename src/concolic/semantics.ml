@@ -5,9 +5,9 @@ open Grammar
 exception InvariantException of string
 
 module State = struct
-  type t = 
+  type t =
     { rev_stem : Rev_stem.t (* we will cons to the path instead of union a log *)
-    ; logged_inputs : Input_env.t 
+    ; logged_inputs : Input_env.t
     ; runs : Logged_run.t list
     ; lazies : Val.vlazy Suspension.Map.t
     ; detfun_alists : Val.alist Suspension.Map.t
@@ -42,7 +42,7 @@ module Matches = Val.Make_match (struct
   include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
 end)
 
-let[@inline] incr_step 
+let[@inline] incr_step
   : 'env. max_step:Step.t -> (unit, 'env) m
   = fun ~max_step ->
   { run = fun ~reject ~accept state step _ _ ->
@@ -65,7 +65,7 @@ let[@inline] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
 
 (* For typing purposes (due to value restriction), we must inline the
   definition of `M.escape`.
-    
+
   The ideal implementation would simply be `escape Vanish`.
 *)
 let vanish : 'a 'env. ('a, 'env) m =
@@ -92,13 +92,13 @@ let assert_inputs_allowed : 'env. (unit, 'env) m =
 let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'env) m =
   let* step = step in
   let* { Context.target ; _ } = read_ctx in
-  modify (fun (s : State.t) -> 
-    { s with rev_stem = 
+  modify (fun (s : State.t) ->
+    { s with rev_stem =
       let path_item =
         Path_item.Tag { tag ; alternatives ; key =
           Stepkey step ; logged_inputs = s.logged_inputs }
       in
-      Rev_stem.cons path_item 
+      Rev_stem.cons path_item
         s.rev_stem ~if_exceeds:(Target.priority target)
     }
   )
@@ -111,7 +111,7 @@ let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'e
 let push_and_log_tag (tag : Tag.t) : (unit, 'env) m =
   let* step = step in
   let* { Context.target ; _ } = read_ctx in
-  modify (fun (s : State.t) -> 
+  modify (fun (s : State.t) ->
     { s with rev_stem = begin
       let path_item =
         Path_item.Tag { tag ; alternatives = [] ; key =
@@ -136,7 +136,7 @@ let push_formula_to_path ?(allow_flip : bool = true)
   then return ()
   else
     let* { Context.target ; _ } = read_ctx in
-    modify (fun (s : State.t) -> 
+    modify (fun (s : State.t) ->
       { s with rev_stem =
         let path_item =
           if allow_flip then
@@ -169,7 +169,7 @@ let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
   ~(default : 'a) : ('a, 'env) m =
   let* () = assert_inputs_allowed in
   let* step = step in
-  let log_input input = 
+  let log_input input =
     modify (fun (s : State.t) -> { s with logged_inputs =
       Input_env.add kind (Stepkey step) input s.logged_inputs })
   in
@@ -218,8 +218,8 @@ let[@inline] fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
     ~restore_state:(fun e ~og ~forked_state ->
       { og with runs =
         let forked_run =
-          { Logged_run.rev_stem = forked_state.rev_stem 
-          ; target 
+          { Logged_run.rev_stem = forked_state.rev_stem
+          ; target
           ; answer = Eval_result.to_answer e }
         in
         (* Note that the forked state runs include the original runs (see setup_state) *)

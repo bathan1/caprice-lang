@@ -7,7 +7,7 @@
   This just ensures that splayed recursive calls are deterministic.
 *)
 let rec map
-  : (type a) --> (type b) --> (a --> b) --> list a --> list b 
+  : (type a) --> (type b) --> (a --> b) --> list a --> list b
   = fun a b f ls ->
   match ls with
   | [] -> []

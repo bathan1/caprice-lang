@@ -2,7 +2,7 @@
 module T = struct
   type t = Stepkey of Step.t [@@unboxed]
 
-  let compare (Stepkey a) (Stepkey b) = 
+  let compare (Stepkey a) (Stepkey b) =
     Step.compare a b
 
   let[@inline] uid (Stepkey step) = Step.uid step

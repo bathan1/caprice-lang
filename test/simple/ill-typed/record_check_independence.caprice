@@ -9,9 +9,9 @@
   (sequential-check) style system would diverge here!
 *)
 
-let _ : 
+let _ :
   { f : { _ : bool | false } -> unit (* every function has this type *)
-  ; y : int } 
+  ; y : int }
   =
   { f = fun _ -> ()
   ; y = true (* ERROR: should be an int *)

@@ -35,7 +35,7 @@ let make_targets ~(max_tree_depth : int) (target : Target.t)
   in
   make (Target.priority target) target.all_formulas stem
 
-let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) : 
+let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
   [ `Quit of Answer.t | `Cont of Target.t list * Answer.t ] =
   let rec collect acc_targets acc_answer = function
     | [] -> `Cont (acc_targets, acc_answer)
@@ -70,7 +70,7 @@ let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * int 
       match Target_queue.pop tq with
       | Some (target, tq) -> handle_target target tq
       | None -> Answer.Exhausted
-    
+
     (* solve and run the target, or continue exploring if unsat *)
     and handle_target target tq =
       match Default_solver.solve target.target_formula with

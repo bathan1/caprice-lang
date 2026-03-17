@@ -10,13 +10,12 @@
  (public_name caprice.lang)
  (synopsis "Caprice Language Definition")
  (modules (:standard))
- (libraries 
+ (libraries
   ; internal
-  utils 
+  utils
   ; external
   baby
   cmdliner
  )
  (instrumentation (backend landmarks --auto))
 )
-  

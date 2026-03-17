@@ -4,7 +4,7 @@ module T = struct
 
   let compare (Ident a) (Ident b) =
     String.compare a b
-    
+
   let equal (Ident a) (Ident b) =
     String.equal a b
 end

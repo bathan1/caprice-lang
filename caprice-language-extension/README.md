@@ -26,7 +26,7 @@ as a VS Code extension.
     vsce package --allow-missing-repository
     ```
     Answer `y`/`yes` to questions about missing licenses.
-4. Run 
+4. Run
     ```
     code --install-extension caprice-language-0.0.0.vsix
     ```
@@ -62,5 +62,5 @@ The icon is based on an original hand-drawn sketch and is free to use. It has be
 The icon has been set as a fallback to whatever icon theme you're using. As long
 as your theme does not define an icon for `.caprice` files, the provided icon is used.
 
-The code for this highlighter has nearly all been written with Claude 4. No person 
+The code for this highlighter has nearly all been written with Claude 4. No person
 claims credit for this syntax highlighter.

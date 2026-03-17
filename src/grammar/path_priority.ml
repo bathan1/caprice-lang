@@ -9,5 +9,5 @@ let one = Priority 1
 
 let geq (Priority n1) (Priority n2) = n1 >= n2
 
-let[@inline] plus (Priority a) (Priority b) = 
+let[@inline] plus (Priority a) (Priority b) =
   Priority (a + b)

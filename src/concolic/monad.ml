@@ -122,7 +122,7 @@ let run (x : ('a, < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >) t)
   (init_state : 'state) (init_env : 'env) (init_ctx : 'ctx)
   : ('a * Step.t, 'err) result * 'state =
   x.run init_state Step.zero init_env init_ctx
-    ~reject:(fun e state -> Error e, state) 
+    ~reject:(fun e state -> Error e, state)
     ~accept:(fun a state step -> Ok (a, step), state)
 
 (*
@@ -139,13 +139,13 @@ let step : (Step.t, 'x) t =
 type 'x failing = { run_failing : 'a. ('a, 'x) t } [@@unboxed]
 
 let[@inline] fork (m : (Utils.Empty.t, 'x) t)
-  (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state) 
-  ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state) 
+  (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
+  ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state)
   : ('a, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->
     m.run (setup_state state) step env fork_ctx
       ~accept:Utils.Empty.absurd
-      ~reject:(fun e forked_state -> 
+      ~reject:(fun e forked_state ->
         (* uses original step count when resuming, not step count after fork *)
         (k e).run ~reject ~accept (restore_state e ~og:state ~forked_state) step env ctx
       )

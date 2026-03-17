@@ -27,7 +27,7 @@
 		],
 		"description": "Add a 'with' branch block to an existing construct"
 	},
-	
+
 	"with block (2 cases)": {
 		"prefix": "with2",
 		"body": [

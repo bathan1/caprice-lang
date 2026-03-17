@@ -4,10 +4,10 @@ module Variant = struct
     type t = VariantLabel of Ident.t [@@unboxed]
 
     let compare (VariantLabel a) (VariantLabel b) =
-      Ident.compare a b 
+      Ident.compare a b
 
     let equal (VariantLabel a) (VariantLabel b) =
-      Ident.equal a b 
+      Ident.equal a b
   end
 
   include T
@@ -25,10 +25,10 @@ module Record = struct
     type t = RecordLabel of Ident.t [@@unboxed]
 
     let compare (RecordLabel a) (RecordLabel b) =
-      Ident.compare a b 
+      Ident.compare a b
 
     let equal (RecordLabel a) (RecordLabel b) =
-      Ident.equal a b 
+      Ident.equal a b
   end
 
   include T

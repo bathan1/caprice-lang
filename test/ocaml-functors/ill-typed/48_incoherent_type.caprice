@@ -40,5 +40,5 @@ let _ = F
   end)
   (struct
     let t = unit    (* this was originally missing, but I've put it in to isolate the error *)
-    let f _ x = x   (* this is bogus! *) 
+    let f _ x = x   (* this is bogus! *)
   end)

@@ -17,7 +17,7 @@ end
 
 let a = abstract
 
-let F (X : a) : sig val t : type end = 
+let F (X : a) : sig val t : type end =
   struct let t = abstract end
 
 let M = struct

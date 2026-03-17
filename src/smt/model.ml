@@ -1,9 +1,9 @@
 
-type 'k t = 
+type 'k t =
   { value : 'a. ('a, 'k) Symbol.t -> 'a option
   ; domain : Utils.Uid.t list }
 
-let merge (s1 : 'k t) (s2 : 'k t) : 'k t = 
+let merge (s1 : 'k t) (s2 : 'k t) : 'k t =
   let value (type a) (sym : (a, 'k) Symbol.t) : a option =
     match s1.value sym with
     | None -> s2.value sym

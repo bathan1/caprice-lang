@@ -172,7 +172,7 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     iequal tl1 tl2
   | Any VGenPoly g1, Any VGenPoly g2 ->
     if g1.id = g2.id then
-      make (g1.nonce = g2.nonce) 
+      make (g1.nonce = g2.nonce)
     else
       ShapeMismatch (* these are of different types *)
   | Any VTuple (l1, r1), Any VTuple (l2, r2) ->
@@ -261,7 +261,7 @@ and iequal : type a. a t -> a t -> bool X.t = fun x y ->
 and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t)
   (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
   let open X in
-  (* similar to dependent vs nondependent, a deterministic function type 
+  (* similar to dependent vs nondependent, a deterministic function type
     is not equal to a nondeterministic function type, but it is not a shape
     mismatch. *)
   let= () = Funtype.equal_mode tf1.mode tf2.mode in
@@ -289,7 +289,7 @@ and iequal_cod cod1 cod2 =
   Closure equality will not be a shape mismatch, even if the
   expression references values in the environment of different
   shape in the same spot. Instead, it is just false.
-  
+
   E.g. This will be false, not a shape mismatch.
     { x |-> 0 } ,
       match x with
@@ -384,7 +384,7 @@ and iequal_closure bindings closure1 closure2 =
         (* compare first statement and continue with remainder of modules *)
         let id1, id2 = Ast.Tools.id_of_stmt s1, Ast.Tools.id_of_stmt s2 in
         let- () = make (Ident.equal id1 id2) in
-        let- () = iequal_statement bindings s1 s2 in 
+        let- () = iequal_statement bindings s1 s2 in
         iequal_expr ((id1, id2) :: bindings) (Ast.EModule tl1) (Ast.EModule tl2)
       end
     | ETypeModule l1, ETypeModule l2 ->
@@ -404,7 +404,7 @@ and iequal_closure bindings closure1 closure2 =
     | ETypeMu r1, ETypeMu r2 ->
       iequal_expr ((r1.var, r2.var) :: bindings) r1.body r2.body
     | ETypeFun tf1, ETypeFun tf2 ->
-      begin match tf1.domain, tf2.domain with 
+      begin match tf1.domain, tf2.domain with
       | (None, t1), (None, t2) ->
         let- () = ieq t1 t2 in
         ieq tf1.codomain tf2.codomain
@@ -451,11 +451,11 @@ and iequal_closure bindings closure1 closure2 =
           (* Found bound in right but not in left, so these idents are not equal *)
           Some (make false)
         else
-          None 
+          None
       ) bindings
     in
     match de_bruijn_eq with
-    | Some res -> 
+    | Some res ->
       (* We have an answer by looking in the bindings *)
       res
     | None ->
@@ -474,7 +474,7 @@ and iequal_closure bindings closure1 closure2 =
         (* Exactly one of the variables was not bound, so they cannot be equal *)
         make false
       end
-  
+
   (* check that types annotations on variables are the same *)
   and iequal_type_opts bindings var1 var2 =
     match var1, var2 with

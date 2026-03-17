@@ -12,7 +12,7 @@
       sig val t : type end
 *)
 let T n = sig
-  val t : 
+  val t :
     let rec loop i =
       if i <= 0
       then type
@@ -21,8 +21,8 @@ let T n = sig
     loop n
 end
 
-let Nil : sig 
-  val t : type 
+let Nil : sig
+  val t : type
   val v : t
 end = struct
   let t = unit
@@ -68,7 +68,7 @@ let Ident : sig
   val eq : t -> t -> bool
 end = struct
   let t = `Id of int
-  let eq a b = 
+  let eq a b =
     match a, b with
     | `Id x, `Id y -> x == y
     end
@@ -79,8 +79,8 @@ let Expr : T 0 = struct
     | `Int of int
     | `Var of Ident.t
     | `Functio of sig (* ERROR: deleted the 'n' (I really did this accidentally one time) *)
-       val first : Ident.t 
-       val second : Type.t 
+       val first : Ident.t
+       val second : Type.t
        val third : t
     end
     | `If_then_else of Triple.t t t t
@@ -121,7 +121,7 @@ let free_vars e bound =
   in
   loop e bound []
 
-let is_closed e bound = 
+let is_closed e bound =
   match free_vars e bound with
   | [] -> true
   | _ -> false
@@ -131,18 +131,18 @@ let Value : T 0 = struct
   let t =
     `Int of int
     | `Function of sig
-       val first : Ident.t 
-       val second : Type.t 
+       val first : Ident.t
+       val second : Type.t
        val third : { e : Expr.t | is_closed e [ first ] }
     end
 end
 
 let Result = struct
   let t a =
-    | `Ok of a 
+    | `Ok of a
     | `Error of Nil.t
 
-  let bind x f = 
+  let bind x f =
     match x with
     | `Error _ -> x
     | `Ok a -> f a
@@ -192,7 +192,7 @@ let typecheck e =
         end
       )
     (* Conditions *)
-    | `If_then_else trip -> 
+    | `If_then_else trip ->
       Result.bind (tc trip.first) (fun tau_cond ->
         if Type.is_int tau_cond
         then
@@ -225,7 +225,7 @@ let typecheck e =
   (* default environment is empty, so it is error given any id *)
   typecheck e (fun _ -> Result.error)
 
-(* 
+(*
   Note that we don't actually have to check for closed because
   that would be an unbound variable when typechecking.
 *)
@@ -248,8 +248,8 @@ let subst e id v =
         if Ident.eq trip.first id
         then e
         else `Function struct
-          let first = trip.first 
-          let second = trip.second 
+          let first = trip.first
+          let second = trip.second
           let third = sub trip.third
         end
     | `Plus p -> `Plus (sub_pair p)
@@ -267,7 +267,7 @@ let int_exn e =
   end
 
 let rec eval (e : Expr.t | is_closed_and_well_typed e) : Value.t =
-  let op_ints p op = 
+  let op_ints p op =
     let i1 = int_exn (eval p.left) in
     let i2 = int_exn (eval p.right) in
     `Int (op i1 i2)

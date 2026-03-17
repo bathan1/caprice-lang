@@ -6,7 +6,7 @@ type t =
   ; id : Utils.Uid.t
   ; priority : Path_priority.t }
 
-let empty : t = 
+let empty : t =
   { target_formula = Formula.trivial
   ; all_formulas = Formula.BSet.empty
   ; i_env = Input_env.empty
@@ -32,21 +32,21 @@ let empty : t =
     and comparison. Therefore, no two targets that represent the same
     program path should be made, or else they will be unequal.
 *)
-let make (last_formula : bool Formula.t) (other_formulas : Formula.BSet.t) 
+let make (last_formula : bool Formula.t) (other_formulas : Formula.BSet.t)
   (i_env : Input_env.t) ~(path_priority : Path_priority.t) : t =
-  { target_formula = 
+  { target_formula =
     if Formula.is_const last_formula
     then last_formula
     else Formula.BSet.scc last_formula ~wrt:other_formulas
   ; all_formulas = Formula.BSet.add last_formula other_formulas
-  ; i_env 
+  ; i_env
   ; id = Utils.Uid.make_new ()
   ; priority = path_priority }
 
-let compare a b = 
+let compare a b =
   Utils.Uid.compare a.id b.id
 
-let equal a b = 
+let equal a b =
   Utils.Uid.equal a.id b.id
 
 let priority ({ priority ; _ } : t) : Path_priority.t =

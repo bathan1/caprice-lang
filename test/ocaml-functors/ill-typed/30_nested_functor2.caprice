@@ -34,7 +34,7 @@ let M : sig
 end = struct
   let F
     (dependent X : (A : sig val xa : type end) -> (B : sig val xz : type end) -> sig end)
-    (dependent Y : (A : sig val ya : type end) -> (B : sig val yb : type end) -> sig end) 
+    (dependent Y : (A : sig val ya : type end) -> (B : sig val yb : type end) -> sig end)
     (* ERROR: missing Z *)
     : sig end
     = struct end

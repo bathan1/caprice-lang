@@ -6,7 +6,7 @@
 (* We don't want splaying here because it would be ill-typed *)
 
 (* The check is forked, and it should diverge, so we shouldn't fully exhaust this *)
-let _ 
+let _
   : (i : int) ->
     let rec f x =
       if x <= 0

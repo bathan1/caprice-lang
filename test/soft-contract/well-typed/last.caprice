@@ -19,7 +19,7 @@ let last (type a') (l : list a' | is_nonempty l) : a' =
   Y (
     fun self x ->
       match x with
-      | x :: xs -> 
+      | x :: xs ->
         match xs with
         | [] -> x
         | _ -> self xs

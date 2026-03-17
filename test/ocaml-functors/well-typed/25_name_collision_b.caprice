@@ -23,7 +23,7 @@ let b = abstract
 let x = sig val x : type end
 let y = sig val y : type end
 
-let F (X : x) (B : b) (Y : y) : sig val t : type end = 
+let F (X : x) (B : b) (Y : y) : sig val t : type end =
   struct let t = abstract end
 
 let M = struct

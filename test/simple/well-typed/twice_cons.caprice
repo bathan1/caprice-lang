@@ -8,8 +8,8 @@ let is_cons xs =
   | _ -> false
   end
 
-let apply_twice (type a) 
+let apply_twice (type a)
   (f : (xs : list a | is_cons xs) -> { ys : list a | is_cons ys })
-  (xs : list a | is_cons xs) 
+  (xs : list a | is_cons xs)
   : { result : list a | is_cons result } =
   f (f xs)

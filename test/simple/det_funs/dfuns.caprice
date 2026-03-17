@@ -17,7 +17,7 @@ let _ : (int -> int) --> int -> int =
   fun f -> f
 
 let _ : (int --> int -> int) --> int =
-  fun f -> 
+  fun f ->
     let _ = f 0 in (* no problems here *)
     0 (* but then there's nothing we can do to get a deterministic output *)
 

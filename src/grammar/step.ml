@@ -16,7 +16,7 @@ let[@inline] uid (Step i) = Utils.Uid.of_int i
 let argv_step_conv =
   Cmdliner.Arg.Conv.make ()
     ~docv:"STEP"
-    ~parser:(fun s -> 
+    ~parser:(fun s ->
       match int_of_string_opt s with
       | Some i -> Ok (Step i)
       | None -> Error "Expected integer step"

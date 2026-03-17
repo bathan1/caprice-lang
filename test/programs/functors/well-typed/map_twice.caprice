@@ -23,8 +23,8 @@ end
 let F (dep A : sig
   val t : type
   val f : (type a) -> a -> t
-end) : sig 
-  val g : int -> A.t 
+end) : sig
+  val g : int -> A.t
 end = struct
   let g i = A.f int i
 end

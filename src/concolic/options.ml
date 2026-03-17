@@ -11,7 +11,7 @@ type t =
   ; splay          : splay
   ; do_wrap        : bool
   ; is_random      : bool
-  }  
+  }
 
 let default : t =
   { max_tree_depth = 30
@@ -20,7 +20,7 @@ let default : t =
   ; splay          = Fallback
   ; do_wrap        = true
   ; is_random      = false
-  }  
+  }
 
 let of_argv =
   let open Cmdliner.Term.Syntax in
@@ -34,13 +34,13 @@ let of_argv =
   and+ global_timeout =
     value & opt Utils.Time.argv_span_conv default.global_timeout
     & info ["t"; "timeout"] ~docv:"TIMEOUT" ~doc:"Global timeout seconds"
-  and+ splay = 
+  and+ splay =
     value & opt (enum (["only", Splay_only; "never", Never_splay; "fallback", Fallback])) default.splay
     & info ["s"; "splay"] ~doc:"Type splay: only, never, or fallback. Default is fallback."
-  and+ do_wrap = 
+  and+ do_wrap =
     value & opt (enum (["yes", true; "no", false])) default.do_wrap
     & info ["w"; "wrap"] ~doc:"Wrap flag: yes or no. Default is yes."
-  and+ is_random = 
+  and+ is_random =
     value & flag & info ["r"; "random"] ~doc:"Randomize"
   in
   { max_tree_depth ; max_step ; global_timeout ; splay ; do_wrap ; is_random }

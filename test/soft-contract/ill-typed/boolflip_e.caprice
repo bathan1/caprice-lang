@@ -7,7 +7,7 @@ let h x =
   assert x
 
 let g _ y =
-  assert y  
+  assert y
 
 let rec f x y =
   if x

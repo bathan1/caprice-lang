@@ -83,7 +83,7 @@ module Make_of_context (C : CONTEXT) : Formula.SOLVABLE = struct
   let () = set_timeout (Mtime.Span.(100 * ms))
 
   let unbox_int_expr e =
-    if Z3.Expr.is_numeral e 
+    if Z3.Expr.is_numeral e
     then
       Z3.Arithmetic.Integer.get_big_int e
       |> Big_int_Z.int_of_big_int
@@ -120,7 +120,7 @@ module Make_of_context (C : CONTEXT) : Formula.SOLVABLE = struct
             | I _ -> a_of_expr model (symbol s) unbox_int_expr
             | B _ -> a_of_expr model (symbol s) unbox_bool_expr
           in
-          let domain = 
+          let domain =
             List.map (fun decl ->
               decl
               |> Z3.FuncDecl.get_name
