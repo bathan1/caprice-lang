@@ -4,7 +4,7 @@
 
 let rec nth n xs =
   if n == 0
-  then 
+  then
     match xs with
     | hd :: _ -> hd
     end

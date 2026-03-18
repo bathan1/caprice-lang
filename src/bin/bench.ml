@@ -1,11 +1,11 @@
 
 let make_one ~options fname =
-  try 
+  try
     let pgm = Lang.Parser.parse_file fname in
     let run pgm =
       match
         Concolic.Loop.begin_ceval pgm
-          ~print_outcome:false 
+          ~print_outcome:false
           ~options
       with
       | Grammar.Answer.Timeout _ -> assert false
@@ -69,7 +69,7 @@ let bench_main =
   let _res = bench_many ~trials tests in
   ()
 
-let () = 
+let () =
   match Cmdliner.Cmd.eval_value' bench_main with
   | `Ok _ -> ()
   | `Exit i -> exit i

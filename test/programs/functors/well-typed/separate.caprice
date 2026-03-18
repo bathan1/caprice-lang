@@ -7,7 +7,7 @@ let T = sig
 end
 
 (* type parameter *)
-let tp = 
+let tp =
   | `TInt of unit
   | `TBool of unit
 
@@ -29,8 +29,8 @@ let is_t_bool a =
 let Make : (X : T) -> sig
   val x := X.t
   val t := sig
-    val a : tp 
-    val v : 
+    val a : tp
+    val v :
       | `I of { _ : x | is_t_int a }
       | `B of { _ : x | is_t_bool a }
   end
@@ -43,8 +43,8 @@ let Make : (X : T) -> sig
 end = fun X -> struct
   let x = X.t
   let t = sig
-    val a : tp 
-    val v : 
+    val a : tp
+    val v :
       | `I of { _ : x | is_t_int a }
       | `B of { _ : x | is_t_bool a }
   end

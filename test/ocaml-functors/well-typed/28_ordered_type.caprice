@@ -12,7 +12,7 @@ let ORDERED_TYPE = sig
 end
 
 (* Flip the types so that we have a subtype *)
-let X : (X : ORDERED_TYPE) -> sig end = 
+let X : (X : ORDERED_TYPE) -> sig end =
   let F (X : sig end) : sig end =
     struct end
   in

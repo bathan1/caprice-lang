@@ -4,9 +4,9 @@
 
 (*
   This program is taken from
-  
+
     Learn Programming with OCaml
-    
+
   by Sylvain Conchon and Jean-Christophe Filliâtre.
 
   (Section 5.4)
@@ -32,7 +32,7 @@ let Map T = struct
   let rec add (type a) (m : t a) (k : T.t) (x : a) : t a =
     match m with
     | [] -> [ k, x ]
-    | ((k_hd, _) as p) :: tl -> 
+    | ((k_hd, _) as p) :: tl ->
       if T.compare k_hd k == 0 then
         (k, x) :: tl
       else
@@ -42,7 +42,7 @@ let Map T = struct
   let rec find (type a) (m : t a) (k : T.t) : Option.t a =
     match m with
     | [] -> `None ()
-    | (k_hd, x) :: tl -> 
+    | (k_hd, x) :: tl ->
       if T.compare k_hd k == 0 then
         `Some x
       else

@@ -14,7 +14,7 @@ end
 let t = sig
   val a : int -> int
   val b : int -> int
-  val c : 
+  val c :
     if a true then (* ERROR: misuses a *)
       int
     else

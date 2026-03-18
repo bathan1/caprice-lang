@@ -7,10 +7,10 @@
 (*
   ERROR: the recursive types don't line up when splaying
     so this is ill-typed due to incompleteness
-    
+
   OCaml can type check this program though:
 
-    type t1 = 
+    type t1 =
       [ `A | `B of t1 ]
 
     type t2 =

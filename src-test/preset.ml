@@ -14,10 +14,10 @@ let s (Ident.Ident id) = id
     typing = exhausted;
     speed = fast;
     flags += " -r";
-    typecheck; 
+    typecheck;
   *)
     ===
-  (* TEST 
+  (* TEST
     include exhaust;
   *)
 *)
@@ -37,10 +37,10 @@ let exhaust : Ctl_ast.t =
     typing = ill-typed;
     speed = fast;
     flags += " -r";
-    typecheck; 
+    typecheck;
   *)
     ===
-  (* TEST 
+  (* TEST
     include refute;
   *)
 *)
@@ -59,10 +59,10 @@ let refute : Ctl_ast.t =
     typing = no-error;
     speed = slow;
     flags += " -t 3.0 -r";
-    typecheck; 
+    typecheck;
   *)
     ===
-  (* TEST 
+  (* TEST
     include diverges;
   *)
 *)

@@ -27,11 +27,11 @@ module type S = sig
   val set : Ident.t -> value -> t -> t
 end
 
-module Make (Val : Utils.Types.T) : 
-  S with type value = Val.t 
+module Make (Val : Utils.Types.T) :
+  S with type value = Val.t
   with type t = Val.t T.t
 = struct
   include T
-  type value = Val.t 
+  type value = Val.t
   type nonrec t = value t
 end

@@ -2,7 +2,7 @@
   include diverges;
 *)
 
-(* 
+(*
   In this program; we have a function to recursively generate a type
     (int -> int -> ... -> int)
   depending on the size of the input.
@@ -19,8 +19,8 @@ let State_monad = struct
       let xs = x s in
       f xs.res xs.new_state
 
-  let return x = 
-    fun s -> 
+  let return x =
+    fun s ->
       { res = x ; new_state = s }
 
   let modify f =
@@ -34,24 +34,24 @@ let State_monad = struct
     (x s).res
 end
 
-let confirm_type_of_state_monad 
+let confirm_type_of_state_monad
   : (type a b s) -> let m = State_monad.m in sig
       val read : m s s
       val bind : m a s -> (a -> m b s) -> m b s
       val return : a -> m a s
       val modify : (s -> s) -> m s s
-      val run : m a s -> s -> a 
+      val run : m a s -> s -> a
     end
   = fun _ _ _ -> State_monad
 
 (*
   This is a neat generation of a type, using a state monad to build it
 *)
-let t n = 
+let t n =
   int -> (
     let rec loop acc_m =
       State_monad.bind (State_monad.modify (fun i -> i - 1)) (fun i ->
-        if i <= 1 
+        if i <= 1
         then acc_m
         else
           State_monad.bind acc_m (fun acc ->
@@ -68,7 +68,7 @@ let t n =
   Now use the cool type
 *)
 let main (dependent n : int) (f : t n) : (int -> int) =
-  let rec loop i = 
+  let rec loop i =
     if i <= 0
     then f
     else loop (i - 1) i

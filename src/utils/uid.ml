@@ -11,8 +11,8 @@ end
 
 include T
 
-let[@inline always] of_int i = Uid i
-let[@inline always] to_int (Uid i) = i
+let[@inline] of_int i = Uid i
+let[@inline] to_int (Uid i) = i
 
 let counter = Counter.create ()
 

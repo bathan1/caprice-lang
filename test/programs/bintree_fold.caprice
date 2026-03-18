@@ -14,5 +14,5 @@ let rec fold_left (type a acc) (f : acc -> a -> acc) (init : acc) (tree : t a) :
   match tree with
   | `Leaf () -> init
   | `Branch b ->
-    fold_left a acc f (f (fold_left a acc f init b.left) b.item) b.right 
+    fold_left a acc f (f (fold_left a acc f init b.left) b.item) b.right
   end

@@ -37,14 +37,14 @@ let TokResult = Result {s:string; tok:Token}
 
 (* let pure x = `Success x
 
-let bind x f = 
-  match x with 
+let bind x f =
+  match x with
   | `Failure _ -> x
   | `Success y -> f y
   end  *)
 
-let compose f g chars = 
-  match f chars with 
+let compose f g chars =
+  match f chars with
   | `Success x -> `Success x
   | `Failure _ -> g chars
   end
@@ -82,7 +82,7 @@ let compose f g chars =
     if hd==-1 then if a==[] then {eq=true; s=[]} else {eq=true; s=(drop_char long)}
     else if hd==a then str_compare (drop_char short) (drop_char long) else {eq=false; s=[]} *)
 
-let rec make_tokenize (codes : list int | match codes with [] -> false | _ -> true end) 
+let rec make_tokenize (codes : list int | match codes with [] -> false | _ -> true end)
   (tok : Token) (s : string) : TokResult =
   match s, codes with
   | [], _ -> `Failure 1
@@ -122,7 +122,7 @@ let match_sequence (file : string) (cond : int -> bool) (ret : string -> Token) 
   let rec match_seq (acc : string) (file : string) : TokResult =
     match file with
     | [] -> `Failure 1 (* unexpected eof *)
-    | hd :: tl -> 
+    | hd :: tl ->
       if hd == 32 then (* found space, ending sequence *)
         `Success { s = tl ; tok = ret (rev int acc) }
       else
@@ -153,7 +153,7 @@ let rec lex_token (file: string) : list Token =
     (compose tokenize_var
     (fun x -> `Failure 1)))))))))))) file
   in
-  match token with 
+  match token with
   | `Success x -> x.tok :: lex_token x.s
   | `Failure y -> [`Invalid y]
   end

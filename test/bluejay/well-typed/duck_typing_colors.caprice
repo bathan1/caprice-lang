@@ -28,7 +28,7 @@ let obj : Colored_point.t =
     fun self ->
       { x = 10
       ; y = 20
-      ; get_deg = 
+      ; get_deg =
         fun _ ->
           let s = (self self) in
           let tan = s.y / s.x in

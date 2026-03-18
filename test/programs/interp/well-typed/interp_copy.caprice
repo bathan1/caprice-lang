@@ -15,7 +15,7 @@
       sig val t : type end
 *)
 let T n = sig
-  val t : 
+  val t :
     let rec loop i =
       if i <= 0
       then type
@@ -55,7 +55,7 @@ let Ident : sig
   val eq : t -> t -> bool
 end = struct
   let t = `Id of int
-  let eq a b = 
+  let eq a b =
     match a, b with
     | `Id x, `Id y -> x == y
     end
@@ -66,8 +66,8 @@ let Expr : T 0 = struct
     | `Int of int
     | `Var of Ident.t
     | `Function of sig
-       val id : Ident.t 
-       val typ : Type.t 
+       val id : Ident.t
+       val typ : Type.t
        val body : t
     end
     | `If_then_else of t * t * t
@@ -106,7 +106,7 @@ let free_vars e bound =
   in
   loop e bound []
 
-let is_closed e bound = 
+let is_closed e bound =
   match free_vars e bound with
   | [] -> true
   | _ -> false
@@ -116,18 +116,18 @@ let Value : T 0 = struct
   let t =
     `Int of int
     | `Function of sig
-       val id : Ident.t 
-       val typ : Type.t 
+       val id : Ident.t
+       val typ : Type.t
        val body : { e : Expr.t | is_closed e [ id ] }
     end
 end
 
 let Result = struct
   let t a =
-    | `Ok of a 
+    | `Ok of a
     | `Error of unit
 
-  let bind x f = 
+  let bind x f =
     match x with
     | `Error _ -> x
     | `Ok a -> f a
@@ -177,7 +177,7 @@ let typecheck e =
         end
       )
     (* Conditions *)
-    | `If_then_else (cond, true_, false_) -> 
+    | `If_then_else (cond, true_, false_) ->
       Result.bind (tc cond) (fun tau_cond ->
         if Type.is_int tau_cond
         then
@@ -210,7 +210,7 @@ let typecheck e =
   (* default environment is empty, so it is error given any id *)
   typecheck e (fun _ -> Result.error)
 
-(* 
+(*
   Note that we don't actually have to check for closed because
   that would be an unbound variable when typechecking.
 *)
@@ -249,7 +249,7 @@ let subst e id v =
   sub e
 
 let rec eval (e : Expr.t | is_closed_and_well_typed e) : Value.t =
-  let op_ints p op = 
+  let op_ints p op =
     match p with
     | x, y ->
       match eval x, eval y with

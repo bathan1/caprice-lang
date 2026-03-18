@@ -14,7 +14,7 @@ let rec fold_left (type a acc) (f : acc -> a -> acc) (init : acc) (tree : t a) :
   match tree with
   | `Leaf _ -> init
   | `Branch b ->
-    fold_left a acc f (f (fold_left a acc f init b.left) b.item) b.right 
+    fold_left a acc f (f (fold_left a acc f init b.left) b.item) b.right
   end
 
 (* Slow usage of fold_left. *)
@@ -24,7 +24,7 @@ let is_ordered (type a) (tree : t a) (compare : a -> a -> int) : bool =
       | `Empty of unit
       | `Not_ordered of unit
       | `Ordered_with_min of a
-    ) (fun acc a -> 
+    ) (fun acc a ->
       match acc with
       | `Not_ordered () -> `Not_ordered ()
       | `Empty () -> `Ordered_with_min a

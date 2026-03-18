@@ -12,13 +12,13 @@ let t : type = mu t.
   { parent : `Some of t | `None of unit
   ; relative_coord : coord }
 
-let is_coord_nonzero c = 
+let is_coord_nonzero c =
   not (c.x == 0) && not (c.y == 0)
 
 let coord_equal a b =
   a.x == b.x && a.y == b.y
 
-let has_parent x = 
+let has_parent x =
   match x.parent with
   | `Some _ -> true
   | _ -> false
@@ -26,7 +26,7 @@ let has_parent x =
 
 (* FIXME: we currently do not allow recursive calls in refinement types. This is an unbound variable error *)
 let rec get_abs_coord (dependent r : t)
-  : 
+  :
   { abs_coord : coord |
     match r.parent with
     | `Some p ->
@@ -38,7 +38,7 @@ let rec get_abs_coord (dependent r : t)
   }
   =
   match r.parent with
-  | `Some parent -> 
+  | `Some parent ->
     let c = parent.relative_coord in (* ERROR: should be `get_abs_coord parent` *)
     { x = c.x + r.relative_coord.x ; y = c.y + r.relative_coord.y }
   | `None _ -> r.relative_coord

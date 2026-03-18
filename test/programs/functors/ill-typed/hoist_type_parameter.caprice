@@ -67,14 +67,14 @@ let pick_t t1 t2 =
 (*
   Check that the forms are equivalent by exhausting the combinations.
 *)
-let check_ret (type a) (x : a) (b : bool) : pick_t (Id1.t a) (Id0 a).t = 
+let check_ret (type a) (x : a) (b : bool) : pick_t (Id1.t a) (Id0 a).t =
   if b then
     Id1.return a x
   else
     (Id0 a).return x
 
 let check_appl (type a) (x : pick_t (Id1.t a) (Id0 a).t)
-  (f : a -> a) (b : bool) : pick_t (Id1.t a) (Id0 a).t = 
+  (f : a -> a) (b : bool) : pick_t (Id1.t a) (Id0 a).t =
   if b then
     Id1.appl a x f
   else

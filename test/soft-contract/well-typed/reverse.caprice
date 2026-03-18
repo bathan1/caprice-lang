@@ -2,7 +2,7 @@
   include exhaust;
 *)
 
-let is_empty ls = 
+let is_empty ls =
   match ls with
   | [] -> true
   | _ :: _ -> false

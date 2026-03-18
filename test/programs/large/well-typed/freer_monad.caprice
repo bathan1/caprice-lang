@@ -21,28 +21,28 @@ let ty1 = ty 1
 
 let t : ty1 --> type --> type = fun f a -> mu t.
   | `Return of a
-  | `Bind of sig 
-      val b : type 
+  | `Bind of sig
+      val b : type
       val intermediate : f b
       val cont : b -> t
     end
 
 let r_with_cont r k = struct
-  let b = r.b 
-  let intermediate = r.intermediate 
+  let b = r.b
+  let intermediate = r.intermediate
   let cont = k
 end
 
-let perform 
+let perform
   : (type a) -> (f : ty1) -> f a -> t f a
   = fun a f fa ->
   `Bind struct
-    let b = a 
-    let intermediate = fa 
+    let b = a
+    let intermediate = fa
     let cont = fun a -> `Return a
    end
 
-let handler 
+let handler
   : ty1 --> type
   = fun f ->
     (type a b) -> (a -> b) -> f a -> b

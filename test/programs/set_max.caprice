@@ -23,7 +23,7 @@ let read = fun state -> { state ; body = state }
 
 let set_max (dependent x : int) : t { i : int | i >= x } =
   bind int int read (fun max ->
-    if max >= x    
+    if max >= x
     then return int max
     else bind unit int (set x) (fun _ ->
       return int x

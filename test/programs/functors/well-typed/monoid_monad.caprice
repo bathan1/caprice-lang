@@ -4,7 +4,7 @@
 
 let MONOID = sig
   val t : type
-  val neutral : t 
+  val neutral : t
   val combine : t -> t -> t
 end
 

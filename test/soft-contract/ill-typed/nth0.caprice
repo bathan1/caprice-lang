@@ -5,7 +5,7 @@
 
 let rec nth n xs =
   if n == 1 (* ERROR: should be `n == 0`, or else we go to an match case *)
-  then 
+  then
     match xs with
     | hd :: _ -> hd
     end

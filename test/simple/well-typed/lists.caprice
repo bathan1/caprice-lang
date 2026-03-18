@@ -29,7 +29,7 @@ let rec makelist : int -> list int = fun n ->
   if n == 0 then []
   else n :: makelist (n-1)
 
-let getHead l = 
+let getHead l =
   match l with
   | hd :: _ -> hd
   end

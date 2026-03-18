@@ -39,7 +39,7 @@ let Iterators (dependent Enumerable : ENUMERABLE) : let t = Enumerable.t in sig
   val fold : (type acc) -> acc -> (acc -> t -> acc) -> acc
 end = struct
   let eq a b = Enumerable.compare a b == 0
-  
+
   let for_all f =
     let rec loop (x : Enumerable.t) : bool =
       match Enumerable.next x with
@@ -51,7 +51,7 @@ end = struct
 
   let find f =
     let rec loop (x : Enumerable.t) : Option.t Enumerable.t =
-      if f x 
+      if f x
       then `Some x
       else Option.bind loop (Enumerable.next x)
     in
@@ -78,7 +78,7 @@ end = struct
     Option.get (
       I.find (fun x ->
         I.for_all (fun y ->
-          I.eq (O.op x y) y 
+          I.eq (O.op x y) y
           && I.eq (O.op y x) y
         )
       )

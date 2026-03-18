@@ -10,7 +10,7 @@ let rec fold_left_until (type a acc stop)
   (f : acc -> a -> t acc stop)
   (finish : acc -> stop)
   (init : acc)
-  (ls : list a) 
+  (ls : list a)
   : stop =
   match ls with
   | [] -> finish init

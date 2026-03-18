@@ -45,7 +45,7 @@ end = struct
       let D = struct
         let E = struct
           let F (X : sig val x : type end) (Y : sig val y : type end)
-            (Z : sig val z : type end) (W : sig val w : type end) : sig end = struct end 
+            (Z : sig val z : type end) (W : sig val w : type end) : sig end = struct end
         end
       end
     end

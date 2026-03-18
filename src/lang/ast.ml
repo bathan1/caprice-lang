@@ -1,5 +1,5 @@
 
-type t = 
+type t =
   | EUnit
   | EInt of int
   | EBool of bool

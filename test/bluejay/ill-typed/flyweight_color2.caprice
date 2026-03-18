@@ -38,19 +38,19 @@ end = struct
         ; intrinsic =
           { x
           ; y
-          ; get_deg = 
+          ; get_deg =
               fun _ ->
                 let s = (self self) in
                 let tan = s.intrinsic.y / s.intrinsic.x in (* ERROR: may divide by 0 *)
                 tan - (tan * tan * tan) / 3 + (tan * tan * tan * tan * tan) / 5 (* approx arctan with taylor expansion *)
           }
-        } 
+        }
     in
     ob ob
 end
 
 let dark_color =
-  let ob = 
+  let ob =
     fun self ->
       { c = 255 }
   in

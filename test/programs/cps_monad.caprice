@@ -19,7 +19,7 @@ let run (type a r) (x : t a) (k : a -> r) : r =
   x.run r k
 
 (* We don't want the user to write this (it explodes) but they _can_ write it. *)
-(* let rec summate (dep n : int) : { m : t int | 
+(* let rec summate (dep n : int) : { m : t int |
   run int int m (fun i -> i) == n * (n + 1) / 2
   } =
   if n <= 0 then return int 0 else

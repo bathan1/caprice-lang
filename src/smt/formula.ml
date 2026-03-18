@@ -153,7 +153,7 @@ and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
     | Const_bool true -> and_ tl
     | Const_bool false -> false_
     | And e_ls' -> and_ (e_ls' @ tl)
-    | e -> 
+    | e ->
       match and_ tl with
       | Const_bool false -> false_
       | Const_bool true -> e
@@ -163,7 +163,7 @@ and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
       | other when equal other (not_ e) -> false_
       | other when equal other e -> e
       | other -> And [ e ; other ]
-    
+
 let symbols (type a) (e : (a, 'k) t) : Utils.Uid.Set.t =
   let rec symbols : type a. Utils.Uid.Set.t -> (a, 'k) t -> Utils.Uid.Set.t =
     fun acc e ->
@@ -208,11 +208,7 @@ let rec subst
       else
         not_ e''
     | And e_ls ->
-      let e_ls' = List.map (subst v s) e_ls in
-      if e_ls == e_ls' then
-        e
-      else
-        and_ e_ls'
+      and_ (List.map (subst v s) e_ls)
     | Binop (op, e1, e2) ->
       let e1' = subst v s e1 in
       let e2' = subst v s e2 in
@@ -245,7 +241,7 @@ end
   Similarly, we will not get "not" of an inequality operator.
 *)
 module Make_solver' (X : SOLVABLE) = struct
-  module M = Make_transformer (X) 
+  module M = Make_transformer (X)
 
   let rec solve (expr : (bool, 'k) t) : 'k Solution.t =
     let assign i k = Solution.Sat (Model.singleton i k) in
@@ -316,7 +312,7 @@ module Set = struct
     include M.Set
 
     (*
-      We use SCC for constraint set independence. This ideas originates in 
+      We use SCC for constraint set independence. This ideas originates in
       EXE (https://dl.acm.org/doi/10.1145/1455518.1455522) Section 4.2.
       However, we don't even need to solve the other connect components of
       constraints because we reuse an input environment.
@@ -333,7 +329,7 @@ module Set = struct
         list_map (fun e -> (e, symbols e)) wrt
       in
       let rec collect acc_symbols acc_scc remaining =
-        let acc_symbols, acc_scc, any_newly_connected, remaining = 
+        let acc_symbols, acc_scc, any_newly_connected, remaining =
           List.fold_left (fun (acc_symbols, acc_scc, any_newly_connected, remaining) (e, e_symbols) ->
             if Utils.Uid.Set.disjoint acc_symbols e_symbols then
               (acc_symbols, acc_scc, any_newly_connected, (e, e_symbols) :: remaining)

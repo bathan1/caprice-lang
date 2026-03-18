@@ -17,8 +17,8 @@ let c = abstract
 
 let f = (X : a) -> (Y : b) -> (Z : c) -> c
 
-let F : f = 
-  let F (Z : a) (Y : b) (Z : c) : c = 
+let F : f =
+  let F (Z : a) (Y : b) (Z : c) : c =
     Z
   in
   F
