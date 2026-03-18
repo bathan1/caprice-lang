@@ -64,7 +64,7 @@ let[@inline] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
   }
 
 (* For typing purposes (due to value restriction), we must inline the
-  definition of `M.escape`.
+  definition of `Monad.escape`.
 
   The ideal implementation would simply be `escape Vanish`.
 *)
@@ -132,8 +132,8 @@ let push_and_log_tag (tag : Tag.t) : (unit, 'env) m =
 *)
 let push_formula_to_path ?(allow_flip : bool = true)
   (formula : (bool, Stepkey.t) Smt.Formula.t) : (unit, 'env) m =
-  if Smt.Formula.is_const formula
-  then return ()
+  if Smt.Formula.is_const formula then
+    return ()
   else
     let* { Context.target ; _ } = read_ctx in
     modify (fun (s : State.t) ->
@@ -144,8 +144,7 @@ let push_formula_to_path ?(allow_flip : bool = true)
           else
             Nonflipping formula
         in
-        Rev_stem.cons path_item s.rev_stem
-          ~if_exceeds:(Target.priority target)
+        Rev_stem.cons path_item s.rev_stem ~if_exceeds:(Target.priority target)
       }
     )
 
@@ -181,6 +180,9 @@ let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
   [target_to_here] is a target representing the path to the current
     program point. It is trivial to solve because its solution is
     the logged input environment.
+
+  Invariant: this should only be sequenced when the old target has been
+    reached. It is asserted that this invariant holds
 *)
 let target_to_here : 'env. (Target.t, 'env) m =
   { run = fun ~reject:_ ~accept state step _ { target ; _ } ->

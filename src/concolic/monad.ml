@@ -24,13 +24,13 @@ open Grammar
 
   All values in this module are parametric in the indices.
 *)
-type ('a, 'x) t = {
-  run : 'r.
-    reject:('err -> 'state -> 'r) ->
-    accept:('a -> 'state -> Step.t -> 'r) ->
-    'state -> Step.t -> 'env -> 'ctx -> 'r
-} constraint 'x = < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >
-[@@unboxed]
+type ('a, 'x) t =
+  { run : 'r.
+      reject:('err -> 'state -> 'r) ->
+      accept:('a -> 'state -> Step.t -> 'r) ->
+      'state -> Step.t -> 'env -> 'ctx -> 'r
+  } constraint 'x = < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >
+  [@@unboxed]
 (* With flambda and compiler flag O3, it is faster to unbox. In all other
   combinations (of regular compiler, O3, flambda without O3), it is faster
   to leave this boxed. *)
@@ -77,10 +77,12 @@ let local' (env : 'e) (x : ('a, < env : 'e ; .. >) t) : ('a, < env : 'env ; .. >
 *)
 
 let read_ctx : ('ctx, < ctx : 'ctx ; .. >) t =
-  { run = fun ~reject:_ ~accept state step _ ctx -> accept ctx state step }
+  { run = fun ~reject:_ ~accept state step _ ctx ->
+      accept ctx state step
+  }
 
-let[@inline] local_ctx (f : 'ctx -> 'ctx)
-  (x : ('a, < ctx : 'ctx ; .. >) t) : ('a, < ctx : 'ctx ; .. >) t =
+let[@inline] local_ctx (f : 'ctx -> 'ctx) (x : ('a, < ctx : 'ctx ; .. >) t)
+  : ('a, < ctx : 'ctx ; .. >) t =
   { run = fun ~reject ~accept state step env ctx ->
       x.run ~reject ~accept state step env (f ctx)
   }
@@ -138,8 +140,8 @@ let step : (Step.t, 'x) t =
 
 type 'x failing = { run_failing : 'a. ('a, 'x) t } [@@unboxed]
 
-let[@inline] fork (m : (Utils.Empty.t, 'x) t)
-  (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
+let[@inline] fork (m : (Utils.Empty.t, 'x) t) (fork_ctx : 'ctx)
+  (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
   ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state)
   : ('a, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->
