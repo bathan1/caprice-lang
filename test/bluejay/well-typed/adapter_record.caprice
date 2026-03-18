@@ -10,7 +10,7 @@ let t =
   ; x : int }
 
 let ob =
-  fun x -> 
+  fun x ->
     fun self ->
       { square = fun i -> i * i
       ; add_x = fun i -> i + (self self).x

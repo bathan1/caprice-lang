@@ -39,15 +39,15 @@ let of_record_label dir rlabel =
   Label (Lang.Labels.Record.to_ident rlabel, dir)
 
 let priority = function
-  | Label (_, Gen) -> 1
-  | Label (_, Check) -> 0
+  | Label (_, Gen) -> Path_priority.one
+  | Label (_, Check) -> Path_priority.zero
   | (Left reason | Right reason) ->
     match reason with
-    | GenList -> 1
-    | _ -> 0
+    | GenList -> Path_priority.one
+    | _ -> Path_priority.zero
 
 let to_string = function
-  | Left reason -> Format.sprintf "Left (%s)" (reason_to_string reason)
-  | Right reason -> Format.sprintf "Right (%s)" (reason_to_string reason)
-  | Label (Ident s, Check) -> Format.sprintf "%s (Check)" s
-  | Label (Ident s, Gen) -> Format.sprintf "%s (Gen)" s
+  | Left reason -> Printf.sprintf "Left (%s)" (reason_to_string reason)
+  | Right reason -> Printf.sprintf "Right (%s)" (reason_to_string reason)
+  | Label (Ident s, Check) -> Printf.sprintf "%s (Check)" s
+  | Label (Ident s, Gen) -> Printf.sprintf "%s (Gen)" s

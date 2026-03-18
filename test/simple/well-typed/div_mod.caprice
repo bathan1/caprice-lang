@@ -7,7 +7,7 @@
   without propagating x=c through the formulas.
 
   This way, we must query the solver to see if any of the
-  binary operations could go differently.  
+  binary operations could go differently.
 *)
 let eq x c =
   c - 1 < x && x < c + 1

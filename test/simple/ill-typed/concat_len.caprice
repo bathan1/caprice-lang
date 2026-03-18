@@ -14,4 +14,3 @@ let rec f (dep x : list int) (dep y : list int) (z : list int) : { a : list int 
   | [] -> [] (* ERROR: needs to return x to pass the refinement *)
   | hd :: tl -> f (hd :: x) tl z
   end
-    

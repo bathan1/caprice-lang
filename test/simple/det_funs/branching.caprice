@@ -24,5 +24,5 @@ let _ : (int --> int) -> int -> int =
       2
     else if x <> -10 then
       9
-    else 
+    else
       not x (* ERROR: this is reachable *)

@@ -30,7 +30,7 @@ end
 
 let Visitor : T 2 = struct
   let t a result_type =
-    { visit_node : Node.t a (Tree.t a) -> result_type 
+    { visit_node : Node.t a (Tree.t a) -> result_type
     ; visit_leaf : Leaf.t a -> result_type }
 end
 
@@ -41,7 +41,7 @@ let Client : T 3 = struct
 end
 
 (* Requires this type annotation, whereas the ill-typed version does not have this *)
-let make_list (type a) (f : int -> a) (n : int) : list a = 
+let make_list (type a) (f : int -> a) (n : int) : list a =
   let rec loop (i : int) : list a =
     if i == 0
     then []

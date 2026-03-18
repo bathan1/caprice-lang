@@ -23,7 +23,7 @@
         }
       ]
     },
-    
+
     "numbers": {
       "patterns": [
         {
@@ -32,7 +32,7 @@
         }
       ]
     },
-    
+
     "keywords": {
       "patterns": [
         {
@@ -62,7 +62,7 @@
           "match": "[+\\-*/%]"
         },
         {
-          "comment": "infix operators - comparison", 
+          "comment": "infix operators - comparison",
           "name": "entity.name.function.caprice",
           "match": "(<>|<=?|>=?)"
         },
@@ -131,7 +131,7 @@
         },
         {
           "comment": "function name in let bindings (followed by parameters)",
-          "name": "entity.name.function.caprice", 
+          "name": "entity.name.function.caprice",
           "match": "(?<=\\blet\\s+(?:rec\\s+)?)([a-z_][[:word:]']*)(?=\\s+(?:\\(type\\s+[^)]+\\)|[a-z_A-Z(]|\\([^)]*:[^)]*\\)))",
           "captures": {
             "1": {"name": "entity.name.function.caprice"}
@@ -156,7 +156,7 @@
         },
         {
           "comment": "fun parameters - all identifiers after fun until ->",
-          "name": "variable.parameter.caprice", 
+          "name": "variable.parameter.caprice",
           "match": "(?<=\\bfun\\s+)([a-z_][[:word:]']*(?:\\s+[a-z_][[:word:]']*)*)(?=\\s*->)",
           "captures": {
             "1": {"name": "variable.parameter.caprice"}

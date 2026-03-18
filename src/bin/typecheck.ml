@@ -6,7 +6,7 @@ let typecheck_main =
   and+ options = Concolic.Options.of_argv in
   Concolic.Loop.begin_ceval ~options caprice_pgm
 
-let () = 
+let () =
   match Cmdliner.Cmd.eval_value' typecheck_main with
   | `Ok _ -> ()
   | `Exit i -> exit i

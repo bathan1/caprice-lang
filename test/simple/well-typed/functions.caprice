@@ -8,7 +8,7 @@ let id : int -> int = fun x -> x
 
 (* higher order function applications *)
 
-let f (g : int -> int) (x : (int -> int) -> bool) : bool = 
+let f (g : int -> int) (x : (int -> int) -> bool) : bool =
   x g
 
 
@@ -21,11 +21,11 @@ let test (type a) : a = assume false
 
 let _ = (type a) -> list a
 
-let B x = 
+let B x =
   if x > 0 then int else bool
 
 let f (dependent a : int) (b : B a) : int =
-  if a > 0 then b else 
+  if a > 0 then b else
     if b then 3 else 2
 
 (* This is a dependent function type with a refined parameter *)
@@ -42,7 +42,7 @@ let f (type a b) (g : a -> list b) : a -> list b =
   g
 
 (* Generated dependent function is a regular function *)
-let f (dep k : int) (g : (i : int | i > k) -> if i > 10 then list int else bool) 
+let f (dep k : int) (g : (i : int | i > k) -> if i > 10 then list int else bool)
   : { i : int | i > 10 && i > k } -> list int =
   g
 

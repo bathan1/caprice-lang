@@ -104,6 +104,7 @@ module X = struct
   let of_cdata d = Value d
   let make b = Value (b, Smt.Formula.const_bool b)
 
+  (* Short circuit if the symbolic boolean is false. Think like "bind" *)
   let ( let- ) x f =
     match x with
     | Value (_, Smt.Formula.Const_bool false) -> x
@@ -113,6 +114,10 @@ module X = struct
       | ShapeMismatch -> ShapeMismatch
       end
     | ShapeMismatch -> ShapeMismatch
+
+  (* Short circuit if the concrete boolean is false. Think like "map" *)
+  let ( let= ) x f =
+    if x then f () else make false
 
   let rec fold_lists (f : 'a -> 'a -> bool t) (x : 'a list) (y : 'a list) : bool t =
     match x, y with
@@ -160,16 +165,14 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     of_cdata (b1 = b2, Formula.binop Smt.Binop.Equal s1 s2)
   (* propagate equality *)
   | Any VVariant v1, Any VVariant v2 ->
-    if Labels.Variant.equal v1.label v2.label then
-      intensional_equal v1.payload v2.payload
-    else
-      make false
+    let= () = Labels.Variant.equal v1.label v2.label in
+    intensional_equal v1.payload v2.payload
   | Any VListCons { hd = a1 ; tl = tl1 }, Any VListCons { hd = a2 ; tl = tl2 } ->
     let- () = intensional_equal a1 a2 in
     iequal tl1 tl2
   | Any VGenPoly g1, Any VGenPoly g2 ->
     if g1.id = g2.id then
-      make (g1.nonce = g2.nonce) 
+      make (g1.nonce = g2.nonce)
     else
       ShapeMismatch (* these are of different types *)
   | Any VTuple (l1, r1), Any VTuple (l2, r2) ->
@@ -190,24 +193,18 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VRecord m1, Any VRecord m2
   | Any VModule m1, Any VModule m2 ->
     fold_lists (fun (l1, v1) (l2, v2) ->
-      if Labels.Record.equal l1 l2 then 
-        intensional_equal v1 v2
-      else
-        make false
+      let= () = Labels.Record.equal l1 l2 in
+      intensional_equal v1 v2
     ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
   | Any VTypeRecord m1, Any VTypeRecord m2 ->
     fold_lists (fun (l1, v1) (l2, v2) ->
-      if Labels.Record.equal l1 l2 then 
-        iequal v1 v2
-      else
-        make false
+      let= () = Labels.Record.equal l1 l2 in
+      iequal v1 v2
     ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
   | Any VTypeVariant m1, Any VTypeVariant m2 ->
     fold_lists (fun (l1, v1) (l2, v2) ->
-      if Labels.Variant.equal l1 l2 then 
-        iequal v1 v2
-      else
-        make false
+      let= () = Labels.Variant.equal l1 l2 in
+      iequal v1 v2
     ) (Labels.Variant.Map.to_list m1) (Labels.Variant.Map.to_list m2)
   | Any VTypeModule c1, Any VTypeModule c2 ->
     let rec fold bindings x y =
@@ -215,15 +212,13 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
       | [], [] -> make true
       | [], _ | _, [] -> make false
       | (lx, tx) :: xs, (ly, ty) :: ys ->
-        if Labels.Record.equal lx ly then
-          let- () =
-            iequal_closure bindings
-              { captured = tx ; env = c1.env }
-              { captured = ty ; env = c2.env }
-          in
-          fold [ Labels.Record.to_ident lx, Labels.Record.to_ident ly ] xs ys
-        else
-          make false
+        let= () = Labels.Record.equal lx ly in
+        let- () =
+          iequal_closure bindings
+            { captured = tx ; env = c1.env }
+            { captured = ty ; env = c2.env }
+        in
+        fold [ Labels.Record.to_ident lx, Labels.Record.to_ident ly ] xs ys
     in
     fold [] c1.captured c2.captured
   | Any VTypeRefine r1, Any VTypeRefine r2 ->
@@ -266,14 +261,12 @@ and iequal : type a. a t -> a t -> bool X.t = fun x y ->
 and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t)
   (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
   let open X in
-  if Funtype.equal_mode tf1.mode tf2.mode then
-    let- () = iequal tf1.domain tf2.domain in
-    iequal_cod tf1.codomain tf2.codomain
-  else
-    (* similar to dependent vs nondependent, a deterministic function type 
-      is not equal to a nondeterministic function type, but it is not a shape
-      mismatch. *)
-    make false
+  (* similar to dependent vs nondependent, a deterministic function type
+    is not equal to a nondeterministic function type, but it is not a shape
+    mismatch. *)
+  let= () = Funtype.equal_mode tf1.mode tf2.mode in
+  let- () = iequal tf1.domain tf2.domain in
+  iequal_cod tf1.codomain tf2.codomain
 
 and iequal_cod cod1 cod2 =
   if cod1 == cod2 then X.make true else
@@ -296,7 +289,7 @@ and iequal_cod cod1 cod2 =
   Closure equality will not be a shape mismatch, even if the
   expression references values in the environment of different
   shape in the same spot. Instead, it is just false.
-  
+
   E.g. This will be false, not a shape mismatch.
     { x |-> 0 } ,
       match x with
@@ -344,11 +337,9 @@ and iequal_closure bindings closure1 closure2 =
     | ETypeSingle e1, ETypeSingle e2 ->
       ieq e1 e2
     | EBinop r1, EBinop r2 ->
-      if Binop.equal r1.binop r2.binop then
-        let- () = ieq r1.left r2.left in
-        ieq r1.right r2.right
-      else
-        make false
+      let= () = Binop.equal r1.binop r2.binop in
+      let- () = ieq r1.left r2.left in
+      ieq r1.right r2.right
     | EIf r1, EIf r2 ->
       let- () = ieq r1.if_ r2.if_ in
       let- () = ieq r1.then_ r2.then_ in
@@ -357,33 +348,25 @@ and iequal_closure bindings closure1 closure2 =
       let- () = ieq r1.func r2.func in
       ieq r1.arg r2.arg
     | EProject r1, EProject r2 ->
-      if Labels.Record.equal r1.label r2.label then
-        ieq r1.record r2.record
-      else
-        make false
+      let= () = Labels.Record.equal r1.label r2.label in
+      ieq r1.record r2.record
     | ERecord m1, ERecord m2
     | ETypeRecord m1, ETypeRecord m2 ->
       fold_lists (fun (l1, e1) (l2, e2) ->
-        if Labels.Record.equal l1 l2 then 
-          ieq e1 e2
-        else
-          make false
+        let= () = Labels.Record.equal l1 l2 in
+        ieq e1 e2
       ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
     | ETuple (l1, r1), ETuple (l2, r2)
     | EListCons { hd = l1 ; tl = r1 }, EListCons { hd = l2 ; tl = r2 } ->
       let- () = ieq l1 l2 in
       ieq r1 r2
     | EVariant r1, EVariant r2 ->
-      if Labels.Variant.equal r1.label r2.label then
-        ieq r1.payload r2.payload
-      else
-        make false
+      let= () = Labels.Variant.equal r1.label r2.label in
+      ieq r1.payload r2.payload
     | ETypeVariant l1, ETypeVariant l2 ->
       fold_lists (fun r1 r2 ->
-        if Labels.Variant.equal r1.Variant.label r2.label then 
-          ieq r1.payload r2.payload
-        else
-          make false
+        let= () = Labels.Variant.equal r1.Variant.label r2.label in
+        ieq r1.payload r2.payload
       ) l1 l2
     (* check closures *)
     | EFunction r1, EFunction r2 ->
@@ -401,7 +384,7 @@ and iequal_closure bindings closure1 closure2 =
         (* compare first statement and continue with remainder of modules *)
         let id1, id2 = Ast.Tools.id_of_stmt s1, Ast.Tools.id_of_stmt s2 in
         let- () = make (Ident.equal id1 id2) in
-        let- () = iequal_statement bindings s1 s2 in 
+        let- () = iequal_statement bindings s1 s2 in
         iequal_expr ((id1, id2) :: bindings) (Ast.EModule tl1) (Ast.EModule tl2)
       end
     | ETypeModule l1, ETypeModule l2 ->
@@ -410,12 +393,10 @@ and iequal_closure bindings closure1 closure2 =
       | [], _ | _, [] -> make false
       | (lbl1, t1) :: tl1, (lbl2, t2) :: tl2 ->
         let- () = ieq t1 t2 in
-        if Labels.Record.equal lbl1 lbl2 then
-          let id1 = Labels.Record.to_ident lbl1 in
-          let id2 = Labels.Record.to_ident lbl2 in
-          iequal_expr ((id1, id2) :: bindings) (ETypeModule tl1) (ETypeModule tl2)
-        else
-          make false
+        let= () = Labels.Record.equal lbl1 lbl2 in
+        let id1 = Labels.Record.to_ident lbl1 in
+        let id2 = Labels.Record.to_ident lbl2 in
+        iequal_expr ((id1, id2) :: bindings) (ETypeModule tl1) (ETypeModule tl2)
       end
     | ETypeRefine r1, ETypeRefine r2 ->
       let- () = ieq r1.tau r2.tau in
@@ -423,7 +404,7 @@ and iequal_closure bindings closure1 closure2 =
     | ETypeMu r1, ETypeMu r2 ->
       iequal_expr ((r1.var, r2.var) :: bindings) r1.body r2.body
     | ETypeFun tf1, ETypeFun tf2 ->
-      begin match tf1.domain, tf2.domain with 
+      begin match tf1.domain, tf2.domain with
       | (None, t1), (None, t2) ->
         let- () = ieq t1 t2 in
         ieq tf1.codomain tf2.codomain
@@ -469,11 +450,11 @@ and iequal_closure bindings closure1 closure2 =
           (* Found bound in right but not in left, so these idents are not equal *)
           Some (make false)
         else
-          None 
+          None
       ) bindings
     in
     match de_bruijn_eq with
-    | Some res -> 
+    | Some res ->
       (* We have an answer by looking in the bindings *)
       res
     | None ->
@@ -483,8 +464,7 @@ and iequal_closure bindings closure1 closure2 =
         (* Found the values. Now compare, and turn shape mismatches into false *)
         begin match intensional_equal v1 v2 with
         | ShapeMismatch -> make false
-        | res ->
-          res
+        | res -> res
         end
       | None, None ->
         (* Both are not bound. This is strange, but technically they can be equal *)
@@ -493,7 +473,7 @@ and iequal_closure bindings closure1 closure2 =
         (* Exactly one of the variables was not bound, so they cannot be equal *)
         make false
       end
-  
+
   (* check that types annotations on variables are the same *)
   and iequal_annot bindings annot1 annot2 =
     match annot1, annot2 with

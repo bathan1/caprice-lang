@@ -10,7 +10,7 @@ let t =
   ; x : int }
 
 let ob =
-  fun x -> 
+  fun x ->
     fun self ->
       { square = fun i -> i * i
       ; add_x = fun i -> i + (self self).x
@@ -30,4 +30,3 @@ let adapter obj =
   s s
 
 let x : int = (adapter obj).square { value = 36 } (* ERROR: should be `x : int_wrapper` *)
- 

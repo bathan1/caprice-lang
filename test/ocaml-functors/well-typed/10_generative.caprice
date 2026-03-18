@@ -8,7 +8,7 @@ module M = F()()
 *)
 
 (*
-  Bluejay doesn't have a difference between generative and applicative functors, 
+  Bluejay doesn't have a difference between generative and applicative functors,
   but there _is_ a distinction between unit and a module, so this test is still
   an error.
 *)

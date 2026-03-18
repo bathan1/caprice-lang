@@ -5,7 +5,7 @@
 let acc z m =
   fun r -> m (z + r)
 
-let rec mult (dep x : int | x > 0) (dep y : int | y >= 0) 
+let rec mult (dep x : int | x > 0) (dep y : int | y >= 0)
   : let t = { z : int | z >= x * y } in (t -> t) -> t =
   fun k ->
     if x <= 0 || y <= 0

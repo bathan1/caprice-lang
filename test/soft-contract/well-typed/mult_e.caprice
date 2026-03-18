@@ -7,5 +7,5 @@ let rec mult (dep x : int | x > 0) (dep y : int | y >= 0) : { z : int | z == x *
   then 0
   else x + mult x (y - 1)
 
-let main (n : int | n >= 6) : { i : int | 600 <= i } = 
+let main (n : int | n >= 6) : { i : int | 600 <= i } =
   mult 100 n

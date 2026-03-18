@@ -24,7 +24,7 @@ let t = mu t.
 
 let x : t = `A (`A (`B ()))
 
-let _ = 
+let _ =
   match x with
   | `A (`A `B _ as y) ->
     match y with
@@ -33,22 +33,22 @@ let _ =
   end
 
 (* all of the following should be the same *)
-let _ : int = 
+let _ : int =
   match `A 0 :: [] with
   | `A i :: [] -> i
   end
 
-let _ = 
+let _ =
   match (`A 0) :: [] with
   | `A i :: [] -> i
   end
 
-let _ = 
+let _ =
   match (`A 0) :: [] with
   | (`A i) :: [] -> i
   end
 
-let _ = 
+let _ =
   match `A 0 :: [] with
   | (`A i) :: [] -> i
   end

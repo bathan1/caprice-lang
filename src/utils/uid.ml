@@ -11,12 +11,11 @@ end
 
 include T
 
-let[@inline always] of_int i = Uid i
-let[@inline always] to_int (Uid i) = i
+let[@inline] of_int i = Uid i
+let[@inline] to_int (Uid i) = i
 
 let counter = Counter.create ()
 
 let make_new () = Uid (Counter.next counter)
 
-module Map = Baby.W.Map.Make (T)
-module Set = Baby.W.Set.Make (T)
+include Set_map.Make_W (T)

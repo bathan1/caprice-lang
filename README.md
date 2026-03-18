@@ -15,9 +15,9 @@ let Collection : sig
   (* provided any type, empty is the empty collection of values of that type *)
   val empty : (type a) -> t a
   val add : (type a) -> a -> t a -> t a
-end = struct 
+end = struct
   (* list is a function on types *)
-  let t = list 
+  let t = list
   (* the empty collection can ignore its type argument *)
   let empty _ = []
   let add _ a c = a :: c

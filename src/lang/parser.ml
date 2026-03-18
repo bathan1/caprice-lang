@@ -27,12 +27,12 @@ module Make(Parser_entry: PARSER_ENTRY) = struct
   let parse_program (input : in_channel) : Parser_entry.result =
     parse_lexbuf (Lexing.from_channel input)
 
-  let parse_file (filename : string) : Parser_entry.result = 
+  let parse_file (filename : string) : Parser_entry.result =
     In_channel.with_open_bin filename parse_program
-    
+
   let parse_program_from_argv =
     let open Cmdliner.Term.Syntax in
-    let+ src_file = 
+    let+ src_file =
       let open Cmdliner.Arg in
       required & pos 0 (some' file) None & info [] ~docv:"FILE" ~doc:"Input filename"
     in

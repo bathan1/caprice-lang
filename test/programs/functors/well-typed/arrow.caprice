@@ -26,7 +26,7 @@
         ac_bd
 
       (* nice version *)
-      let split' ab cd = 
+      let split' ab cd =
         let (>>>) f g = compose g f in
         fst ab >>> arr swap >>> fst cd >>> arr swap
     end
@@ -49,13 +49,13 @@ let Make_split : (A : ARROW) ->
     { split =
         fun a b c d ->
           fun ab cd ->
-            let swap r = 
+            let swap r =
               match r with
               | x, y -> y, x
               end
             in
             let arr_swap : (x : type) -> (y : type) -> A.t (x * y) (y * x) =
-              fun x y -> A.arr (x * y) (y * x) swap in 
+              fun x y -> A.arr (x * y) (y * x) swap in
             let ac_bc = A.fst a b c ab in
             let ac_cb = A.compose (a * c) (b * c) (c * b) (arr_swap b c) ac_bc in
             let cb_db = A.fst c d b cd in

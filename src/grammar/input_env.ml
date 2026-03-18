@@ -1,7 +1,5 @@
 
 module Make (K : Smt.Symbol.KEY) = struct
-  module K = Smt.Symbol.Make_comparable_key (K)
-
   type t = Input.t Utils.Uid.Map.t
 
   let empty : t = Utils.Uid.Map.empty
@@ -23,7 +21,7 @@ module Make (K : Smt.Symbol.KEY) = struct
       base_map extending_map
 
   let to_string (m : t) : string =
-    "{ " ^ 
+    "{ " ^
       ( Utils.Uid.Map.to_list m
       |> List.map (fun (uid, input) ->
         string_of_int (Utils.Uid.to_int uid) ^ " |-> " ^ Input.to_string input
@@ -39,7 +37,7 @@ module Make (K : Smt.Symbol.KEY) = struct
         | None -> IBool (Option.get (model.value (B uid)))
       in
       Utils.Uid.Map.add uid v acc
-    ) empty model.domain  
+    ) empty model.domain
 end
 
 include Make (Stepkey)

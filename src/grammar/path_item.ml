@@ -18,7 +18,7 @@ type t =
   but this current behavior (of saying all formulas count to path length) is
   easiest.
 *)
-let to_priority (u : t) : int =
+let to_priority (u : t) : Path_priority.t =
   match u with
-  | Formula _ | Nonflipping _ -> 1
+  | Formula _ | Nonflipping _ -> Path_priority.one
   | Tag { tag ; _ } -> Tag.priority tag

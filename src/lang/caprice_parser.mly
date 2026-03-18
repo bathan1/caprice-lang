@@ -96,7 +96,7 @@
 
 (* HACK: Precedence declarations to resolve (type a) -> t parsing.
    When parsing "(type" followed by identifier, we want to shift the identifier
-   to eventually parse the type parameter sugar (type a) -> t, rather than 
+   to eventually parse the type parameter sugar (type a) -> t, rather than
    reduce TYPE to expr early (which would parse as function application).
    The higher precedence on IDENTIFIER causes Menhir to prefer shifting. *)
 %nonassoc TYPE
@@ -162,7 +162,7 @@ typed_param_group:
 
 %inline typed_name:
   | name=l_ident COLON tau=expr
-    { name, tau } 
+    { name, tau }
   | name=l_ident COLON tau=expr PIPE predicate=expr
     { name, ETypeRefine { var = name ; tau ; predicate } }
   | name=l_ident COLON_EQUAL e=expr
@@ -190,7 +190,7 @@ expr:
     { ETuple (left, right) }
   | IF if_=expr THEN then_=expr ELSE else_=expr %prec prec_if
     { EIf { if_ ; then_ ; else_ } }
-  | FUNCTION params=l_ident+ ARROW body=expr %prec prec_fun 
+  | FUNCTION params=l_ident+ ARROW body=expr %prec prec_fun
     { mk_curried_fun params body }
   | stmt=statement IN body=expr %prec prec_let
     { ELet { stmt ; body } }
@@ -283,7 +283,7 @@ primary_expr:
   | OPEN_BRACE CLOSE_BRACE
     { ERecord Record.empty }
   | OPEN_BRACKET list_items=separated_list(SEMICOLON, expr) CLOSE_BRACKET
-    { List.fold_right (fun hd tl -> 
+    { List.fold_right (fun hd tl ->
         EListCons { hd ; tl }
       ) list_items EEmptyList }
   | OPEN_PAREN e=expr CLOSE_PAREN
@@ -418,7 +418,7 @@ pattern:
     { PTuple (left, right)}
   | OPEN_PAREN CLOSE_PAREN
     { PUnit }
-  | OPEN_BRACKET CLOSE_BRACKET 
+  | OPEN_BRACKET CLOSE_BRACKET
     { PEmptyList }
   | UNDERSCORE
     { PAny }

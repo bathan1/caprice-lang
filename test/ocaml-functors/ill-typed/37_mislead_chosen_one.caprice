@@ -31,7 +31,7 @@ let Add_one_ = struct
 end
 
 let Add_one = struct
-  let witness = abstract 
+  let witness = abstract
   let M = Add_one_.M
   let t = Add_one_.t
 end
