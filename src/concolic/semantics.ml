@@ -184,6 +184,11 @@ let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
 *)
 let target_to_here : 'env. (Target.t, 'env) m =
   { run = fun ~reject:_ ~accept state step _ { target ; _ } ->
+    assert (
+      let n = state.rev_stem.total_priority in
+      let n' = Target.priority target in
+      Path_priority.geq n n'
+    );
     accept (
       Target.make Formula.trivial
         (Formula.BSet.union target.all_formulas (Path.formulas state.rev_stem.rev_stem))
@@ -202,15 +207,9 @@ let target_to_here : 'env. (Target.t, 'env) m =
     so that the effect is handled.
 *)
 let[@inline] fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
+  let* { Context.det_context ; _ } = read_ctx in
   let* target = target_to_here in
-  let* s = get in
-  let* ctx = read_ctx in
-  assert (
-    let n = s.State.rev_stem.total_priority in
-    let n' = Target.priority ctx.Context.target in
-    Path_priority.geq n n'
-  );
-  fork forked_m { target ; det_context = ctx.det_context }
+  fork forked_m { target ; det_context }
     ~setup_state:(fun state ->
       (* keeps all the logged runs *)
       { state with rev_stem = Rev_stem.discard_stem state.rev_stem }
