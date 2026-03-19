@@ -140,6 +140,8 @@ let step : (Step.t, 'x) t =
       accept step state step
   }
 
+[@@@landmark "auto-off"]
+
 let[@inline] fork (m : 'a. ('a, < err : 'err ; ctx : 'ctx ; state : 'state ; .. > as 'x) t)
   (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
   ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state)
