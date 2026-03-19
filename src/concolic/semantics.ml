@@ -93,13 +93,14 @@ let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'e
   let* step = step in
   let* { Context.target ; _ } = read_ctx in
   modify (fun (s : State.t) ->
-    { s with rev_stem =
-      let path_item =
-        Path_item.Tag { tag ; alternatives ; key =
-          Stepkey step ; logged_inputs = s.logged_inputs }
-      in
+    let path_item =
+      Path_item.Tag { tag ; alternatives ; key =
+        Stepkey step ; logged_inputs = s.logged_inputs }
+    in
+    let rev_stem =
       Rev_stem.cons path_item s.rev_stem ~if_exceeds:(Target.priority target)
-    }
+    in
+    { s with rev_stem }
   )
 
 (**
@@ -136,15 +137,16 @@ let push_formula_to_path ?(allow_flip : bool = true)
   else
     let* { Context.target ; _ } = read_ctx in
     modify (fun (s : State.t) ->
-      { s with rev_stem =
-        let path_item =
-          if allow_flip then
-            Path_item.Formula { cond = formula ; logged_inputs = s.logged_inputs }
-          else
-            Nonflipping formula
-        in
+      let path_item =
+        if allow_flip then
+          Path_item.Formula { cond = formula ; logged_inputs = s.logged_inputs }
+        else
+          Nonflipping formula
+      in
+      let rev_stem =
         Rev_stem.cons path_item s.rev_stem ~if_exceeds:(Target.priority target)
-      }
+      in
+      { s with rev_stem }
     )
 
 (**
