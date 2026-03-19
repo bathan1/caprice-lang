@@ -11,18 +11,6 @@ let[@inline] return_any v = return (Any v)
 let bad_input_env =
   InvariantException "Input environment is ill-formed"
 
-(**
-  [ctx_of_mode mode] is an environment in which to run a
-    monadic expression based on the [mode] of the function
-    type that is being checked.
-
-    The context disallows inputs if the mode is deterministic.
-*)
-let ctx_of_mode (mode : Funtype.mode) =
-  match mode with
-  | Nondet -> Fun.id
-  | Det -> disallow_inputs (* deterministic functions must run without inputs *)
-
 open Grammar.Val.Error_messages
 
 (**
@@ -51,23 +39,20 @@ let eval
   *)
   let fork_on_left (type a env) ~(left : env with_env failing) ~(right : (a, env) m) ~reason =
     let* () = incr_step ~max_step in
-    let* l_opt = allow_inputs (read_input KTag input_env) in
-    match l_opt with
-    | Some Left reason' when reason = reason' ->
+    let run_left =
       let* () = push_and_log_tag @@ Left reason in
       left.run_failing
-    | Some Right reason' when reason = reason' ->
+    in
+    let run_right =
       let* () = push_and_log_tag @@ Right reason in
       right
-    | Some _ ->
-      raise bad_input_env
-    | None ->
-      let* () = fork (
-        let* () = push_and_log_tag @@ Left reason in
-        left.run_failing
-      ) in
-      let* () = push_and_log_tag @@ Right reason in
-      right
+    in
+    let* l_opt = allow_inputs (read_input KTag input_env) in
+    match l_opt with
+    | Some Left reason' when reason = reason' -> run_left
+    | Some Right reason' when reason = reason' -> run_right
+    | Some _ -> raise bad_input_env
+    | None -> let* () = fork run_left in run_right
   in
 
   (*
@@ -83,8 +68,8 @@ let eval
     match expr with
     (* concrete values *)
     | EUnit -> return_any VUnit
-    | EInt i -> return_any (VInt (i, Smt.Formula.const_int i))
-    | EBool b -> return_any (VBool (b, Smt.Formula.const_bool b))
+    | EInt i -> return_any (VInt (i, Formula.const_int i))
+    | EBool b -> return_any (VBool (b, Formula.const_bool b))
     | EVar id -> fetch id
     | EFunction { param ; body } ->
       let* env = read in
@@ -165,16 +150,16 @@ let eval
     | EListCons { hd ; tl } ->
       let* hd = eval hd in
       let* v_tl = eval tl in (* don't force eval because want to allow cons to lazy list *)
-      let cons_with_v1 tl = return_any (VListCons { hd ; tl }) in
+      let cons_with_hd tl = return_any (VListCons { hd ; tl }) in
       begin match v_tl with
       | Any (VEmptyList as tl)
-      | Any (VListCons _ as tl) -> cons_with_v1 tl
+      | Any (VListCons _ as tl) -> cons_with_hd tl
       | Any (VLazy { cell ; _ } as tl) ->
         let* v_lazy = read_cell SLazy cell in
         begin match v_lazy with
         | LLazy LGenList _
         | LValue Any VEmptyList
-        | LValue Any VListCons _ -> cons_with_v1 tl
+        | LValue Any VListCons _ -> cons_with_hd tl
         | _ -> mismatch @@ cons_non_list hd v_tl
         end
       | _ -> mismatch @@ cons_non_list hd v_tl
@@ -304,8 +289,6 @@ let eval
     | BAnd | BOr -> eval_short_circuit vleft
     | _ ->
       let* vright = force_eval right in
-      let fail_binop () = (* delay this so as not to eagerly construct the string *)
-        mismatch @@ bad_binop vleft op vright in
       let k f s1 s2 op =
         return_any @@ f (Smt.Formula.binop op s1 s2)
       in
@@ -332,9 +315,9 @@ let eval
         (* Make tuple if v1 and v2 are types. Note that integer muliplication is handled above. *)
         handle_two v1 v2 (function
           | `Types (t1, t2) -> return_any @@ VTypeTuple (t1, t2)
-          | _ -> fail_binop ()
+          | _ -> mismatch @@ bad_binop vleft op vright
         )
-      | _ -> fail_binop ()
+      | _ -> mismatch @@ bad_binop vleft op vright
 
   (*
     ---------------------
@@ -515,7 +498,7 @@ let eval
       | Any (VFunClosure _ as vfun)
       | Any (VFunFix _ as vfun) ->
         let* genned = allow_inputs (gen domain) in
-        let* res = ctx_of_mode mode (eval_appl vfun genned) in
+        let* res = local_mode mode (eval_appl vfun genned) in
         let* cod_tval = eval_codomain codomain genned in
         check res cod_tval
       | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; mode = mode' } ; _ } as v_candidate) ->
@@ -579,7 +562,7 @@ let eval
               let* genned = allow_inputs (gen domain) in
               let* cod_tval = eval_codomain codomain genned in
               let* wrapped = wrap genned domain' in
-              let* res = ctx_of_mode mode (eval_appl data ~self_fun genned) in
+              let* res = local_mode mode (eval_appl data ~self_fun genned) in
               let* cod_tval' = eval_codomain codomain' wrapped in
               let* w_res = wrap res cod_tval' in
               check w_res cod_tval
@@ -605,7 +588,7 @@ let eval
               in
               if Funtype.equal_mode mode Nondet
                 && Val.equal cod_tval cod_tval'' then confirm else
-              let* genned = ctx_of_mode mode (gen cod_tval'') in
+              let* genned = local_mode mode (gen cod_tval'') in
               let* w = wrap genned cod_tval' in
               check w cod_tval
             | VGenFun { funtype = { domain = domain'' ; codomain = _ ; mode = Det } ; _ } ->

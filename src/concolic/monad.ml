@@ -61,13 +61,13 @@ let read : ('env, < env : 'env ; .. >) t =
   }
 
 let[@inline] local (f : 'env -> 'env) (x : ('a, < env : 'env ; .. > as 'x) t) : ('a, 'x) t =
-  { run = fun ~reject ~accept state step env ->
-      x.run ~reject ~accept state step (f env)
+  { run = fun ~reject ~accept state step env ctx ->
+      x.run ~reject ~accept state step (f env) ctx
   }
 
 let local' (env : 'e) (x : ('a, < env : 'e ; .. >) t) : ('a, < env : 'env ; .. >) t =
-  { run = fun ~reject ~accept state step _ ->
-      x.run ~reject ~accept state step env
+  { run = fun ~reject ~accept state step _ ctx ->
+      x.run ~reject ~accept state step env ctx
   }
 
 (*

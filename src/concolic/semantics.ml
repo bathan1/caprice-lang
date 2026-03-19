@@ -93,13 +93,25 @@ let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'e
   let* step = step in
   let* { Context.target ; _ } = read_ctx in
   modify (fun (s : State.t) ->
-    { s with rev_stem =
-      let path_item =
-        Path_item.Tag { tag ; alternatives ; key =
-          Stepkey step ; logged_inputs = s.logged_inputs }
-      in
-      Rev_stem.cons path_item
-        s.rev_stem ~if_exceeds:(Target.priority target)
+    let path_item =
+      Path_item.Tag { tag ; alternatives ; key =
+        Stepkey step ; logged_inputs = s.logged_inputs }
+    in
+    let rev_stem =
+      Rev_stem.cons path_item s.rev_stem ~if_exceeds:(Target.priority target)
+    in
+    { s with rev_stem }
+  )
+
+(**
+  [log_input kind a] logs the input [a] with kind [kind] to have been
+    read at the current time.
+*)
+let log_input (kind : 'a Input.Kind.t) (a : 'a) : (unit, 'env) m =
+  let* step in
+  modify (fun (s : State.t) ->
+    { s with logged_inputs =
+        Input_env.add kind (Stepkey step) a s.logged_inputs
     }
   )
 
@@ -109,20 +121,8 @@ let push_tag_to_path ?(alternatives : Tag.t list = []) (tag : Tag.t) : (unit, 'e
     time.
 *)
 let push_and_log_tag (tag : Tag.t) : (unit, 'env) m =
-  let* step = step in
-  let* { Context.target ; _ } = read_ctx in
-  modify (fun (s : State.t) ->
-    { s with rev_stem = begin
-      let path_item =
-        Path_item.Tag { tag ; alternatives = [] ; key =
-          Stepkey step ; logged_inputs = s.logged_inputs }
-      in
-      Rev_stem.cons path_item s.rev_stem
-        ~if_exceeds:(Target.priority target)
-    end
-    ; logged_inputs = Input_env.add KTag (Stepkey step) tag s.logged_inputs
-    }
-  )
+  let* () = push_tag_to_path tag in
+  log_input KTag tag
 
 (**
   [push_formula_to_path ?allow_flip formula] pushes the formula to the path stem
@@ -137,15 +137,16 @@ let push_formula_to_path ?(allow_flip : bool = true)
   else
     let* { Context.target ; _ } = read_ctx in
     modify (fun (s : State.t) ->
-      { s with rev_stem =
-        let path_item =
-          if allow_flip then
-            Path_item.Formula { cond = formula ; logged_inputs = s.logged_inputs }
-          else
-            Nonflipping formula
-        in
+      let path_item =
+        if allow_flip then
+          Path_item.Formula { cond = formula ; logged_inputs = s.logged_inputs }
+        else
+          Nonflipping formula
+      in
+      let rev_stem =
         Rev_stem.cons path_item s.rev_stem ~if_exceeds:(Target.priority target)
-      }
+      in
+      { s with rev_stem }
     )
 
 (**
@@ -168,13 +169,11 @@ let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
   ~(default : 'a) : ('a, 'env) m =
   let* () = assert_inputs_allowed in
   let* step = step in
-  let log_input input =
-    modify (fun (s : State.t) -> { s with logged_inputs =
-      Input_env.add kind (Stepkey step) input s.logged_inputs })
+  let input =
+    Option.value ~default (Input_env.find kind (Stepkey step) input_env)
   in
-  match Input_env.find kind (Stepkey step) input_env with
-  | Some i -> let* () = log_input i in return i
-  | None -> let* () = log_input default in return default
+  let* () = log_input kind input in
+  return input
 
 (**
   [target_to_here] is a target representing the path to the current
@@ -212,25 +211,29 @@ let[@inline] fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
   let* { Context.det_context ; _ } = read_ctx in
   let* target = target_to_here in
   fork forked_m { target ; det_context }
-    ~setup_state:(fun state ->
-      (* keeps all the logged runs *)
-      { state with rev_stem = Rev_stem.discard_stem state.rev_stem }
-    )
-    ~restore_state:(fun e ~og ~forked_state ->
-      { og with runs =
+    ~setup_state:
+      (fun state ->
+        (* keeps all the logged runs *)
+        { state with rev_stem = Rev_stem.discard_stem state.rev_stem }
+      )
+    ~restore_state:
+      (fun e ~og ~forked_state ->
         let forked_run =
           { Logged_run.rev_stem = forked_state.rev_stem
           ; target
           ; answer = Eval_result.to_answer e }
         in
-        (* Note that the forked state runs include the original runs (see setup_state) *)
-        forked_run :: forked_state.runs (* ... hence, don't copy the og runs *)
-      }
-    )
+        (* Note that the forked state runs include the original runs (see setup_state)
+            so we will overwrite og runs; they are included inside forked_state.runs *)
+        { og with runs = forked_run :: forked_state.runs }
+      )
     (fun res ->
-      if Eval_result.is_signal_to_stop res
-      then escape res (* propagate up the failure *)
-      else (Utils.Time.yield_to_timer (); return ()))
+      if Eval_result.is_signal_to_stop res then
+        escape res (* propagate up the failure *)
+      else begin
+        Utils.Time.yield_to_timer (); return ()
+      end
+    )
 
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind
@@ -270,9 +273,8 @@ let make_alist : 'env. (Val.alist Suspension.t, 'env) m =
 
 let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
   let* Step id = step in
-  let v = Val.VLazy { cell = { id } ; wrapping_types = [] } in
   let* () = set_cell SLazy { id } (Val.LLazy lgen) in
-  return v
+  return (Val.VLazy { cell = { id } ; wrapping_types = [] })
 
 (**
   [disallow_inputs x] runs [x] such that any [assert_inputs_allowed]
@@ -287,6 +289,17 @@ let[@inline] disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
 *)
 let[@inline] allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Allowed }) x
+
+(**
+  [local_mode mode x] runs [x] in the context based on
+    the [mode] of the function type that is being checked.
+
+    The context disallows inputs if the mode is deterministic.
+*)
+let local_mode (mode : Funtype.mode) (x : ('a, 'env) m) : ('a, 'env) m =
+  match mode with
+  | Nondet -> x
+  | Det -> disallow_inputs x
 
 (**
   [run x target] runs [x] with [target] as the context, beginning with
