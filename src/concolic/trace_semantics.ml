@@ -10,7 +10,7 @@ open Grammar
 exception InvariantException of string
 
 module State = struct
-  type t = 
+  type t =
     { lazies : Val.vlazy Suspension.Map.t
     ; detfun_alists : Val.alist Suspension.Map.t
     }
@@ -39,7 +39,7 @@ module Matches = Val.Make_match (struct
   include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
 end)
 
-let[@inline always] incr_step : 'env. (unit, 'env) m = 
+let[@inline always] incr_step : 'env. (unit, 'env) m =
   { run = fun ~reject ~accept state step _ _ ->
     accept () state (Step.next step)
   }
@@ -56,8 +56,8 @@ let[@inline always] fetch (id : Ident.t) : (Val.any, Val.Env.t) m =
   }
 
 (* For typing purposes (due to value restriction), we must inline the
-  definition of `M.escape`.
-    
+  definition of `Monad.escape`.
+
   The ideal implementation would simply be `escape Vanish`.
 *)
 let vanish : 'a 'env. ('a, 'env) m =
@@ -141,6 +141,17 @@ let[@inline always] disallow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
 *)
 let[@inline always] allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun _ -> { Context.det_context = Allowed }) x
+
+(**
+  [local_mode mode x] runs [x] in the context based on
+    the [mode] of the function type that is being checked.
+
+    The context disallows inputs if the mode is deterministic.
+*)
+let local_mode (mode : Funtype.mode) (x : ('a, 'env) m) : ('a, 'env) m =
+  match mode with
+  | Nondet -> x
+  | Det -> disallow_inputs x
 
 (**
   [run x target] runs [x] with [target] as the context, beginning with
