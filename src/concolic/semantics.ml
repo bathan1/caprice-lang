@@ -291,6 +291,17 @@ let[@inline] allow_inputs (x : ('a, 'env) m) : ('a, 'env) m =
   local_ctx (fun (ctx : Context.t) -> { ctx with det_context = Allowed }) x
 
 (**
+  [local_mode mode x] runs [x] in the context based on
+    the [mode] of the function type that is being checked.
+
+    The context disallows inputs if the mode is deterministic.
+*)
+let local_mode (mode : Funtype.mode) (x : ('a, 'env) m) : ('a, 'env) m =
+  match mode with
+  | Nondet -> x
+  | Det -> disallow_inputs x
+
+(**
   [run x target] runs [x] with [target] as the context, beginning with
     empty state and environment.
 *)
