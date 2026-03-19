@@ -11,7 +11,7 @@ module F: f = functor (X:sig include x include y end)(Z:sig type zv = Z of X.y e
 
 let f =
   (B : sig val x : type val y : type val u := x val v := y end)
-  -> (Y : sig val yu := `Y of B.u end) 
+  -> (Y : sig val yu := `Y of B.u end)
   -> (Z : sig val zv := `Z of B.v end)
   -> sig end
 

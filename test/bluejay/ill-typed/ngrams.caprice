@@ -18,7 +18,7 @@ let map : t 2 = fun a b -> a -> b
 (* Parametric bag *)
 let bag : t 1 = list
 
-let rec len ls = 
+let rec len ls =
   match ls with
   | [] -> 0
   | hd :: tl -> 1 + len tl
@@ -30,7 +30,7 @@ let distribution : int -> t 1 = fun n a -> map (ngram (n - 1) a) (bag a)
 
 let rec take n =
   fun l ->
-    if n == 0 then [] else 
+    if n == 0 then [] else
     let _ = assert (n >= 0) in
     match l with
     | [] -> []
@@ -61,7 +61,7 @@ let rec compare_list compare l1 l2 =
     | _ -> -1
     end
   | hd :: tl ->
-    match l2 with 
+    match l2 with
     | [] -> 1
     | hd2 :: tl2 ->
       let c = compare hd hd2 in
@@ -73,7 +73,7 @@ let rec compare_list compare l1 l2 =
 
 let tuple a b = { fst : a ; snd : b }
 
-let rec last_exn ls = 
+let rec last_exn ls =
   match ls with
   | hd :: tl ->
     match tl with

@@ -47,7 +47,7 @@ let run (type a r) (x : t a) (k : a -> r) : r =
   No, we do not. This error is only found because `return int 0` is a
   function that checks that its argument has type (int -> 'r), where
   its argument will be a generated function ({i:int | i==0} -> 'r).
-  
+
   Without wrapping, `return int 0` is an untyped function, which does
   act like the expected type.
 *)

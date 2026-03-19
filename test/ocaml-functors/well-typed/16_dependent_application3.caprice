@@ -36,9 +36,9 @@ let F
   : sig end
   = struct end
 
-let K = struct 
+let K = struct
   let x = X.x (* we don't have include, so we must manually copy from the modules above *)
-  let y = Y.y 
+  let y = Y.y
 end
 
 (* ERROR: the third argument should have type y, not yy *)

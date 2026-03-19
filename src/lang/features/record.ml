@@ -11,7 +11,7 @@ let label_set (x : 'a t) : Labels.Record.Set.t =
 
 module Parsing = struct
   let of_list pair_ls =
-    let add_entry acc (k, v) = 
+    let add_entry acc (k, v) =
       Labels.Record.Map.update k (function
         | Some _ -> raise @@ Invalid_argument "Duplicate record entry while parsing."
         | None -> Some v

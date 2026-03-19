@@ -11,4 +11,4 @@ let f x y =
   else y
 
 let main (dependent x : int) (y : int) (z : int) : { c : int | c == f x c } =
-  max f y x z 
+  max f y x z

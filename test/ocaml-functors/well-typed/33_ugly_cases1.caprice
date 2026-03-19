@@ -31,7 +31,7 @@ let F (A : Arg) : sig end = struct
   let X = A.X
   let Y = A.Y
   let A = A.A
-  
+
   let G(X:A)(Y:A)(_:A)(Z:A) : sig val t : type end = struct let t = A end
   let u = (G(Y)(Y)(Y)(Y)).t
 end

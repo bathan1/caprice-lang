@@ -84,9 +84,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
   type dval = data t
   type tval = typeval t
 
-  let[@inline always] to_any : type a. a t -> any = fun v -> Any v
+  let[@inline] to_any : type a. a t -> any = fun v -> Any v
 
-  let[@inline always] handle (type a b) (v : a t) ~(data : data t -> b) ~(typeval : typeval t -> b) : b =
+  let[@inline] handle (type a b) (v : a t) ~(data : data t -> b) ~(typeval : typeval t -> b) : b =
     match v with
     | ( VUnit
       | VInt _
@@ -105,7 +105,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       | VWrapped _) as x -> data x
     | ( VType
       | VTypePoly _
-      | VTypeUnit 
+      | VTypeUnit
       | VTypeTop
       | VTypeBottom
       | VTypeInt
@@ -120,10 +120,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       | VTypeTuple _
       | VTypeSingle _) as x -> typeval x
 
-  let[@inline always] handle_any (type a) (Any v : any) ~(data : data t -> a) ~(typeval : typeval t -> a) : a =
+  let[@inline] handle_any (type a) (Any v : any) ~(data : data t -> a) ~(typeval : typeval t -> a) : a =
     handle v ~data ~typeval
 
-  let[@inline always] handle_two (v1 : any) (v2 : any)
+  let[@inline] handle_two (v1 : any) (v2 : any)
     (f : [ `Data of dval * dval | `Types of tval * tval | `Mismatch of any * any ] -> 'a) : 'a =
     handle_any v1
       ~data:(fun d1 ->
@@ -137,7 +137,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
           ~typeval:(fun t2 -> f (`Types (t1, t2)))
       )
 
-  (* 
+  (*
     True if the value has any mu type in its representation.
     This is used to dodge recursion by default.
   *)
@@ -211,7 +211,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       Atom_cell.to_string Bool.to_string b
     | VFunClosure { param ; closure = _ } ->
       Printf.sprintf "(fun %s -> <body>)" (Ident.to_string param)
-    | VVariant { label ; payload } -> 
+    | VVariant { label ; payload } ->
       Printf.sprintf "(%s %s)" (Labels.Variant.to_string label) (any_to_string payload)
     | VRecord map_body ->
       Labels.Record.Map.to_list map_body
@@ -253,7 +253,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       "bottom"
     | VTypeInt ->
       "int"
-    | VTypeBool -> 
+    | VTypeBool ->
       "bool"
     | VTypeMu { var ; closure = _ } ->
       Printf.sprintf "(mu %s. <body>)" (Ident.to_string var)
@@ -323,7 +323,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     let not_non_bool (v : any) : string =
       Printf.sprintf "Bad not: %s is not a boolean and cannot be negated"
         (any_to_string v)
-      
+
     let if_non_bool (v : any) : string =
       Printf.sprintf "Bad if: %s is not a boolean and cannot be used as a condition"
         (any_to_string v)
@@ -351,7 +351,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     let wrap_bottom (v : any) : string =
       Printf.sprintf "Bad wrap: tried to wrap %s with type bottom"
         (any_to_string v)
-      
+
     let wrap_non_list (v : any) (tlist : tval) : string =
       bad_wrap "a list" v tlist
 
@@ -413,14 +413,14 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       the monad via a functor.
     *)
     let matches (type a) (pat : Pattern.t) (v : a t) ~(resolve_lazy : lazy_cell -> any m) : Match_result.t m =
-      let rec matches 
-        : type a. Pattern.t -> a t -> Match_result.t m 
+      let rec matches
+        : type a. Pattern.t -> a t -> Match_result.t m
         = fun p v ->
         let open Match_result in
         match p, v with
         | PAny, _ ->
           return match_
-        | PVariable id, v -> 
+        | PVariable id, v ->
           return @@ Match (Env.singleton id (Any v))
         | PPatternAs (pat, id), v ->
           bind_res (matches pat v) (fun env ->
@@ -439,10 +439,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
         | _, VLazy vlazy ->
           let* (Any v) = resolve_lazy vlazy in
           matches p v
-        | p, VGenPoly _ -> 
+        | p, VGenPoly _ ->
           (* generated polymorphic values cannot be inspected *)
-          return @@ Failure 
-            (Printf.sprintf "Bad match: matching polymorphic value with pattern %s" 
+          return @@ Failure
+            (Printf.sprintf "Bad match: matching polymorphic value with pattern %s"
               (Pattern.to_string p))
         | PVariant { label = pattern_label ; payload = payload_pattern },
           VVariant { label = subject_label ; payload = Any v } ->
@@ -453,14 +453,14 @@ module Make (Atom_cell : Utils.Types.P1) = struct
           match_two (p1, v1) (p2, v2)
         | PUnit, VUnit ->
           return match_
-        | PEmptyList, VEmptyList -> 
+        | PEmptyList, VEmptyList ->
           return match_
         | PDestructList (p1, p2), VListCons { hd = Any v1 ; tl = v2 } ->
           match_two (p1, v1) (p2, v2)
-        | _ -> 
+        | _ ->
           return No_match
 
-      and match_two 
+      and match_two
         : type a b. Pattern.t * a t -> Pattern.t * b t -> Match_result.t m
         = fun (p1, v1) (p2, v2) ->
         let open Match_result in

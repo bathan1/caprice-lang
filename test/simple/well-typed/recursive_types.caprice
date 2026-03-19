@@ -68,7 +68,7 @@ let t = mu t. mu s. int
 
 let f (x : t) : int = x
 
-let f : 
+let f :
   let t = mu t. list t in
   let t' = list t in
   t -> t'

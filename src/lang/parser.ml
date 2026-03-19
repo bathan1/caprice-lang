@@ -25,7 +25,7 @@ let parse_file (filename : string) : Ast.statement list =
 
 let parse_program_from_argv =
   let open Cmdliner.Term.Syntax in
-  let+ src_file = 
+  let+ src_file =
     let open Cmdliner.Arg in
     required & pos 0 (some' file) None & info [] ~docv:"FILE" ~doc:"Input filename"
   in

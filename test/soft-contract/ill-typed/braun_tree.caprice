@@ -9,13 +9,13 @@ let t a = mu t.
   | `Leaf of unit
   | `Node of { v : a ; l : t ; r : t }
 
-let rec size n = 
+let rec size n =
   match n with
   | `Leaf () -> 0
   | `Node node -> 1 + size node.l + size node.r
   end
 
-let rec is_braun_tree x = 
+let rec is_braun_tree x =
   match x with
   | `Leaf () -> true
   | `Node node ->

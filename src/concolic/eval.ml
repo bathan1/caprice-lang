@@ -6,22 +6,10 @@ open Grammar.Val
 open Eval_result
 
 (* `Any` is unboxed, so this is zero overhead *)
-let[@inline always] return_any v = return (Any v)
+let[@inline] return_any v = return (Any v)
 
 let bad_input_env =
   InvariantException "Input environment is ill-formed"
-
-(**
-  [ctx_of_mode mode] is an environment in which to run a
-    monadic expression based on the [mode] of the function
-    type that is being checked.
-
-    The context disallows inputs if the mode is deterministic.
-*)
-let ctx_of_mode (mode : Funtype.mode) =
-  match mode with
-  | Nondet -> Fun.id
-  | Det -> disallow_inputs (* deterministic functions must run without inputs *)
 
 open Grammar.Val.Error_messages
 
@@ -51,28 +39,25 @@ let eval
   *)
   let fork_on_left (type a env) ~(left : 'a. ('a, env) m) ~(right : (a, env) m) ~reason =
     let* () = incr_step ~max_step in
-    let* l_opt = allow_inputs (read_input KTag input_env) in
-    match l_opt with
-    | Some Left reason' when reason = reason' -> 
+    let run_left =
       let* () = push_and_log_tag @@ Left reason in
       left
-    | Some Right reason' when reason = reason' ->
+    in
+    let run_right =
       let* () = push_and_log_tag @@ Right reason in
       right
-    | Some _ ->
-      raise bad_input_env
-    | None ->
-      let* () = fork (
-        let* () = push_and_log_tag @@ Left reason in
-        left
-      ) in
-      let* () = push_and_log_tag @@ Right reason in
-      right
+    in
+    let* l_opt = allow_inputs (read_input KTag input_env) in
+    match l_opt with
+    | Some Left reason' when reason = reason' -> run_left
+    | Some Right reason' when reason = reason' -> run_right
+    | Some _ -> raise bad_input_env
+    | None -> let* () = fork run_left in run_right
   in
 
   (*
     ----------------------------
-    EVALUATE EXPRESSION TO VALUE 
+    EVALUATE EXPRESSION TO VALUE
     ----------------------------
 
     Uses the environment, so the type parameter for the environment in
@@ -83,13 +68,13 @@ let eval
     match expr with
     (* concrete values *)
     | EUnit -> return_any VUnit
-    | EInt i -> return_any (VInt (i, Smt.Formula.const_int i))
-    | EBool b -> return_any (VBool (b, Smt.Formula.const_bool b))
+    | EInt i -> return_any (VInt (i, Formula.const_int i))
+    | EBool b -> return_any (VBool (b, Formula.const_bool b))
     | EVar id -> fetch id
     | EFunction { param ; body } ->
       let* env = read in
       return_any (VFunClosure { param ; closure = { captured = body ; env }})
-    | ERecord e_record_body -> 
+    | ERecord e_record_body ->
       let* record_body =
         Record.fold (fun l e acc_m ->
           let* acc = acc_m in
@@ -165,17 +150,17 @@ let eval
     | EListCons { hd ; tl } ->
       let* hd = eval hd in
       let* v_tl = eval tl in (* don't force eval because want to allow cons to lazy list *)
-      let cons_with_v1 tl = return_any (VListCons { hd ; tl }) in
+      let cons_with_hd tl = return_any (VListCons { hd ; tl }) in
       begin match v_tl with
       | Any (VEmptyList as tl)
-      | Any (VListCons _ as tl) -> cons_with_v1 tl
+      | Any (VListCons _ as tl) -> cons_with_hd tl
       | Any (VLazy { cell ; _ } as tl) ->
         let* v_lazy = read_cell SLazy cell in
         begin match v_lazy with
         | LLazy LGenList _
         | LValue Any VEmptyList
-        | LValue Any VListCons _ -> cons_with_v1 tl
-        | _ -> mismatch @@ cons_non_list hd v_tl 
+        | LValue Any VListCons _ -> cons_with_hd tl
+        | _ -> mismatch @@ cons_non_list hd v_tl
         end
       | _ -> mismatch @@ cons_non_list hd v_tl
       end
@@ -203,7 +188,7 @@ let eval
       | Any VBool (b, s) ->
         let cont = if b then then_ else else_ in
         let* () = push_formula_to_path (if b then s else Smt.Formula.not_ s) in
-        eval cont 
+        eval cont
       | _ -> mismatch @@ if_non_bool v
       end
     | EAssert e ->
@@ -237,7 +222,7 @@ let eval
     | ETypeTop -> return_any VTypeTop
     | ETypeBottom -> return_any VTypeBottom
     | ETypeUnit -> return_any VTypeUnit
-    | ETypeRecord t_record_body -> 
+    | ETypeRecord t_record_body ->
       let* record_body =
         Record.fold (fun l e acc_m ->
           let* acc = acc_m in
@@ -273,7 +258,7 @@ let eval
         ) (return Labels.Variant.Map.empty) ls
       in
       return_any (VTypeVariant variant_bodies)
-    
+
   (*
     ----------------------------------
     EVALUATE BINARY OPERATION TO VALUE
@@ -304,8 +289,6 @@ let eval
     | BAnd | BOr -> eval_short_circuit vleft
     | _ ->
       let* vright = force_eval right in
-      let fail_binop () = (* delay this so as not to eagerly construct the string *)
-        mismatch @@ bad_binop vleft op vright in
       let k f s1 s2 op =
         return_any @@ f (Smt.Formula.binop op s1 s2)
       in
@@ -332,9 +315,9 @@ let eval
         (* Make tuple if v1 and v2 are types. Note that integer muliplication is handled above. *)
         handle_two v1 v2 (function
           | `Types (t1, t2) -> return_any @@ VTypeTuple (t1, t2)
-          | _ -> fail_binop ()
+          | _ -> mismatch @@ bad_binop vleft op vright
         )
-      | _ -> fail_binop ()
+      | _ -> mismatch @@ bad_binop vleft op vright
 
   (*
     ---------------------
@@ -353,7 +336,7 @@ let eval
     This does not use a monadic environment, so the environment is
     universally quantified.
   *)
-  and eval_appl 
+  and eval_appl
     : 'env. Val.dval -> ?self_fun:Val.dval -> Val.any -> (Val.any, 'env) m
     = fun v_func ?(self_fun = v_func) v_arg ->
     match v_func with
@@ -395,7 +378,7 @@ let eval
       in
       loop mappings
     | _ -> mismatch @@ apply_non_function (Any v_func)
-    
+
   (*
     ---------------------------------
     EVALUATE EXPRESSION TO TYPE VALUE
@@ -515,20 +498,20 @@ let eval
       | Any (VFunClosure _ as vfun)
       | Any (VFunFix _ as vfun) ->
         let* genned = allow_inputs (gen domain) in
-        let* res = ctx_of_mode mode (eval_appl vfun genned) in
+        let* res = local_mode mode (eval_appl vfun genned) in
         let* cod_tval = eval_codomain codomain genned in
         check res cod_tval
       | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; mode = mode' } ; _ } as v_candidate) ->
         fork_on_left ~reason:CheckGenFun
           ~left:(domain <: domain')
           ~right:(
-            if Val.equal_fun_cod codomain codomain' 
+            if Val.equal_fun_cod codomain codomain'
               && Funtype.equal_mode mode mode' then confirm else
             match mode' with
             | Nondet ->
               let* cod_tval, cod_tval' =
                 match codomain, codomain' with
-                | CodValue cod_tval, CodValue cod_tval' -> 
+                | CodValue cod_tval, CodValue cod_tval' ->
                   return (cod_tval, cod_tval')
                 | _ ->
                   let* genned = allow_inputs (gen domain) in
@@ -562,7 +545,7 @@ let eval
           ~left:(domain <: domain')
           ~right:(
             (*
-              The left has already checked the domain, so we can assume the 
+              The left has already checked the domain, so we can assume the
               domain side is well-typed.
 
               We can skip the work on the right if the codomains are equal
@@ -579,14 +562,14 @@ let eval
               let* genned = allow_inputs (gen domain) in
               let* cod_tval = eval_codomain codomain genned in
               let* wrapped = wrap genned domain' in
-              let* res = ctx_of_mode mode (eval_appl data ~self_fun genned) in
+              let* res = local_mode mode (eval_appl data ~self_fun genned) in
               let* cod_tval' = eval_codomain codomain' wrapped in
               let* w_res = wrap res cod_tval' in
               check w_res cod_tval
             | VGenFun { funtype = { domain = _ ; codomain = codomain'' ; mode = Nondet } ; _ } ->
               let* cod_tval, cod_tval', cod_tval'' =
                 match codomain, codomain', codomain'' with
-                | CodValue cod_tval, CodValue cod_tval', CodValue cod_tval'' -> 
+                | CodValue cod_tval, CodValue cod_tval', CodValue cod_tval'' ->
                   return (cod_tval, cod_tval', cod_tval'')
                 | _ ->
                   let* genned = allow_inputs (gen domain) in
@@ -605,7 +588,7 @@ let eval
               in
               if Funtype.equal_mode mode Nondet
                 && Val.equal cod_tval cod_tval'' then confirm else
-              let* genned = ctx_of_mode mode (gen cod_tval'') in
+              let* genned = local_mode mode (gen cod_tval'') in
               let* w = wrap genned cod_tval' in
               check w cod_tval
             | VGenFun { funtype = { domain = domain'' ; codomain = _ ; mode = Det } ; _ } ->
@@ -657,7 +640,7 @@ let eval
         let v_labels = Record.label_set module_v in
         let push_and_check label =
           let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
-          let new_env, tau = 
+          let new_env, tau =
             (* think about sharing this computation because rn it is redone on every fork *)
             Utils.List_utils.fold_left_until (fun env (label', tau) ->
               if Labels.Record.equal label' label
@@ -739,10 +722,10 @@ let eval
           let* p = local' (Env.set var v env) (eval captured) in
           match p with
           | Any VBool (b, s) ->
-            if b then 
+            if b then
               let* () = push_formula_to_path s in
               confirm
-            else 
+            else
               let* () = push_formula_to_path ~allow_flip:false (Smt.Formula.not_ s) in
               refute
           | _ -> mismatch @@ non_bool_predicate p
@@ -832,7 +815,7 @@ let eval
 
     Does not use the environment.
   *)
-  and gen 
+  and gen
     : 'env. Val.tval -> (Val.any, 'env) m
     = fun t ->
     let* () = incr_step ~max_step in
@@ -916,7 +899,7 @@ let eval
         let* () = push_formula_to_path (Smt.Formula.not_ s) in
         escape Vanish
       | _ -> mismatch @@ non_bool_predicate p
-      end 
+      end
     | VTypeMu { var ; closure } ->
       if do_splay then
         (* Be overly cautious and assume that the generated value
@@ -955,7 +938,7 @@ let eval
 
     Does not use the environment.
   *)
-  and force_gen_list 
+  and force_gen_list
     : 'env. Val.tval -> (Val.any, 'env) m
     = fun body ->
     let* l = read_and_log_input KTag input_env ~default:(Left GenList) in
@@ -978,7 +961,7 @@ let eval
 
     Does not use the environment.
   *)
-  and force_gen_mu 
+  and force_gen_mu
     : 'env. Ident.t -> Ast.t Val.closure -> (Val.any, 'env) m
     = fun var closure ->
     let* t_body = unroll_mu var closure in
@@ -999,7 +982,7 @@ let eval
     by putting a polymorphic type in place of the recursive type,
     and letting wrapping gloss over that polymorphic value.
   *)
-  and wrap 
+  and wrap
     : 'env. Val.any -> Val.tval -> (Val.any, 'env) m
     = fun v t ->
     if not do_wrap then return v else
@@ -1023,7 +1006,7 @@ let eval
           return_any (VLazy { vlazy with wrapping_types = tval :: vlazy.wrapping_types })
         else
           return v
-      | _ -> 
+      | _ ->
         wrap v tval
       end
     | VTypeList t_body ->
@@ -1034,7 +1017,7 @@ let eval
         let* w_hd = wrap hd t_body in
         let* Any w_tl = wrap (Any tl) t in
         handle w_tl
-          ~data:(fun w_tl_data -> 
+          ~data:(fun w_tl_data ->
             if w_hd == hd && w_tl_data == tl then
               return v
             else
@@ -1062,7 +1045,7 @@ let eval
           Labels.Record.Map.fold (fun k t acc_m ->
             let* acc = acc_m in
             match Labels.Record.Map.find_opt k v_body with
-            | Some v' -> 
+            | Some v' ->
               let* w = wrap v' t in
               return (Labels.Record.Map.add k w acc)
             | None -> return acc
@@ -1109,7 +1092,7 @@ let eval
             return v (* return value unchanged because wrapping did nothing *)
           else
             return_any (VVariant { label ; payload = w })
-        | None -> 
+        | None ->
           return v
         end
       | _ ->
@@ -1223,7 +1206,7 @@ let eval
   and force_eval (expr : Ast.t) : (Val.any, Val.Env.t) m =
     let* v = eval expr in
     force_value v
-  
+
   (*
     --------------------
     FORCE VALUES TO WHNF
@@ -1231,11 +1214,11 @@ let eval
 
     Does not use the environment.
   *)
-  and force_value 
+  and force_value
     : 'env. Val.any -> (Val.any, 'env) m
     = fun v ->
     if do_splay then
-      match v with 
+      match v with
       | Any VLazy vlazy -> resolve_lazy vlazy
       | _ -> return v
     else

@@ -10,7 +10,7 @@
  (public_name caprice.caprice_test)
  (synopsis "Caprice Test Language Definition and Semantics")
  (modules (:standard \ main))
- (libraries 
+ (libraries
   ; internal
   lang
   concolic
@@ -20,13 +20,13 @@
  )
  (instrumentation (backend landmarks --auto))
 )
- 
+
 (test
  (name main)
  (modules main)
  (libraries
   ; internal
-  caprice_test 
+  caprice_test
   ; external
   alcotest
  )

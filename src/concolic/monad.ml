@@ -24,20 +24,20 @@ open Grammar
 
   All values in this module are parametric in the indices.
 *)
-type ('a, 'x) t = {
-  run : 'r.
-    reject:('err -> 'state -> 'r) ->
-    accept:('a -> 'state -> Step.t -> 'r) ->
-    'state -> Step.t -> 'env -> 'ctx -> 'r
-} constraint 'x = < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >
-(* [@@unboxed] *)
+type ('a, 'x) t =
+  { run : 'r.
+      reject:('err -> 'state -> 'r) ->
+      accept:('a -> 'state -> Step.t -> 'r) ->
+      'state -> Step.t -> 'env -> 'ctx -> 'r
+  } constraint 'x = < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >
+  (* [@@unboxed] *)
 (* With flambda and compiler flag O3, it is faster to unbox. In all other
   combinations (of regular compiler, O3, flambda without O3), it is faster
   to leave this boxed. *)
 (* There is a bug on the 5.5.0~alpha1 switch that means I have to box this type.
   See OCaml issue #14603 *)
 
-let[@inline always] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : ('b, 'x) t =
+let[@inline] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : ('b, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->
       x.run state step env ctx ~reject ~accept:(fun x state step ->
           (f x).run ~reject ~accept state step env ctx
@@ -46,7 +46,7 @@ let[@inline always] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : ('b, 'x) t =
 
 let ( let* ) = bind
 
-let[@inline always] return (a : 'a) : ('a, 'x) t =
+let[@inline] return (a : 'a) : ('a, 'x) t =
   { run = fun ~reject:_ ~accept state step _ _ ->
       accept a state step
   }
@@ -62,14 +62,14 @@ let read : ('env, < env : 'env ; .. >) t =
       accept env state step
   }
 
-let[@inline always] local (f : 'env -> 'env) (x : ('a, < env : 'env ; .. > as 'x) t) : ('a, 'x) t =
-  { run = fun ~reject ~accept state step env ->
-      x.run ~reject ~accept state step (f env)
+let[@inline] local (f : 'env -> 'env) (x : ('a, < env : 'env ; .. > as 'x) t) : ('a, 'x) t =
+  { run = fun ~reject ~accept state step env ctx ->
+      x.run ~reject ~accept state step (f env) ctx
   }
 
 let local' (env : 'e) (x : ('a, < env : 'e ; .. >) t) : ('a, < env : 'env ; .. >) t =
-  { run = fun ~reject ~accept state step _ ->
-      x.run ~reject ~accept state step env
+  { run = fun ~reject ~accept state step _ ctx ->
+      x.run ~reject ~accept state step env ctx
   }
 
 (*
@@ -79,10 +79,12 @@ let local' (env : 'e) (x : ('a, < env : 'e ; .. >) t) : ('a, < env : 'env ; .. >
 *)
 
 let read_ctx : ('ctx, < ctx : 'ctx ; .. >) t =
-  { run = fun ~reject:_ ~accept state step _ ctx -> accept ctx state step }
+  { run = fun ~reject:_ ~accept state step _ ctx ->
+      accept ctx state step
+  }
 
-let[@inline always] local_ctx (f : 'ctx -> 'ctx)
-  (x : ('a, < ctx : 'ctx ; .. >) t) : ('a, < ctx : 'ctx ; .. >) t =
+let[@inline] local_ctx (f : 'ctx -> 'ctx) (x : ('a, < ctx : 'ctx ; .. >) t)
+  : ('a, < ctx : 'ctx ; .. >) t =
   { run = fun ~reject ~accept state step env ctx ->
       x.run ~reject ~accept state step env (f ctx)
   }
@@ -98,7 +100,7 @@ let get : ('state, < state : 'state ; .. >) t =
       accept state state step
   }
 
-let[@inline always] modify (f : 'state -> 'state) : (unit, < state : 'state ; .. >) t =
+let[@inline] modify (f : 'state -> 'state) : (unit, < state : 'state ; .. >) t =
   { run = fun ~reject:_ ~accept state step _ _ ->
       accept () (f state) step
   }
@@ -109,7 +111,7 @@ let[@inline always] modify (f : 'state -> 'state) : (unit, < state : 'state ; ..
   -----
 *)
 
-let[@inline always] escape (err : 'err) : ('a, < err : 'err ; .. >) t =
+let[@inline] escape (err : 'err) : ('a, < err : 'err ; .. >) t =
   { run = fun ~reject ~accept:_ state _ _ _ ->
       reject err state
   }
@@ -124,7 +126,7 @@ let run (x : ('a, < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >) t)
   (init_state : 'state) (init_env : 'env) (init_ctx : 'ctx)
   : ('a * Step.t, 'err) result * 'state =
   x.run init_state Step.zero init_env init_ctx
-    ~reject:(fun e state -> Error e, state) 
+    ~reject:(fun e state -> Error e, state)
     ~accept:(fun a state step -> Ok (a, step), state)
 
 (*
@@ -138,14 +140,14 @@ let step : (Step.t, 'x) t =
       accept step state step
   }
 
-let[@inline always][@specialise] fork (m : 'a. ('a, < err : 'err ; ctx : 'ctx ; state : 'state ; .. > as 'x) t)
-  (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state) 
-  ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state) 
+let[@inline] fork (m : 'a. ('a, < err : 'err ; ctx : 'ctx ; state : 'state ; .. > as 'x) t)
+  (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
+  ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state)
   : ('a, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->
     m.run (setup_state state) step env fork_ctx
       ~accept:Utils.Empty.absurd
-      ~reject:(fun e forked_state -> 
+      ~reject:(fun e forked_state ->
         (* uses original step count when resuming, not step count after fork *)
         (k e).run ~reject ~accept (restore_state e ~og:state ~forked_state) step env ctx
       )

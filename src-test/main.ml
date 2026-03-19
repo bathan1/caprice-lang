@@ -3,7 +3,7 @@ let find_test_dir () =
   let candidates = [ "test/" ; "../test" ; "../../test/" ] in
   match List.find_opt Sys.file_exists candidates with
   | Some dir -> dir
-  | None -> 
+  | None ->
     let cwd = Sys.getcwd () in
     failwith ("Cannot find test directory. CWD: " ^ cwd)
 
@@ -32,7 +32,7 @@ let make_test (dir : string) : unit Alcotest.test option =
   match find_caprice_files dir with
   | [] -> None
   | ls -> Option.some (
-    dir, 
+    dir,
     List.sort String.compare ls
     |> List.filter_map Caprice_test.Ctl_semantics.make_test
   )

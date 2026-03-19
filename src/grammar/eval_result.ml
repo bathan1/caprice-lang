@@ -1,7 +1,7 @@
 
 open Lang
 
-type t = 
+type t =
   (* errors *)
   | Refutation of Val.any * Val.tval
   | Mismatch of string

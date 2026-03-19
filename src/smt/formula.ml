@@ -59,77 +59,77 @@ let rec binop
   : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
   = fun op x y ->
   match op with
-  | Or -> begin
-      match x, y with
-      | Const_bool true, _ | _, Const_bool true -> Const_bool true
-      | Const_bool false, e | e, Const_bool false -> e
-      | e1, e2 -> Binop (Or, e1, e2)
+  | Or ->
+    begin match x, y with
+    | Const_bool true, _ | _, Const_bool true -> Const_bool true
+    | Const_bool false, e | e, Const_bool false -> e
+    | e1, e2 -> Binop (Or, e1, e2)
     end
-  | Equal -> begin
-      match x, y with
-      | Const_bool true, e -> e
-      | e, Const_bool true -> e
-      | Const_bool false, e -> not_ e
-      | e, Const_bool false -> not_ e
-      | Const_int _, Key _ -> Binop (Equal, y, x)
-      | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
-      | e1, e2 when equal e1 e2 -> true_
-      | e1, e2 -> Binop (Equal, e1, e2)
+  | Equal ->
+    begin match x, y with
+    | Const_bool true, e -> e
+    | e, Const_bool true -> e
+    | Const_bool false, e -> not_ e
+    | e, Const_bool false -> not_ e
+    | Const_int _, Key _ -> Binop (Equal, y, x)
+    | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
+    | e1, e2 when equal e1 e2 -> true_
+    | e1, e2 -> Binop (Equal, e1, e2)
     end
   | Not_equal -> not_ (binop Equal x y)
-  | Plus -> begin
-      match x, y with
-      | e, Const_int 0
-      | Const_int 0, e -> e
-      | Const_int i1, Const_int i2 -> Const_int (i1 + i2)
-      | e1, e2 -> Binop (Plus, e1, e2)
+  | Plus ->
+    begin match x, y with
+    | e, Const_int 0
+    | Const_int 0, e -> e
+    | Const_int i1, Const_int i2 -> Const_int (i1 + i2)
+    | e1, e2 -> Binop (Plus, e1, e2)
     end
-  | Minus -> begin
-      match x, y with
-      | e, Const_int 0 -> e
-      | Const_int i1, Const_int i2 -> Const_int (i1 - i2)
-      | e1, e2 -> Binop (Minus, e1, e2)
+  | Minus ->
+    begin match x, y with
+    | e, Const_int 0 -> e
+    | Const_int i1, Const_int i2 -> Const_int (i1 - i2)
+    | e1, e2 -> Binop (Minus, e1, e2)
     end
-  | Times -> begin
-      match x, y with
-      | e, Const_int 1
-      | Const_int 1, e -> e
-      | Const_int i1, Const_int i2 -> Const_int (i1 * i2)
-      | e1, e2 -> Binop (Times, e1, e2)
+  | Times ->
+    begin match x, y with
+    | e, Const_int 1
+    | Const_int 1, e -> e
+    | Const_int i1, Const_int i2 -> Const_int (i1 * i2)
+    | e1, e2 -> Binop (Times, e1, e2)
     end
-  | Divide -> begin
-      match x, y with
-      | e, Const_int 1 -> e
-      | Const_int i1, Const_int i2 -> Const_int (i1 / i2)
-      | e1, e2 -> Binop (Divide, e1, e2)
+  | Divide ->
+    begin match x, y with
+    | e, Const_int 1 -> e
+    | Const_int i1, Const_int i2 -> Const_int (i1 / i2)
+    | e1, e2 -> Binop (Divide, e1, e2)
     end
-  | Modulus -> begin
-      match x, y with
-      | Const_int i1, Const_int i2 -> Const_int (i1 mod i2)
-      | e1, e2 -> Binop (Modulus, e1, e2)
+  | Modulus ->
+    begin match x, y with
+    | Const_int i1, Const_int i2 -> Const_int (i1 mod i2)
+    | e1, e2 -> Binop (Modulus, e1, e2)
     end
-  | Less_than -> begin
-      match x, y with
-      | Const_int i1, Const_int i2 -> Const_bool (i1 < i2)
-      | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e1, e2)
+  | Less_than ->
+    begin match x, y with
+    | Const_int i1, Const_int i2 -> Const_bool (i1 < i2)
+    | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e1, e2)
     end
-  | Less_than_eq -> begin
-      match x, y with
-      | Const_int i1, Const_int i2 -> Const_bool (i1 <= i2)
-      | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e1, e2)
+  | Less_than_eq ->
+    begin match x, y with
+    | Const_int i1, Const_int i2 -> Const_bool (i1 <= i2)
+    | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e1, e2)
     end
-  | Greater_than -> begin
-      match x, y with
-      | Const_int i1, Const_int i2 -> Const_bool (i1 > i2)
-      (* Note that we will change greater-than to less-than *)
-      | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e2, e1)
+  | Greater_than ->
+    begin match x, y with
+    | Const_int i1, Const_int i2 -> Const_bool (i1 > i2)
+    (* Note that we will change greater-than to less-than *)
+    | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e2, e1)
     end
-  | Greater_than_eq -> begin
-      match x, y with
-      | Const_int i1, Const_int i2 -> Const_bool (i1 >= i2)
-      (* Note that we will change greater-than-eq to less-than-eq *)
-      | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e2, e1)
-  end
+  | Greater_than_eq ->
+    begin match x, y with
+    | Const_int i1, Const_int i2 -> Const_bool (i1 >= i2)
+    (* Note that we will change greater-than-eq to less-than-eq *)
+    | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e2, e1)
+    end
 
 and not_ (e : (bool, 'k) t) : (bool, 'k) t =
   match e with
@@ -153,7 +153,7 @@ and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
     | Const_bool true -> and_ tl
     | Const_bool false -> false_
     | And e_ls' -> and_ (e_ls' @ tl)
-    | e -> 
+    | e ->
       match and_ tl with
       | Const_bool false -> false_
       | Const_bool true -> e
@@ -163,7 +163,7 @@ and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
       | other when equal other (not_ e) -> false_
       | other when equal other e -> e
       | other -> And [ e ; other ]
-    
+
 let symbols (type a) (e : (a, 'k) t) : Utils.Uid.Set.t =
   let rec symbols : type a. Utils.Uid.Set.t -> (a, 'k) t -> Utils.Uid.Set.t =
     fun acc e ->
@@ -241,7 +241,7 @@ end
   Similarly, we will not get "not" of an inequality operator.
 *)
 module Make_solver' (X : SOLVABLE) = struct
-  module M = Make_transformer (X) 
+  module M = Make_transformer (X)
 
   let rec solve (expr : (bool, 'k) t) : 'k Solution.t =
     let assign i k = Solution.Sat (Model.singleton i k) in
@@ -312,7 +312,7 @@ module Set = struct
     include M.Set
 
     (*
-      We use SCC for constraint set independence. This ideas originates in 
+      We use SCC for constraint set independence. This ideas originates in
       EXE (https://dl.acm.org/doi/10.1145/1455518.1455522) Section 4.2.
       However, we don't even need to solve the other connect components of
       constraints because we reuse an input environment.
@@ -329,7 +329,7 @@ module Set = struct
         list_map (fun e -> (e, symbols e)) wrt
       in
       let rec collect acc_symbols acc_scc remaining =
-        let acc_symbols, acc_scc, any_newly_connected, remaining = 
+        let acc_symbols, acc_scc, any_newly_connected, remaining =
           List.fold_left (fun (acc_symbols, acc_scc, any_newly_connected, remaining) (e, e_symbols) ->
             if Utils.Uid.Set.disjoint acc_symbols e_symbols then
               (acc_symbols, acc_scc, any_newly_connected, (e, e_symbols) :: remaining)

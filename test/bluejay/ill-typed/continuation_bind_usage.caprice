@@ -6,9 +6,9 @@
 
 let t : type -> type -> type = fun a r -> { continuation : (a -> r) -> r }
 
-let bind (type a' b' r') (ar_r : t a' r') : (a' -> t b' r') -> t b' r' = 
+let bind (type a' b' r') (ar_r : t a' r') : (a' -> t b' r') -> t b' r' =
   fun a_br_r ->
-    { continuation = 
+    { continuation =
       fun br -> ar_r.continuation (fun a -> (a_br_r a).continuation br)
     }
 

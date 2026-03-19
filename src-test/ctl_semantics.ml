@@ -2,7 +2,7 @@
 open Ctl_ast
 open Variables
 
-type test_expect = 
+type test_expect =
   | Ill_typed (* type refutation found *)
   | Exhausted (* provably well-typed *)
   | No_error  (* no type refutation, and no well-typedness proof *)
@@ -18,13 +18,13 @@ let parse_speed = function
 
 let interp_env (env : Environment.t) (ast : Ctl_ast.t) : Environment.t * testkind =
   let testkind = ref Typecheck in
-  let rec interp env ast = 
+  let rec interp env ast =
     List.fold_left (fun env -> function
       | Env_stmt Assign (id, s) ->
         Ident.Map.add id s env
       | Env_stmt Append (id, s) ->
-        Ident.Map.update id (function 
-          | Some s' -> Some (s' ^ s) 
+        Ident.Map.update id (function
+          | Some s' -> Some (s' ^ s)
           | None -> Some s
         ) env
       | Env_stmt Include s ->
@@ -37,7 +37,7 @@ let interp_env (env : Environment.t) (ast : Ctl_ast.t) : Environment.t * testkin
   let e = interp env ast in
   e, !testkind
 
-let get_var env var default = 
+let get_var env var default =
   Ident.Map.find_opt var env
   |> Option.value ~default
 
@@ -51,7 +51,7 @@ let options_of_env (env : Environment.t) : Concolic.Options.t =
   | Ok `Help -> failwith "help requested"
   | Error _ -> failwith "parse error"
 
-let compute_typecheck_test filename env = 
+let compute_typecheck_test filename env =
   let expect = parse_expect (get_var env typing exhausted_s) in
   let options = options_of_env env in
   let pgm = Lang.Parser.parse_file filename in

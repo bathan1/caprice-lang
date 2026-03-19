@@ -41,7 +41,7 @@ let Client : T 3 = struct
     ; accept : Visitor.t a result_type -> result_type }
 end
 
-let make_list f n = 
+let make_list f n =
   let rec loop i =
     if i == 0
     then []

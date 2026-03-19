@@ -3,7 +3,7 @@
 *)
 
 
-let M : sig 
+let M : sig
   val t : singleton { i : int | i > 0 }
   val f : t -> t
 end = struct

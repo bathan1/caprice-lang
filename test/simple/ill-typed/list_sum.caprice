@@ -2,7 +2,7 @@
   include refute;
 *)
 
-let rec len ls = 
+let rec len ls =
   match ls with
   | [] -> 0
   | _ :: tl -> 1 + len tl

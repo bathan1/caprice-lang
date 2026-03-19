@@ -136,8 +136,8 @@ let Collection : sig
   val t : type -> type
   val empty : (type a) -> t a
   val add : (type a) -> a -> t a -> t a
-end = struct 
-  let t = list 
+end = struct
+  let t = list
   let empty _ = []
   let add _ a c = a :: c
 end
@@ -150,7 +150,7 @@ let Collection' : (type a) -> sig
   val t : type
   val empty : t
   val add : a -> t -> t
-end = fun a -> struct 
+end = fun a -> struct
   let t = list a
   let empty = []
   let add a c = a :: c

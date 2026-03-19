@@ -3,7 +3,7 @@
 *)
 
 
-let rec sum x acc = 
+let rec sum x acc =
   match x with
   | [] -> acc
   | hd :: tl -> sum tl (acc + hd)

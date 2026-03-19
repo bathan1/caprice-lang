@@ -17,7 +17,7 @@ let sgn (type a) (ls : list a) (compare : a -> a -> int) : sign =
   let rec num_inversions (l : list a) : int =
     match l with
     | [] -> 0
-    | hd :: tl -> list_count a tl (fun x -> compare x hd < 0) + num_inversions tl 
+    | hd :: tl -> list_count a tl (fun x -> compare x hd < 0) + num_inversions tl
     end
   in
   if num_inversions ls % 2 == 0

@@ -2,11 +2,11 @@
   include refute;
 *)
 
-(* 
+(*
   This is ill-typed because it alternates like
     fun x ->
       x ->
-        fun x -> 
+        fun x ->
           x -> ...
 
   We want
