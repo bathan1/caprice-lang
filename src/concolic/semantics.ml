@@ -197,8 +197,6 @@ let target_to_here : 'env. (Target.t, 'env) m =
     ) state step
   }
 
-[@@@landmark "auto-off"]
-
 (**
   [fork forked_m] runs [forked_m] with the current state, environment, and
     step count. If [forked_m] is a failure case, then the result is a failure.
@@ -235,8 +233,6 @@ let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
         Utils.Time.yield_to_timer (); return ()
       end
     )
-
-[@@@landmark "auto"]
 
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind

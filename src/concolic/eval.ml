@@ -451,7 +451,7 @@ let eval
     Does not use environment.
   *)
   and check
-    : type a env. Val.any -> Val.tval -> (a, env) m
+    : 'a 'env. Val.any -> Val.tval -> ('a, 'env) m
     = fun v t ->
     let refute = escape (Refutation (v, t)) in
     let confirm = escape Confirmation in
