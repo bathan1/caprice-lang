@@ -36,12 +36,25 @@ end
 
 include T
 
-(* Polymorphic equality is good enough here because keys just use ints
-  underneath. I would only write structural equality anyways. *)
-let equal = Repr.equal
+let rec equal : type a. (a, 'k) t -> (a, 'k) t -> bool = fun x y ->
+  x == y || poly_equal x y
 
-let compare a b =
-  Repr.compare a b (* polymorphic compare is also fine *)
+and poly_equal : type a b. (a, 'k) t -> (b, 'k) t -> bool = fun x y ->
+  match x, y with
+  | Const_int i, Const_int j -> i = j
+  | Const_bool b, Const_bool c -> Bool.equal b c
+  | Key I k, Key I k' -> Utils.Uid.equal k k'
+  | Key B k, Key B k' -> Utils.Uid.equal k k'
+  | Not e, Not e' -> equal e e'
+  | And l, And l' -> List.equal equal l l'
+  | Binop (b, l, r), Binop (b', l', r') ->
+    Binop.poly_equal b b'
+    && poly_equal l l'
+    && poly_equal r r'
+  | _ -> false
+
+(* Polymorphic comparison fine because performance doesn't matter here. *)
+let compare = Repr.compare
 
 let const_int i = Const_int i
 let const_bool b = Const_bool b
