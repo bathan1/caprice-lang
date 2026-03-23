@@ -1042,14 +1042,14 @@ let eval
       begin match v with
       | Any VRecord v_body ->
         let* w_body =
-          Labels.Record.Map.fold (fun k t acc_m ->
+          Record.fold (fun k t acc_m ->
             let* acc = acc_m in
             match Labels.Record.Map.find_opt k v_body with
             | Some v' ->
               let* w = wrap v' t in
               return (Labels.Record.Map.add k w acc)
             | None -> return acc
-          ) t_body (return Labels.Record.Map.empty)
+          ) (return Labels.Record.Map.empty) t_body
         in
         return_any (VRecord w_body)
       | _ ->
