@@ -8,7 +8,7 @@ end
 (*
   Z3 expressions using some context.
 *)
-module Make_of_context (C : CONTEXT) : Formula.SOLVABLE = struct
+module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
   (* I'm relying on internal correctness, and the types are phantom *)
   type ('a, 'k) t = Z3.Expr.expr
 
@@ -102,14 +102,13 @@ module Make_of_context (C : CONTEXT) : Formula.SOLVABLE = struct
   let a_of_expr z3_model expr unbox_expr =
     Option.bind (Z3.Model.get_const_interp_e z3_model expr) unbox_expr
 
-  let solve (exprs : (bool, 'k) t list) : 'k Solution.t =
-    let e = and_ exprs in
-    if Z3.Expr.equal e (const_bool false)
-    then Unsat
-    else begin
+  let solve (e : (bool, 'k) t) : 'k Solution.t =
+    if Z3.Expr.equal e (const_bool false) then
+      Unsat
+    else
       (* Must use the solver stack in order to not keep decls around from previous solves *)
       (* (and this is faster than making a new solver) *)
-      Z3.Solver.push solver;
+      let () = Z3.Solver.push solver in
       let result = Z3.Solver.check solver [ e ] in
       let solution =
         match result with
@@ -132,9 +131,8 @@ module Make_of_context (C : CONTEXT) : Formula.SOLVABLE = struct
         | UNKNOWN -> Unknown
         | UNSATISFIABLE -> Unsat
       in
-      Z3.Solver.pop solver 1;
+      let () = Z3.Solver.pop solver 1 in
       solution
-    end
 end
 
 module Make () = Make_of_context (struct let ctx = Z3.mk_context [] end)

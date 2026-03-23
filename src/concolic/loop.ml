@@ -53,7 +53,8 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
   collect [] Exhausted runs
 
 module Default_Z3 = Overlays.Typed_z3.Default
-module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
+module Simple_solver = Smt.Solve.Simplify (Smt.Solve.Default)
+module Z3_solver = Smt.Solve.Specialize (Simple_solver) (Default_Z3)
 
 let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_count:int =
   let run_count = Utils.Counter.create () in
@@ -73,7 +74,7 @@ let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_
 
     (* solve and run the target, or continue exploring if unsat *)
     and handle_target target tq =
-      match Default_solver.solve target.target_formula with
+      match Z3_solver.solve target.target_formula with
       | Sat model -> handle_model target tq model
       | Unknown -> Answer.min Answer.Unknown (explore tq)
       | Unsat -> explore tq
