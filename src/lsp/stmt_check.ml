@@ -38,3 +38,6 @@ let generate_pgms_list (pgm : program) ~(target_idx : int option) : (int * progr
     List.init (List.length pgm - start_idx) (fun offset -> start_idx + offset)
     |> (if start_idx > 0 then List.cons (start_idx - 1) else Fun.id)
     |> List.map (fun i -> (i, filter_check_stmt pgm i))
+
+let generate_prefix_pgms_list (pgm : program) ~(end_idx : int) : (int * program) list =
+  List.map (fun i -> (i, filter_check_stmt pgm i)) (List.init (end_idx + 1) Fun.id)
