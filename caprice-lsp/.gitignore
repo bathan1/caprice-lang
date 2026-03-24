@@ -3,3 +3,4 @@ node_modules
 *.tsbuildinfo
 *.caprice
 test
+package-lock.json
