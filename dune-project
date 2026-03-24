@@ -22,7 +22,7 @@
   cmdliner
   menhir
   mtime
-  (ocaml (>= 5.4.0))
+  (ocaml (>= 5.5.0))
   psq
   z3
   ))

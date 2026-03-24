@@ -30,10 +30,12 @@ type ('a, 'x) t =
       accept:('a -> 'state -> Step.t -> 'r) ->
       'state -> Step.t -> 'env -> 'ctx -> 'r
   } constraint 'x = < err : 'err ; env : 'env ; state : 'state ; ctx : 'ctx >
-  [@@unboxed]
+  (* [@@unboxed] *)
 (* With flambda and compiler flag O3, it is faster to unbox. In all other
   combinations (of regular compiler, O3, flambda without O3), it is faster
   to leave this boxed. *)
+(* There is a bug on the 5.5.0~alpha1 switch that means I have to box this type.
+  See OCaml issue #14603 *)
 
 let[@inline] bind (x : ('a, 'x) t) (f : 'a -> ('b, 'x) t) : ('b, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->
@@ -138,10 +140,8 @@ let step : (Step.t, 'x) t =
       accept step state step
   }
 
-type 'x failing = { run_failing : 'a. ('a, 'x) t } [@@unboxed]
-
-let[@inline] fork (m : (Utils.Empty.t, 'x) t) (fork_ctx : 'ctx)
-  (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
+let[@inline] fork (m : 'a. ('a, < err : 'err ; ctx : 'ctx ; state : 'state ; .. > as 'x) t)
+  (fork_ctx : 'ctx) (k : 'err -> ('a, 'x) t) ~(setup_state : 'state -> 'state)
   ~(restore_state : 'err -> og:'state -> forked_state:'state -> 'state)
   : ('a, 'x) t =
   { run = fun ~reject ~accept state step env ctx ->

@@ -34,8 +34,7 @@ end
 
 include Monad
 
-type 'env with_env = < err : Eval_result.t ; env : 'env ; state : State.t ; ctx : Context.t >
-type ('a, 'env) m = ('a, 'env with_env) t
+type ('a, 'env) m = ('a, < err : Eval_result.t ; env : 'env ; state : State.t ; ctx : Context.t >) t
 
 module Matches = Val.Make_match (struct
   type nonrec 'a m = ('a, Val.Env.t) m
@@ -207,7 +206,7 @@ let target_to_here : 'env. (Target.t, 'env) m =
     time out. Therefore, this function must be run inside [Utils.Time.with_timeout]
     so that the effect is handled.
 *)
-let[@inline] fork (forked_m : (Utils.Empty.t, 'env) m) : (unit, 'env) m =
+let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
   let* { Context.det_context ; _ } = read_ctx in
   let* target = target_to_here in
   fork forked_m { target ; det_context }

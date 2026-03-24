@@ -18,12 +18,6 @@ module type S = sig
   val and_ : (bool, 'k) t list -> (bool, 'k) t
 end
 
-module type SOLVABLE = sig
-  include S
-
-  val solve : (bool, 'k) t list -> 'k Solution.t
-end
-
 module T = struct
   type (_, 'k) t =
     | Const_int : int -> (int, 'k) t
@@ -36,12 +30,25 @@ end
 
 include T
 
-(* Polymorphic equality is good enough here because keys just use ints
-  underneath. I would only write structural equality anyways. *)
-let equal = Repr.equal
+let rec equal : type a. (a, 'k) t -> (a, 'k) t -> bool = fun x y ->
+  x == y || poly_equal x y
 
-let compare a b =
-  Repr.compare a b (* polymorphic compare is also fine *)
+and poly_equal : type a b. (a, 'k) t -> (b, 'k) t -> bool = fun x y ->
+  match x, y with
+  | Const_int i, Const_int j -> i = j
+  | Const_bool b, Const_bool c -> Bool.equal b c
+  | Key I k, Key I k' -> Utils.Uid.equal k k'
+  | Key B k, Key B k' -> Utils.Uid.equal k k'
+  | Not e, Not e' -> equal e e'
+  | And l, And l' -> List.equal equal l l'
+  | Binop (b, l, r), Binop (b', l', r') ->
+    Binop.poly_equal b b'
+    && poly_equal l l'
+    && poly_equal r r'
+  | _ -> false
+
+(* Polymorphic comparison fine because performance doesn't matter here. *)
+let compare = Repr.compare
 
 let const_int i = Const_int i
 let const_bool b = Const_bool b
@@ -178,7 +185,7 @@ let symbols (type a) (e : (a, 'k) t) : Utils.Uid.Set.t =
   in
   symbols Utils.Uid.Set.empty e
 
-module Make_transformer (X : S) = struct
+let transform (type a) (module X : S) (e : (a, 'k) t) : (a, 'k) X.t =
   let rec transform : type a. (a, 'k) t -> (a, 'k) X.t = fun e ->
     match e with
     | Const_int i -> X.const_int i
@@ -187,7 +194,8 @@ module Make_transformer (X : S) = struct
     | Not e' -> X.not_ (transform e')
     | And e_ls -> X.and_ (List.map transform e_ls)
     | Binop (op, e1, e2) -> X.binop op (transform e1) (transform e2)
-end
+  in
+  transform e
 
 let rec subst
   : type a b. a -> (a, 'k) Symbol.t -> (b, 'k) t  -> (b, 'k) t
@@ -216,91 +224,6 @@ let rec subst
         e
       else
         binop op e1' e2'
-
-type 'k solver = (bool, 'k) t -> 'k Solution.t
-
-module Make_solver (X : SOLVABLE) = struct
-  module M = Make_transformer (X)
-
-  let solve (expr : (bool, 'k) t) : 'k Solution.t =
-    match expr with
-    | Const_bool false -> Unsat
-    | Const_bool true -> Sat Model.empty
-    | e -> X.solve [ M.transform e ]
-end
-
-
-(*
-  First attempts to solve with a few heuristics, and then calls the solver.
-  This simply special-cases on some common formulas. It also extracts out
-  constant assignments (variable = constant).
-
-  Since the `binop` function above turns greater-thans into less-thans, we
-  don't handle any greater-than in the cases below--it will never happen if
-  the user constructs formulas with the smart constructors above.
-  Similarly, we will not get "not" of an inequality operator.
-*)
-module Make_solver' (X : SOLVABLE) = struct
-  module M = Make_transformer (X)
-
-  let rec solve (expr : (bool, 'k) t) : 'k Solution.t =
-    let assign i k = Solution.Sat (Model.singleton i k) in
-    (* Hand-write a lot of special cases for single formulas *)
-    match expr with
-    | Const_bool false -> Unsat
-    | Const_bool true -> Sat Model.empty
-    | Key k ->
-      assign true k
-    | Not Key k ->
-      assign false k
-    | Not (Binop (Equal, Key k, Const_int i)) ->
-      assign (if i = 0 then 1 else 0) k
-    | Binop ((Equal | Less_than_eq), Key (I _ as k), Const_int i)
-    | Binop ((Equal | Less_than_eq), Const_int i, Key (I _ as k)) ->
-      assign i k
-    | Binop (Less_than, Key k, Const_int i) ->
-      assign (i - 1) k
-    | Binop (Less_than, Const_int i, Key k) ->
-      assign (i + 1) k
-    | Binop (Less_than, Key (I _ as k), Key (I _ as k'))
-    | Binop (Less_than_eq, Key (I _ as k), Key (I _ as k')) ->
-      Solution.merge (assign 0 k) (assign 1 k')
-    | Binop (Equal, Key k, Key k') ->
-      begin match k, k' with
-      | I _, I _ -> Solution.merge (assign 0 k) (assign 0 k')
-      | B _, B _ -> Solution.merge (assign true k) (assign true k')
-      end
-    | Not Binop (Equal, Key k, Key k') ->
-      begin match k, k' with
-      | I _, I _ -> Solution.merge (assign 0 k) (assign 1 k')
-      | B _, B _ -> Solution.merge (assign true k) (assign false k')
-      end
-    | And e_ls ->
-      (*
-        If there is any (key = int) formula, then we can subst it through, for it
-        is an "implied concretization".
-
-        This idea originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
-        from Section 3.3, paragraph _Constraint Set Simplification_.
-      *)
-      let e_opt =
-        let find : type a. (a, 'k) t -> (int * (int, 'k) Symbol.t) option = function
-          | Binop (Equal, Key k, Const_int i) -> Some (i, k)
-          | _ -> None
-        in
-        List.find_map find e_ls
-      in
-      begin match e_opt with
-      | Some (i, k) ->
-        let sol = solve (and_ (List.map (subst i k) e_ls)) in
-        Solution.merge sol (assign i k)
-      | None ->
-        X.solve [ M.transform expr ]
-      end
-    (* No simplification above worked, so just resort to the solver. *)
-    | _ ->
-      X.solve [ M.transform expr ]
-end
 
 module Set = struct
   module Make (K : Symbol.KEY) = struct

@@ -2,11 +2,11 @@
 open Grammar
 
 let make_targets ~(max_tree_depth : int) (target : Target.t)
-  (stem : Path.t) : Target.t list * bool =
+  (stem : Path.t) : Target.t list * is_pruned:bool =
   let max_prio = Path_priority.Priority max_tree_depth in
   let rec make acc_prio acc_formulas = function
-    | [] -> [], false (* done and did not prune *)
-    | _ when Path_priority.geq acc_prio max_prio -> [], true (* prune *)
+    | [] -> [], ~is_pruned:false
+    | _ when Path_priority.geq acc_prio max_prio -> [], ~is_pruned:true
     | p_item :: tl ->
       let path_priority =
         Path_priority.plus acc_prio (Path_item.to_priority p_item)
@@ -19,10 +19,10 @@ let make_targets ~(max_tree_depth : int) (target : Target.t)
           Target.make (Formula.not_ cond) acc_formulas logged_inputs
             ~path_priority
         in
-        let ret_targets, is_pruned =
+        let ret_targets, ~is_pruned =
           make path_priority (Formula.BSet.add cond acc_formulas) tl
         in
-        new_target :: ret_targets, is_pruned
+        new_target :: ret_targets, ~is_pruned
       | Tag { tag = _ ; alternatives ; key ; logged_inputs } ->
         let target_of_tag tag =
           assert (Tag.priority tag = Path_item.to_priority p_item);
@@ -30,8 +30,8 @@ let make_targets ~(max_tree_depth : int) (target : Target.t)
             (Input_env.add KTag key tag logged_inputs) ~path_priority
         in
         let new_targets = List.map target_of_tag alternatives in
-        let ret_targets, is_pruned = make path_priority acc_formulas tl in
-        List.rev_append new_targets ret_targets, is_pruned
+        let ret_targets, ~is_pruned = make path_priority acc_formulas tl in
+        List.rev_append new_targets ret_targets, ~is_pruned
   in
   make (Target.priority target) target.all_formulas stem
 
@@ -42,7 +42,7 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
     | run :: _ when Answer.is_error run.Logged_run.answer ->
       `Quit run.answer (* an error is the goal, and we found it! *)
     | run :: tl ->
-      let new_targets, is_pruned =
+      let new_targets, ~is_pruned =
         make_targets run.target (Rev_stem.to_forward_path run.rev_stem) ~max_tree_depth
       in
       let targets = List.rev_append new_targets acc_targets in
@@ -53,10 +53,11 @@ let collect_logged_runs ~(max_tree_depth : int) (runs : Logged_run.t list) :
   collect [] Exhausted runs
 
 module Default_Z3 = Overlays.Typed_z3.Default
-module Default_solver = Smt.Formula.Make_solver' (Default_Z3)
+module Simple_solver = Smt.Solve.Simplify (Smt.Solve.Default)
+module Z3_solver = Smt.Solve.Specialize (Simple_solver) (Default_Z3)
 
 module Make (Y : sig val yield : unit -> unit end) = struct
-  let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * int =
+  let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_count:int =
     let run_count = Utils.Counter.create () in
 
   (* Run the program concolically in a loop *)
@@ -75,7 +76,7 @@ module Make (Y : sig val yield : unit -> unit end) = struct
 
     (* solve and run the target, or continue exploring if unsat *)
     and handle_target target tq =
-      match Default_solver.solve target.target_formula with
+      match Z3_solver.solve target.target_formula with
       | Sat model -> handle_model target tq model
       | Unknown -> Answer.min Answer.Unknown (explore tq)
       | Unsat -> explore tq
@@ -121,12 +122,12 @@ module Make (Y : sig val yield : unit -> unit end) = struct
       | Ok a -> a
       | Error t -> Answer.Timeout t
     in
-    answer, Utils.Counter.get run_count
+    answer, ~run_count:(Utils.Counter.get run_count)
 
   let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
     (pgm : Lang.Ast.program) : Answer.t =
     if options.is_random then Random.self_init () else Random.init 999;
-    let span, (answer, run_count) = Utils.Time.time (begin_loop ~options) pgm in
+    let span, (answer, ~run_count) = Utils.Time.time (begin_loop ~options) pgm in
     if print_outcome then
       Printf.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
         (Utils.Time.span_to_ms span) run_count (Answer.to_string answer);
