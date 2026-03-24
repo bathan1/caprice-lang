@@ -18,7 +18,17 @@ module type S = sig
   val and_ : (bool, 'k) t list -> (bool, 'k) t
 end
 
-module T = struct
+module T : sig
+  type (_, 'k) t = private
+    | Const_int : int -> (int, 'k) t
+    | Const_bool : bool -> (bool, 'k) t
+    | Key : ('a, 'k) Symbol.t -> ('a, 'k) t
+    | Not : (bool, 'k) t -> (bool, 'k) t
+    | And : (bool, 'k) t list -> (bool, 'k) t
+    | Binop : ('a * 'a * 'b) Binop.t * ('a, 'k) t * ('a, 'k) t -> ('b, 'k) t
+
+  include S with type ('a, 'k) t := ('a, 'k) t
+end = struct
   type (_, 'k) t =
     | Const_int : int -> (int, 'k) t
     | Const_bool : bool -> (bool, 'k) t
@@ -26,164 +36,147 @@ module T = struct
     | Not : (bool, 'k) t -> (bool, 'k) t
     | And : (bool, 'k) t list -> (bool, 'k) t
     | Binop : ('a * 'a * 'b) Binop.t * ('a, 'k) t * ('a, 'k) t -> ('b, 'k) t
+
+  let rec equal : type a. (a, 'k) t -> (a, 'k) t -> bool = fun x y ->
+    x == y || poly_equal x y
+
+  and poly_equal : type a b. (a, 'k) t -> (b, 'k) t -> bool = fun x y ->
+    match x, y with
+    | Const_int i, Const_int j -> i = j
+    | Const_bool b, Const_bool c -> Bool.equal b c
+    | Key I k, Key I k' -> Utils.Uid.equal k k'
+    | Key B k, Key B k' -> Utils.Uid.equal k k'
+    | Not e, Not e' -> equal e e'
+    | And l, And l' -> List.equal equal l l'
+    | Binop (b, l, r), Binop (b', l', r') ->
+      Binop.poly_equal b b'
+      && poly_equal l l'
+      && poly_equal r r'
+    | _ -> false
+
+  let const_int i = Const_int i
+  let const_bool b = Const_bool b
+  let symbol s = Key s
+
+  let true_ = Const_bool true
+  let false_ = Const_bool false
+
+  let is_const (type a) (x : (a, 'k) t) : bool =
+    match x with
+    | Const_int _ | Const_bool _ -> true
+    | Key _ | Not _ | And _ | Binop _ -> false
+
+  let rec binop
+    : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
+    = fun op x y ->
+    match op with
+    | Or ->
+      begin match x, y with
+      | Const_bool true, _ | _, Const_bool true -> Const_bool true
+      | Const_bool false, e | e, Const_bool false -> e
+      | e1, e2 -> Binop (Or, e1, e2)
+      end
+    | Equal ->
+      begin match x, y with
+      | Const_bool true, e -> e
+      | e, Const_bool true -> e
+      | Const_bool false, e -> not_ e
+      | e, Const_bool false -> not_ e
+      | Const_int _, Key _ -> Binop (Equal, y, x)
+      | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
+      | e1, e2 when equal e1 e2 -> true_
+      | e1, e2 -> Binop (Equal, e1, e2)
+      end
+    | Not_equal -> not_ (binop Equal x y)
+    | Plus ->
+      begin match x, y with
+      | e, Const_int 0
+      | Const_int 0, e -> e
+      | Const_int i1, Const_int i2 -> Const_int (i1 + i2)
+      | e1, e2 -> Binop (Plus, e1, e2)
+      end
+    | Minus ->
+      begin match x, y with
+      | e, Const_int 0 -> e
+      | Const_int i1, Const_int i2 -> Const_int (i1 - i2)
+      | e1, e2 -> Binop (Minus, e1, e2)
+      end
+    | Times ->
+      begin match x, y with
+      | e, Const_int 1
+      | Const_int 1, e -> e
+      | Const_int i1, Const_int i2 -> Const_int (i1 * i2)
+      | e1, e2 -> Binop (Times, e1, e2)
+      end
+    | Divide ->
+      begin match x, y with
+      | e, Const_int 1 -> e
+      | Const_int i1, Const_int i2 -> Const_int (i1 / i2)
+      | e1, e2 -> Binop (Divide, e1, e2)
+      end
+    | Modulus ->
+      begin match x, y with
+      | Const_int i1, Const_int i2 -> Const_int (i1 mod i2)
+      | e1, e2 -> Binop (Modulus, e1, e2)
+      end
+    | Less_than ->
+      begin match x, y with
+      | Const_int i1, Const_int i2 -> Const_bool (i1 < i2)
+      | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e1, e2)
+      end
+    | Less_than_eq ->
+      begin match x, y with
+      | Const_int i1, Const_int i2 -> Const_bool (i1 <= i2)
+      | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e1, e2)
+      end
+    | Greater_than ->
+      begin match x, y with
+      | Const_int i1, Const_int i2 -> Const_bool (i1 > i2)
+      (* Note that we will change greater-than to less-than *)
+      | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e2, e1)
+      end
+    | Greater_than_eq ->
+      begin match x, y with
+      | Const_int i1, Const_int i2 -> Const_bool (i1 >= i2)
+      (* Note that we will change greater-than-eq to less-than-eq *)
+      | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e2, e1)
+      end
+
+  and not_ (e : (bool, 'k) t) : (bool, 'k) t =
+    match e with
+    | Const_bool b -> Const_bool (not b)
+    | Not e' -> e'
+    | Binop (Less_than, e1, e2) ->
+      (* not (e1 < e2) = (e2 <= e1) *)
+      Binop (Less_than_eq, e2, e1)
+    | Binop (Less_than_eq, e1, e2) ->
+      (* not (e1 <= e2) = (e1 < e2) *)
+      Binop (Less_than, e2, e1)
+    | Binop (Or, e1, e2) -> and_ [ not_ e1 ; not_ e2 ] (* it's easier in general to work with "and" *)
+    | _ -> Not e
+
+  and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
+    match e_ls with
+    | [] -> true_ (* vacuous truth *)
+    | [ e ] -> e
+    | hd :: tl ->
+      match hd with
+      | Const_bool true -> and_ tl
+      | Const_bool false -> false_
+      | And e_ls' -> and_ (e_ls' @ tl)
+      | e ->
+        match and_ tl with
+        | Const_bool false -> false_
+        | Const_bool true -> e
+        | And tl_exprs when List.exists (equal (not_ e)) tl_exprs -> false_
+        | And tl_exprs when List.exists (equal e) tl_exprs -> And tl_exprs
+        | And tl_exprs -> And (e :: tl_exprs)
+        | other when equal other (not_ e) -> false_
+        | other when equal other e -> e
+        | other -> And [ e ; other ]
 end
 
 include T
-
-let rec equal : type a. (a, 'k) t -> (a, 'k) t -> bool = fun x y ->
-  x == y || poly_equal x y
-
-and poly_equal : type a b. (a, 'k) t -> (b, 'k) t -> bool = fun x y ->
-  match x, y with
-  | Const_int i, Const_int j -> i = j
-  | Const_bool b, Const_bool c -> Bool.equal b c
-  | Key I k, Key I k' -> Utils.Uid.equal k k'
-  | Key B k, Key B k' -> Utils.Uid.equal k k'
-  | Not e, Not e' -> equal e e'
-  | And l, And l' -> List.equal equal l l'
-  | Binop (b, l, r), Binop (b', l', r') ->
-    Binop.poly_equal b b'
-    && poly_equal l l'
-    && poly_equal r r'
-  | _ -> false
-
-(* Polymorphic comparison fine because performance doesn't matter here. *)
-let compare = Repr.compare
-
-let const_int i = Const_int i
-let const_bool b = Const_bool b
-let symbol s = Key s
-
-let true_ = Const_bool true
-let false_ = Const_bool false
-
-let is_const (type a) (x : (a, 'k) t) : bool =
-  match x with
-  | Const_int _ | Const_bool _ -> true
-  | Key _ | Not _ | And _ | Binop _ -> false
-
-let rec binop
-  : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
-  = fun op x y ->
-  match op with
-  | Or ->
-    begin match x, y with
-    | Const_bool true, _ | _, Const_bool true -> Const_bool true
-    | Const_bool false, e | e, Const_bool false -> e
-    | e1, e2 -> Binop (Or, e1, e2)
-    end
-  | Equal ->
-    begin match x, y with
-    | Const_bool true, e -> e
-    | e, Const_bool true -> e
-    | Const_bool false, e -> not_ e
-    | e, Const_bool false -> not_ e
-    | Const_int _, Key _ -> Binop (Equal, y, x)
-    | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
-    | e1, e2 when equal e1 e2 -> true_
-    | e1, e2 -> Binop (Equal, e1, e2)
-    end
-  | Not_equal -> not_ (binop Equal x y)
-  | Plus ->
-    begin match x, y with
-    | e, Const_int 0
-    | Const_int 0, e -> e
-    | Const_int i1, Const_int i2 -> Const_int (i1 + i2)
-    | e1, e2 -> Binop (Plus, e1, e2)
-    end
-  | Minus ->
-    begin match x, y with
-    | e, Const_int 0 -> e
-    | Const_int i1, Const_int i2 -> Const_int (i1 - i2)
-    | e1, e2 -> Binop (Minus, e1, e2)
-    end
-  | Times ->
-    begin match x, y with
-    | e, Const_int 1
-    | Const_int 1, e -> e
-    | Const_int i1, Const_int i2 -> Const_int (i1 * i2)
-    | e1, e2 -> Binop (Times, e1, e2)
-    end
-  | Divide ->
-    begin match x, y with
-    | e, Const_int 1 -> e
-    | Const_int i1, Const_int i2 -> Const_int (i1 / i2)
-    | e1, e2 -> Binop (Divide, e1, e2)
-    end
-  | Modulus ->
-    begin match x, y with
-    | Const_int i1, Const_int i2 -> Const_int (i1 mod i2)
-    | e1, e2 -> Binop (Modulus, e1, e2)
-    end
-  | Less_than ->
-    begin match x, y with
-    | Const_int i1, Const_int i2 -> Const_bool (i1 < i2)
-    | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e1, e2)
-    end
-  | Less_than_eq ->
-    begin match x, y with
-    | Const_int i1, Const_int i2 -> Const_bool (i1 <= i2)
-    | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e1, e2)
-    end
-  | Greater_than ->
-    begin match x, y with
-    | Const_int i1, Const_int i2 -> Const_bool (i1 > i2)
-    (* Note that we will change greater-than to less-than *)
-    | e1, e2 -> if equal e1 e2 then false_ else Binop (Less_than, e2, e1)
-    end
-  | Greater_than_eq ->
-    begin match x, y with
-    | Const_int i1, Const_int i2 -> Const_bool (i1 >= i2)
-    (* Note that we will change greater-than-eq to less-than-eq *)
-    | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e2, e1)
-    end
-
-and not_ (e : (bool, 'k) t) : (bool, 'k) t =
-  match e with
-  | Const_bool b -> Const_bool (not b)
-  | Not e' -> e'
-  | Binop (Less_than, e1, e2) ->
-    (* not (e1 < e2) = (e2 <= e1) *)
-    Binop (Less_than_eq, e2, e1)
-  | Binop (Less_than_eq, e1, e2) ->
-    (* not (e1 <= e2) = (e1 < e2) *)
-    Binop (Less_than, e2, e1)
-  | Binop (Or, e1, e2) -> and_ [ not_ e1 ; not_ e2 ] (* it's easier in general to work with "and" *)
-  | _ -> Not e
-
-and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
-  match e_ls with
-  | [] -> true_ (* vacuous truth *)
-  | [ e ] -> e
-  | hd :: tl ->
-    match hd with
-    | Const_bool true -> and_ tl
-    | Const_bool false -> false_
-    | And e_ls' -> and_ (e_ls' @ tl)
-    | e ->
-      match and_ tl with
-      | Const_bool false -> false_
-      | Const_bool true -> e
-      | And tl_exprs when List.exists (equal (not_ e)) tl_exprs -> false_
-      | And tl_exprs when List.exists (equal e) tl_exprs -> And tl_exprs
-      | And tl_exprs -> And (e :: tl_exprs)
-      | other when equal other (not_ e) -> false_
-      | other when equal other e -> e
-      | other -> And [ e ; other ]
-
-let symbols (type a) (e : (a, 'k) t) : Utils.Uid.Set.t =
-  let rec symbols : type a. Utils.Uid.Set.t -> (a, 'k) t -> Utils.Uid.Set.t =
-    fun acc e ->
-      match e with
-      | Const_int _
-      | Const_bool _ -> acc
-      | Key I uid
-      | Key B uid -> Utils.Uid.Set.add uid acc
-      | Not e' -> symbols acc e'
-      | And e_ls -> List.fold_left symbols acc e_ls
-      | Binop (_, e1, e2) -> symbols (symbols acc e1) e2
-  in
-  symbols Utils.Uid.Set.empty e
 
 let transform (type a) (module X : S) (e : (a, 'k) t) : (a, 'k) X.t =
   let rec transform : type a. (a, 'k) t -> (a, 'k) X.t = fun e ->
@@ -203,8 +196,8 @@ let rec subst
     match e with
     | Key symbol ->
       begin match s, symbol with
-      | I k, I k' when Utils.Uid.equal k k' -> Const_int v
-      | B k, B k' when Utils.Uid.equal k k' -> Const_bool v
+      | I k, I k' when Utils.Uid.equal k k' -> const_int v
+      | B k, B k' when Utils.Uid.equal k k' -> const_bool v
       | _ -> e
       end
     | Const_int _
@@ -225,11 +218,25 @@ let rec subst
       else
         binop op e1' e2'
 
+let symbols (type a) (e : (a, 'k) t) : Utils.Uid.Set.t =
+  let rec symbols : type a. Utils.Uid.Set.t -> (a, 'k) t -> Utils.Uid.Set.t =
+    fun acc e ->
+      match e with
+      | Const_int _
+      | Const_bool _ -> acc
+      | Key I uid
+      | Key B uid -> Utils.Uid.Set.add uid acc
+      | Not e' -> symbols acc e'
+      | And e_ls -> List.fold_left symbols acc e_ls
+      | Binop (_, e1, e2) -> symbols (symbols acc e1) e2
+  in
+  symbols Utils.Uid.Set.empty e
+
 module Set = struct
   module Make (K : Symbol.KEY) = struct
     module M = Utils.Set_map.Make_W (struct
       type nonrec t = (bool, K.t) t (* boolean formulas *)
-      let compare = compare
+      let compare = compare (* polymorphic comparison is okay *)
     end)
 
     include M.Set
