@@ -57,6 +57,8 @@ function startChecker(): ChildProcessWithoutNullStreams {
 }
 
 function restartChecker(): void {
+	ocamlChecker.stdout.removeAllListeners('data');
+	ocamlChecker.stderr.removeAllListeners('data');
 	ocamlChecker.kill();
 	buffer = '';
 	checkerBusy = false;
