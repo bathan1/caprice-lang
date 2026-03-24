@@ -39,12 +39,13 @@ let factors (dep n : pos_int) (* hence n is marked dep for "dependent" *)
 
 ## Installation
 
-Caprice is built with OCaml 5.4.0.
+Caprice is built with OCaml 5.5.0~alpha1.
 
-Via opam, install OCaml 5.4.0 and then install the dependencies. Answer y/yes to all questions:
+Via opam, install OCaml 5.5.0~alpha1 and then install the dependencies. Answer y/yes to all questions:
 
 ```cmd
-opam switch create 5.4.0
+opam update
+opam switch create 5.5.0~alpha1
 opam install . --deps-only
 ```
 
@@ -55,7 +56,7 @@ dune build
 make test
 ```
 
-The installation is tested on WSL2 for Windows 11. To use the landmarks profiling tool, see the recent [pull request](https://github.com/LexiFi/landmarks/pull/45) for compatibility with ppxlib >= 0.36.0. It may require a local opam pin to use landmarks in caprice-lang until that PR appears in the next release.
+The installation is tested on WSL2 for Windows 11. To use the landmarks profiling tool, see the recent [pull request](https://github.com/LexiFi/landmarks/pull/47) for compatibility with ppxlib >= 0.36.0 and OCaml 5.5 features. It will require a local opam pin to use landmarks in caprice-lang until that PR appears in the next release. Profiling is not required to run Caprice.
 
 ## Developing
 
