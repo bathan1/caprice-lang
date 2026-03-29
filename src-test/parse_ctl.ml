@@ -16,7 +16,7 @@ let has_test filename =
   In_channel.with_open_bin filename @@ fun ic ->
     ic
     |> Lexing.from_channel
-    |>Ctl_lexer.is_test
+    |> Ctl_lexer.is_test
 
 let parse_test_header (filename : string) : Ctl_ast.t option =
   if not (has_test filename) then

@@ -101,10 +101,10 @@ let make_test (filename : string) : unit Alcotest.test_case option =
       | Typecheck ->
         check_true "failed type check" @@
         compute_typecheck_test filename env
-      | Positioncheck ->
+      | Position_check ->
         check_true "failed position check" @@
         positions_test filename env
-      | Statementindexcheck ->
+      | Statement_index_check ->
         check_true "failed statement index check" @@
         statement_index_test filename env
     )

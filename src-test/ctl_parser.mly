@@ -34,8 +34,8 @@ ctl_item:
 
 test_item:
   | TYPECHECK { Typecheck }
-  | POSITIONCHECK { Positioncheck }
-  | STATEMENTINDEXCHECK { Statementindexcheck }
+  | POSITIONCHECK { Position_check }
+  | STATEMENTINDEXCHECK { Statement_index_check }
   | SKIP      { Skip }
 
 env_item:
