@@ -21,6 +21,12 @@
 	],
 	"main": "./client/out/extension",
 	"contributes": {
+		"commands": [
+			{
+				"command": "caprice.toggleTypeChecking",
+				"title": "Caprice: Toggle Type Checking"
+			}
+		],
 		"configuration": {
 			"type": "object",
 			"title": "Example configuration",
