@@ -1,8 +1,9 @@
-let parse_position (piece : string) : ((int * int) * (int * int)) =
+let parse_position (piece : string) : Lsp.Positions.pos * Lsp.Positions.pos =
   Scanf.sscanf piece "%d:%d-%d:%d"
-    (fun a b c d -> ((a, b), (c, d)))
+    (fun sl sc el ec ->
+      (Lsp.Positions.of_1based sl sc, Lsp.Positions.of_1based el ec))
 
-let parse_positions (s : string) : ((int * int) * (int * int)) list =
+let parse_positions (s : string) : (Lsp.Positions.pos * Lsp.Positions.pos) list =
   s
   |> String.split_on_char ','
   |> List.map String.trim
@@ -14,15 +15,14 @@ let parse_int_list (s : string) : int list =
   |> List.map String.trim
   |> List.map int_of_string
 
-let mk_range (((sl, sc), (el, ec)) : ((int * int) * (int * int))) : Lsp.Protocol.range =
-  {
-    start_pos = { line = sl; character = sc };
-    end_pos = { line = el; character = ec };
-  }
+let mk_range ((s, e) : Lsp.Positions.pos * Lsp.Positions.pos) : Lsp.Protocol.range =
+  { start_pos = s ; end_pos = e }
 
 let parse_changes (s : string) : Lsp.Protocol.range list =
   s
-  |> parse_positions
+  |> String.split_on_char ','
+  |> List.map String.trim
+  |> List.map parse_position
   |> List.map mk_range
 
 let parse_spans_from_file (filename : string) : Lang.Ast.pos_span list =

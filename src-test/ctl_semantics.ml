@@ -62,17 +62,13 @@ let compute_typecheck_test filename env =
   | No_error, (Unknown | Exhausted_pruned | Timeout _) -> true
   | _ -> false
 
-let line_col1 (p : Lexing.position) : (int * int) =
-  (p.pos_lnum, p.pos_cnum - p.pos_bol + 1)
-
-let positions_test filename env = 
-  let open Lang.Ast in
+let positions_test filename env =
   let expected = Position_checks.parse_positions (get_var env positions "") in
   let actual =
     filename
     |> Lang.Parser.Positioned.parse_file
-    |> List.map (fun (_statement, { begins ; ends }) ->
-        (line_col1 begins, line_col1 ends))
+    |> List.map (fun (_statement, { Lang.Ast.begins ; ends }) ->
+        (Lsp.Positions.of_lexing begins, Lsp.Positions.of_lexing ends))
   in
   expected = actual
 
