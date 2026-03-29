@@ -1,8 +1,9 @@
 (library
  (name lsp)
  (public_name caprice.lsp)
- (modules protocol print positions range_check stmt_check)
+ (modules protocol print positions range_check stmt_check main_loop)
  (libraries
+  concolic
   grammar
   lang
   yojson))

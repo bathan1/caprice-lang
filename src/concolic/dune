@@ -5,7 +5,6 @@
  (libraries
   ; internal
   lang
-  lsp
   smt
   overlays
   grammar

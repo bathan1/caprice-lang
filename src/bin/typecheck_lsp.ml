@@ -3,56 +3,6 @@ let read_exactly ic n =
   really_input ic buf 0 n;
   Bytes.to_string buf
 
-let find_baseline_error ~options stmts =
-  let all_disabled = Lsp.Stmt_check.disable_all_checks stmts in
-  let n = List.length all_disabled in
-  let rec loop i =
-    if i >= n then
-      None
-    else
-      let answer =
-        all_disabled
-        |> List.filteri (fun j _ -> j <= i)
-        |> Concolic.Loop.begin_ceval ~print_outcome:false ~options
-      in
-      match answer with
-      | Grammar.Answer.Exhausted -> loop (i + 1)
-      | answer -> Some (i, answer)
-  in
-  loop 0
-
-let run_baseline_error_round_robin ~options ~spans stmts =
-  match find_baseline_error ~options stmts with
-  | None ->
-    Printf.printf "error:baseline scan exhausted without finding error\n%!"
-  | Some (error_idx, answer) ->
-    Lsp.Print.print_answer ~spans error_idx answer;
-    stmts
-    |> Lsp.Stmt_check.generate_prefix_pgms_list ~end_idx:error_idx
-    |> Concolic.Loop.ceval_many ~options ~spans
-
-let run_typecheck ~(options : Concolic.Options.t) (packet : Lsp.Protocol.checker_packet) =
-  try
-    let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
-    let stmts = List.map fst stmts_with_pos in
-    let spans = List.map snd stmts_with_pos in
-    let check_index = Lsp.Range_check.compute_check_index spans packet.changes in
-    let baseline = Concolic.Loop.begin_ceval ~print_outcome:false ~options
-      (Lsp.Stmt_check.disable_all_checks stmts)
-    in
-    match baseline with
-    | Grammar.Answer.Found_error _ ->
-      run_baseline_error_round_robin ~options ~spans stmts
-    | _ ->
-      stmts
-      |> Lsp.Stmt_check.generate_pgms_list ~target_idx:check_index
-      |> Concolic.Loop.ceval_many ~options ~spans
-  with
-  | Lang.Parser.Parse_error (_exn, line, col, tok) ->
-    Printf.printf "parse_error:%d:%d:%s\n%!" line col tok
-  | exn ->
-    Printf.printf "error:%s\n%!" (Printexc.to_string exn)
-
 let process_one_change ~(options : Concolic.Options.t) =
   let packet_text =
     stdin
@@ -60,9 +10,10 @@ let process_one_change ~(options : Concolic.Options.t) =
     |> int_of_string
     |> read_exactly stdin
   in
-  match Lsp.Protocol.parse_checker_packet packet_text with
-  | Ok packet -> run_typecheck ~options packet
-  | Error msg -> Printf.printf "protocol_error:%s\n%!" msg;
+  begin match Lsp.Protocol.parse_checker_packet packet_text with
+  | Ok packet -> Lsp.Main_loop.run_typecheck ~options packet
+  | Error msg -> Printf.printf "protocol_error:%s\n%!" msg
+  end;
   Printf.printf "done\n%!"
 
 let rec server_loop ~(options : Concolic.Options.t) () =
@@ -78,7 +29,7 @@ let typecheck_lsp_main =
   let+ options = Concolic.Options.of_argv in
   server_loop ~options ()
 
-let () = 
+let () =
   match Cmdliner.Cmd.eval_value' typecheck_lsp_main with
   | `Ok _ -> ()
   | `Exit i -> exit i

@@ -1,12 +1,5 @@
 open Lang.Ast
 
-let is_stmt_check_enabled (stmt : statement) : bool =
-  match stmt with
-  | SLet { annot = AType { do_check; tau = _ }; _ }
-  | SLetRec { annot = AType { do_check; tau = _ }; _ } -> do_check
-  | SLet { annot = ANone; _ }
-  | SLetRec { annot = ANone; _ } -> false
-
 let disable_annot_check (annot : annot) : annot =
   match annot with
   | ANone -> ANone
@@ -20,24 +13,17 @@ let disable_stmt_check (stmt : statement) : statement =
 let disable_all_checks (stmts : program) : program =
   List.map disable_stmt_check stmts
 
-let filter_check_stmt (stmts : program) (target_idx : int) : program =
-  if (target_idx < 0 || target_idx >= List.length stmts) then
-    failwith (Printf.sprintf "Target index %d is out of bounds" target_idx)
-  else
-    stmts
-    |> List.filteri (fun i _ -> i <= target_idx)
-    |> List.mapi (fun i stmt ->
-      if i = target_idx then stmt
-      else disable_stmt_check stmt
-    )
+let mk_pgms pgm ~start =
+  let rec mk i left right =
+    match right with
+    | [] -> []
+    | stmt :: rem ->
+      let res = mk (i + 1) (disable_stmt_check stmt :: left) rem in
+      (i, List.rev (stmt :: left)) :: res
+  in
+  let prev = List.take start (disable_all_checks pgm) in
+  mk start (List.rev prev) (List.drop start pgm)
 
-let generate_pgms_list (pgm : program) ~(target_idx : int option) : (int * program) list =
-  match target_idx with
-  | None -> []
-  | Some start_idx ->
-    List.init (List.length pgm - start_idx) (fun offset -> start_idx + offset)
-    |> (if start_idx > 0 then List.cons (start_idx - 1) else Fun.id)
-    |> List.map (fun i -> (i, filter_check_stmt pgm i))
-
-let generate_prefix_pgms_list (pgm : program) ~(end_idx : int) : (int * program) list =
-  List.map (fun i -> (i, filter_check_stmt pgm i)) (List.init (end_idx + 1) Fun.id)
+let pgms_up_to (pgm : program) ~(end_idx : int) : (int * program) list =
+  mk_pgms pgm ~start:0
+  |> List.take (end_idx + 1)
