@@ -10,6 +10,6 @@ let compute_check_index
     let target = first_change.start_pos in
     List.find_mapi (fun i span ->
       let stmt_end = Positions.of_lexing span.ends in
-      if Positions.is_ge stmt_end target then Some i else None
+      if Positions.geq stmt_end target then Some i else None
     ) spans
   (* TODO: Skip spawning the typechecker for non-semantic edits (e.g., inserting blank lines). *)
