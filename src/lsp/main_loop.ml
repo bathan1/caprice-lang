@@ -51,17 +51,15 @@ let find_baseline_error ~options stmts_with_pos =
   let baseline =
     Concolic.Loop.begin_ceval ~print_outcome:false ~options (List.map fst all_disabled)
   in
+  let min_pos = { Lexing.pos_fname = "" ; pos_lnum = 0 ; pos_bol = 0 ; pos_cnum = -1 } in
+  let min_pos_span = Lang.Ast.{ begins = min_pos ; ends = min_pos } in
   match baseline with
   | Grammar.Answer.Found_error _ ->
-    let rec loop acc = function
-      | [] -> None
-      | (stmt, span) :: tl ->
-        let pgm = acc @ [stmt] in
-        match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
-        | Grammar.Answer.Exhausted -> loop pgm tl
-        | answer -> Some (span, answer)
-    in
-    loop [] all_disabled
+    Stmt_check.mk_pgms all_disabled ~start_pos:min_pos_span
+    |> List.find_map (fun (span, pgm) ->
+      match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
+      | Grammar.Answer.Exhausted -> None
+      | answer -> Some (span, answer))
   | _ -> None
 
 let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_packet) =
@@ -73,19 +71,14 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_pac
       | Some (error_span, a) ->
         (* TODO: extend error message to say statements after this are unreachable *)
         let () = Print.print_answer error_span a in
-        let rec take = function
-          | (_, span) :: _ when span = error_span -> []
-          | x :: rest -> x :: take rest
-          | [] -> []
-        in
-        take stmts_with_pos
+        fst (Stmt_check.split_on_pos stmts_with_pos error_span)
     in
     let check_index = Range_check.compute_check_pos stmts_to_check packet.changes in
     match check_index with
     | None -> ()
-    | Some start ->
+    | Some start_pos ->
       stmts_to_check
-      |> Stmt_check.mk_pgms ~start
+      |> Stmt_check.mk_pgms ~start_pos
       |> ceval_many ~options
   with
   | Lang.Parser.Parse_error (_exn, line, col, tok) ->

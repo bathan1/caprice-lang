@@ -55,6 +55,13 @@ type program = statement list
 type program_with_pos = statement_with_pos list
 
 module Tools = struct
+  let compare_pos_span a b =
+    match Int.compare a.begins.pos_cnum b.begins.pos_cnum with
+    | 0 -> Int.compare a.ends.pos_cnum b.ends.pos_cnum
+    | cmp -> cmp
+
+  let equal_pos_span a b = compare_pos_span a b = 0
+
   let id_of_stmt = function
     | SLet { name ; _ }
     | SLetRec { name ; _ } -> name

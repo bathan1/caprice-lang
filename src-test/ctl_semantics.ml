@@ -75,11 +75,18 @@ let positions_test filename env =
 let statement_index_test filename env =
   let open Position_checks in
   let stmts_with_pos = Lang.Parser.Positioned.parse_file filename in
+  let span_to_idx span =
+    stmts_with_pos
+    |> List.find_mapi (fun i (_, s) ->
+      if Lang.Ast.Tools.equal_pos_span s span then Some i else None)
+    |> Option.value ~default:(-1)
+  in
   let expected = parse_int_list (get_var env statement_indexes "") in
   let actual =
     parse_changes (get_var env changes "")
     |> List.map (fun change ->
       Lsp.Range_check.compute_check_pos stmts_with_pos [change]
+      |> Option.map span_to_idx
       |> Option.value ~default:(-1))
   in
   expected = actual

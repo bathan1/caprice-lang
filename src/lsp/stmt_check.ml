@@ -13,9 +13,14 @@ let disable_stmt_check (stmt : statement) : statement =
 let disable_all_checks (pgm : program_with_pos) : program_with_pos =
   List.map (fun (stmt, span) -> (disable_stmt_check stmt, span)) pgm
 
-(* On programs with checks enabled, produces programs with exactly one
-   check each — the statement at position [start] onward, in turn. *)
-let mk_pgms (pgm : program_with_pos) ~start : (pos_span * program) list =
+let split_on_pos (pgm : program_with_pos) (pos : pos_span)
+  : program_with_pos * program_with_pos =
+  let before (_, span) = Tools.compare_pos_span span pos < 0 in
+  List.take_while before pgm, List.drop_while before pgm
+
+(* Produces programs with exactly one check each — the statement at
+   [start_pos] onward, in turn. *)
+let mk_pgms (pgm : program_with_pos) ~start_pos : (pos_span * program) list =
   let rec mk left right =
     match right with
     | [] -> []
@@ -23,5 +28,5 @@ let mk_pgms (pgm : program_with_pos) ~start : (pos_span * program) list =
       let res = mk ((disable_stmt_check stmt, span) :: left) rem in
       (span, List.rev_map fst ((stmt, span) :: left)) :: res
   in
-  let prev = List.take start (disable_all_checks pgm) in
-  mk (List.rev prev) (List.drop start pgm)
+  let prev, rest = split_on_pos pgm start_pos in
+  mk (List.rev (disable_all_checks prev)) rest
