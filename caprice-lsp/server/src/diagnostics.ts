@@ -34,6 +34,7 @@ export class DiagnosticsManager {
   private byStmt = new Map<number, Diagnostic>();
   private pendingParseError: { idx: number; diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
   private inFlight = new Map<number, { range: Range; timer: NodeJS.Timeout }>();
+  private editLine = 0;
 
   constructor(private connection: Connection) {}
 
@@ -84,11 +85,11 @@ export class DiagnosticsManager {
         const diagnostic = parseErrorDiagnostic(msg);
         if (this.pendingParseError !== null) {
           clearTimeout(this.pendingParseError.timer);
-          this.commitPending(uri);
         }
-        if (this.byStmt.delete(Number.MAX_SAFE_INTEGER)) {
-          this.flush(uri);
+        for (const [idx, diag] of this.byStmt) {
+          if (diag.range.start.line >= this.editLine) this.byStmt.delete(idx);
         }
+        this.flush(uri);
         this.pendingParseError = {
           idx: Number.MAX_SAFE_INTEGER, diagnostic,
           timer: setTimeout(() => { this.commitPending(uri); }, 1000),
@@ -126,15 +127,19 @@ export class DiagnosticsManager {
     }
   }
 
-  onNewCheck(uri: string, isNewDoc: boolean): void {
+  onNewCheck(uri: string, isNewDoc: boolean, changes: Range[]): void {
     if (this.pendingParseError !== null) {
       clearTimeout(this.pendingParseError.timer);
       this.pendingParseError = null;
     }
     if (isNewDoc) {
       this.byStmt.clear();
-    } else if (this.byStmt.delete(Number.MAX_SAFE_INTEGER)) {
-      this.flush(uri);
+      this.editLine = 0;
+    } else {
+      this.editLine = Math.min(...changes.map(c => c.start.line));
+      if (this.byStmt.delete(Number.MAX_SAFE_INTEGER)) {
+        this.flush(uri);
+      }
     }
   }
 

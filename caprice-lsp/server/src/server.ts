@@ -99,7 +99,7 @@ connection.onInitialize((params: InitializeParams) => {
 function sendPacket(doc: TextDocument, changes: Range[]): void {
 	try {
 		if (checkerBusy) restartChecker();
-		diagnostics.onNewCheck(doc.uri, doc.uri !== currentUri);
+		diagnostics.onNewCheck(doc.uri, doc.uri !== currentUri, changes);
 		currentUri = doc.uri;
 		writeFramedMessage({
 			uri: doc.uri,
