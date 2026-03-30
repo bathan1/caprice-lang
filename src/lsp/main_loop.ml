@@ -51,6 +51,8 @@ let find_baseline_error ~options stmts =
   let baseline = Concolic.Loop.begin_ceval ~print_outcome:false ~options all_disabled in
   match baseline with
   | Grammar.Answer.Found_error _ ->
+    (* mk_pgms disables checks, but all_disabled already has them off,
+       so this produces progressively longer prefixes of the program *)
     Stmt_check.mk_pgms all_disabled ~start:0
     |> List.find_map (fun (i, pgm) ->
       match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with

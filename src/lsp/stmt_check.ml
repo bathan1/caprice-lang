@@ -13,6 +13,9 @@ let disable_stmt_check (stmt : statement) : statement =
 let disable_all_checks (stmts : program) : program =
   List.map disable_stmt_check stmts
 
+(* Used in two ways: (1) on programs with checks enabled, to produce programs
+   with exactly one check each; (2) on already-disabled programs, to produce
+   progressively longer prefixes for baseline error scanning. *)
 let mk_pgms pgm ~start =
   let rec mk i left right =
     match right with
