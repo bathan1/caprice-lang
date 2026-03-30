@@ -10,21 +10,20 @@ export type CheckerPacket = {
 
 // OCaml -> TypeScript
 export type OcamlMessage =
-  | { tag: 'pending';          idx: number; range: Range }
-  | { tag: 'ok';               idx: number; range: Range }
-  | { tag: 'error';            idx: number; range: Range; msg: string }
-  | { tag: 'timeout';          idx: number; range: Range }
-  | { tag: 'unknown';          idx: number; range: Range }
-  | { tag: 'exhausted_pruned'; idx: number; range: Range }
+  | { tag: 'pending';          range: Range }
+  | { tag: 'ok';               range: Range }
+  | { tag: 'error';            range: Range; msg: string }
+  | { tag: 'timeout';          range: Range }
+  | { tag: 'unknown';          range: Range }
+  | { tag: 'exhausted_pruned'; range: Range }
   | { tag: 'done' }
   | { tag: 'parse_error';      line: number; col: number; tok: string }
 
-function parseIndexed(parts: string[]) {
+function parseRange(parts: string[]) {
   return {
-    idx: +parts[1],
     range: {
-      start: { line: +parts[2], character: +parts[3] },
-      end:   { line: +parts[4], character: +parts[5] },
+      start: { line: +parts[1], character: +parts[2] },
+      end:   { line: +parts[3], character: +parts[4] },
     } satisfies Range,
   };
 }
@@ -32,13 +31,13 @@ function parseIndexed(parts: string[]) {
 export function parseLine(line: string): OcamlMessage | null {
   const parts = line.split(':');
   switch (parts[0]) {
-    case 'pending': return { tag: 'pending', ...parseIndexed(parts) };
-    case 'ok': return { tag: 'ok', ...parseIndexed(parts) };
-    case 'error': return { tag: 'error', ...parseIndexed(parts), msg: parts.slice(6).join(':') };
+    case 'pending': return { tag: 'pending', ...parseRange(parts) };
+    case 'ok': return { tag: 'ok', ...parseRange(parts) };
+    case 'error': return { tag: 'error', ...parseRange(parts), msg: parts.slice(5).join(':') };
     case 'parse_error': return { tag: 'parse_error', line: +parts[1], col: +parts[2], tok: parts[3] };
-    case 'timeout': return { tag: 'timeout', ...parseIndexed(parts) };
-    case 'unknown': return { tag: 'unknown', ...parseIndexed(parts) };
-    case 'exhausted_pruned': return { tag: 'exhausted_pruned', ...parseIndexed(parts) };
+    case 'timeout': return { tag: 'timeout', ...parseRange(parts) };
+    case 'unknown': return { tag: 'unknown', ...parseRange(parts) };
+    case 'exhausted_pruned': return { tag: 'exhausted_pruned', ...parseRange(parts) };
     case 'done': return { tag: 'done' };
     default: return null;
   }
