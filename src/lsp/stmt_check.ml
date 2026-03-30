@@ -23,7 +23,3 @@ let mk_pgms pgm ~start =
   in
   let prev = List.take start (disable_all_checks pgm) in
   mk start (List.rev prev) (List.drop start pgm)
-
-let pgms_up_to (pgm : program) ~(end_idx : int) : (int * program) list =
-  mk_pgms pgm ~start:0
-  |> List.take (end_idx + 1)

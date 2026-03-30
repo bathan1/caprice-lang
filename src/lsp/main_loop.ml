@@ -46,42 +46,36 @@ let ceval_many ~options ~spans pgms =
     ) pgms
   )
 
-let find_baseline_error ~options all_disabled =
-  Stmt_check.mk_pgms all_disabled ~start:0
-  |> List.find_map (fun (i, pgm) ->
-    match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
-    | Grammar.Answer.Exhausted -> None
-    | answer -> Some (i, answer))
-
-let run_baseline_error_round_robin ~options ~spans stmts_no_checks =
-  match find_baseline_error ~options stmts_no_checks with
-  | None ->
-    Printf.printf "error:baseline scan exhausted without finding error\n%!"
-  | Some (error_idx, answer) ->
-    Print.print_answer ~spans error_idx answer;
-    stmts_no_checks
-    |> Stmt_check.pgms_up_to ~end_idx:error_idx
-    |> ceval_many ~options ~spans
+let find_baseline_error ~options stmts =
+  let all_disabled = Stmt_check.disable_all_checks stmts in
+  let baseline = Concolic.Loop.begin_ceval ~print_outcome:false ~options all_disabled in
+  match baseline with
+  | Grammar.Answer.Found_error _ ->
+    Stmt_check.mk_pgms all_disabled ~start:0
+    |> List.find_map (fun (i, pgm) ->
+      match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
+      | Grammar.Answer.Exhausted -> None
+      | answer -> Some (i, answer))
+  | _ -> None
 
 let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_packet) =
   try
     let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
     let stmts = List.map fst stmts_with_pos in
     let spans = List.map snd stmts_with_pos in
+    let last_idx = (* last index to check, not inclusive *)
+      match find_baseline_error ~options stmts with
+      | None -> List.length stmts
+      | Some (i, a) -> let () = Print.print_answer ~spans i a in i
+    in
     let check_index = Range_check.compute_check_index spans packet.changes in
-    let stmts_no_checks = Stmt_check.disable_all_checks stmts in
-    let baseline = Concolic.Loop.begin_ceval ~print_outcome:false ~options stmts_no_checks in
-    match baseline with
-    | Grammar.Answer.Found_error _ ->
-      run_baseline_error_round_robin ~options ~spans stmts_no_checks
-    | _ ->
-      begin match check_index with
-      | None -> ()
-      | Some idx ->
-        stmts
-        |> Stmt_check.mk_pgms ~start:(max 0 (idx - 1))
-        |> ceval_many ~options ~spans
-      end
+    match check_index with
+    | None -> ()
+    | Some start ->
+      stmts
+      |> List.take last_idx
+      |> Stmt_check.mk_pgms ~start
+      |> ceval_many ~options ~spans
   with
   | Lang.Parser.Parse_error (_exn, line, col, tok) ->
     Printf.printf "parse_error:%d:%d:%s\n%!" line col tok
