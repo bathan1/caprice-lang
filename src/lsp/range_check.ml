@@ -1,6 +1,6 @@
 open Lang.Ast
 
-let compute_check_index
+let compute_check_pos
   (stmts_with_pos : program_with_pos)
   (changes : Protocol.range list)
   : int option =

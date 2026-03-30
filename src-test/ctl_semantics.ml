@@ -79,7 +79,7 @@ let statement_index_test filename env =
   let actual =
     parse_changes (get_var env changes "")
     |> List.map (fun change ->
-      Lsp.Range_check.compute_check_index stmts_with_pos [change]
+      Lsp.Range_check.compute_check_pos stmts_with_pos [change]
       |> Option.value ~default:(-1))
   in
   expected = actual

@@ -45,7 +45,6 @@ and annot =
 and statement =
   | SLet of { name : Ident.t ; annot : annot ; defn : t }
   | SLetRec of { name : Ident.t ; annot : annot ; param : Ident.t ; defn : t }
-  [@@deriving eq, ord]
 
 type pos_span = { begins : Lexing.position ; ends : Lexing.position }
 

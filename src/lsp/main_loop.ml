@@ -80,7 +80,7 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_pac
         in
         take stmts_with_pos
     in
-    let check_index = Range_check.compute_check_index stmts_to_check packet.changes in
+    let check_index = Range_check.compute_check_pos stmts_to_check packet.changes in
     match check_index with
     | None -> ()
     | Some start ->
