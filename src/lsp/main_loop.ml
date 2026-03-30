@@ -12,18 +12,18 @@ type r =
   | Done of Grammar.Answer.t
   | Cont of (unit, r) Effect.Deep.continuation
 
-type work_item = { id : int ; task : unit -> r }
+type work_item = { span : Lang.Ast.pos_span ; task : unit -> r }
 
-let round_robin ~spans (fs : work_item list) : unit =
+let round_robin (fs : work_item list) : unit =
   let run_q = Queue.of_seq (List.to_seq fs) in
-  let enqueue id k =
+  let enqueue span k =
     let task () = Effect.Deep.continue k () in
-    Queue.push { id ; task } run_q
+    Queue.push { span ; task } run_q
   in
   let rec dequeue () =
     match Queue.take_opt run_q with
     | None -> ()
-    | Some { id ; task } ->
+    | Some { span ; task } ->
       let r =
         try task () with
         | effect Pause, k ->
@@ -31,53 +31,61 @@ let round_robin ~spans (fs : work_item list) : unit =
       in
       match r with
       | Done a ->
-        Print.print_answer ~spans id a;
+        Print.print_answer span a;
         dequeue ()
-      | Cont k -> enqueue id k; dequeue ()
+      | Cont k -> enqueue span k; dequeue ()
   in
   dequeue ()
 
-let ceval_many ~options ~spans pgms =
-  round_robin ~spans (
-    List.map (fun (id, pgm) ->
-      { id ; task = fun () ->
-          Print.print_pending ~spans id;
+let ceval_many ~options pgms =
+  round_robin (
+    List.map (fun (span, pgm) ->
+      { span ; task = fun () ->
+          Print.print_pending span;
           Done (M.begin_ceval ~print_outcome:false ~options pgm) }
     ) pgms
   )
 
-let find_baseline_error ~options stmts =
-  let all_disabled = Stmt_check.disable_all_checks stmts in
-  let baseline = Concolic.Loop.begin_ceval ~print_outcome:false ~options all_disabled in
+let find_baseline_error ~options stmts_with_pos =
+  let all_disabled = Stmt_check.disable_all_checks stmts_with_pos in
+  let baseline =
+    Concolic.Loop.begin_ceval ~print_outcome:false ~options (List.map fst all_disabled)
+  in
   match baseline with
   | Grammar.Answer.Found_error _ ->
-    (* mk_pgms disables checks, but all_disabled already has them off,
-       so this produces progressively longer prefixes of the program *)
-    Stmt_check.mk_pgms all_disabled ~start:0
-    |> List.find_map (fun (i, pgm) ->
-      match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
-      | Grammar.Answer.Exhausted -> None
-      | answer -> Some (i, answer))
+    let rec loop acc = function
+      | [] -> None
+      | (stmt, span) :: tl ->
+        let pgm = acc @ [stmt] in
+        match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
+        | Grammar.Answer.Exhausted -> loop pgm tl
+        | answer -> Some (span, answer)
+    in
+    loop [] all_disabled
   | _ -> None
 
 let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_packet) =
   try
     let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
-    let stmts = List.map fst stmts_with_pos in
-    let spans = List.map snd stmts_with_pos in
-    let last_idx = (* last index to check, not inclusive *)
-      match find_baseline_error ~options stmts with
-      | None -> List.length stmts
-      | Some (i, a) -> let () = Print.print_answer ~spans i a in i
+    let stmts_to_check =
+      match find_baseline_error ~options stmts_with_pos with
+      | None -> stmts_with_pos
+      | Some (error_span, a) ->
+        let () = Print.print_answer error_span a in
+        let rec take = function
+          | (_, span) :: _ when span = error_span -> []
+          | x :: rest -> x :: take rest
+          | [] -> []
+        in
+        take stmts_with_pos
     in
-    let check_index = Range_check.compute_check_index spans packet.changes in
+    let check_index = Range_check.compute_check_index stmts_to_check packet.changes in
     match check_index with
     | None -> ()
     | Some start ->
-      stmts
-      |> List.take last_idx
+      stmts_to_check
       |> Stmt_check.mk_pgms ~start
-      |> ceval_many ~options ~spans
+      |> ceval_many ~options
   with
   | Lang.Parser.Parse_error (_exn, line, col, tok) ->
     Printf.printf "parse_error:%d:%d:%s\n%!" line col tok

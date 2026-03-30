@@ -10,19 +10,18 @@ let disable_stmt_check (stmt : statement) : statement =
   | SLet r -> SLet { r with annot = disable_annot_check r.annot }
   | SLetRec r -> SLetRec { r with annot = disable_annot_check r.annot }
 
-let disable_all_checks (stmts : program) : program =
-  List.map disable_stmt_check stmts
+let disable_all_checks (pgm : program_with_pos) : program_with_pos =
+  List.map (fun (stmt, span) -> (disable_stmt_check stmt, span)) pgm
 
-(* Used in two ways: (1) on programs with checks enabled, to produce programs
-   with exactly one check each; (2) on already-disabled programs, to produce
-   progressively longer prefixes for baseline error scanning. *)
-let mk_pgms pgm ~start =
-  let rec mk i left right =
+(* On programs with checks enabled, produces programs with exactly one
+   check each — the statement at position [start] onward, in turn. *)
+let mk_pgms (pgm : program_with_pos) ~start : (pos_span * program) list =
+  let rec mk left right =
     match right with
     | [] -> []
-    | stmt :: rem ->
-      let res = mk (i + 1) (disable_stmt_check stmt :: left) rem in
-      (i, List.rev (stmt :: left)) :: res
+    | (stmt, span) :: rem ->
+      let res = mk ((disable_stmt_check stmt, span) :: left) rem in
+      (span, List.rev_map fst ((stmt, span) :: left)) :: res
   in
   let prev = List.take start (disable_all_checks pgm) in
-  mk start (List.rev prev) (List.drop start pgm)
+  mk (List.rev prev) (List.drop start pgm)

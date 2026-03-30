@@ -1,14 +1,13 @@
-let span_pos ~(spans : Lang.Ast.pos_span list) i =
-  let span = List.nth spans i in
+let format_span (span : Lang.Ast.pos_span) =
   let b = Positions.of_lexing span.begins in
   let e = Positions.of_lexing span.ends in
-  Printf.sprintf "%d:%d:%d:%d:%d" i b.line b.character e.line e.character
+  Printf.sprintf "%d:%d:%d:%d" b.line b.character e.line e.character
 
-let print_pending ~spans i =
-  Printf.printf "pending:%s\n%!" (span_pos ~spans i)
+let print_pending span =
+  Printf.printf "pending:%s\n%!" (format_span span)
 
-let print_answer ~spans i answer =
-  let pos = span_pos ~spans i in
+let print_answer span answer =
+  let pos = format_span span in
   match answer with
   | Grammar.Answer.Found_error msg ->
     Printf.printf "error:%s:%s\n%!" pos msg
