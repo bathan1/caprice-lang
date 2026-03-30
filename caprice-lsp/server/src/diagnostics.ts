@@ -6,6 +6,10 @@ import {
 import type { OcamlMessage } from './protocol';
 import type { Range } from 'vscode-languageserver-types';
 
+function rangeKey(r: Range): string {
+  return `${r.start.line}:${r.start.character}:${r.end.line}:${r.end.character}`;
+}
+
 function parseErrorDiagnostic(msg: Extract<OcamlMessage, { tag: 'parse_error' }>): Diagnostic {
   const [start, end] = msg.tok.length > 0
     ? [msg.col - msg.tok.length, msg.col]
@@ -31,9 +35,9 @@ function toSeverity(tag: OcamlMessage['tag']): DiagnosticSeverity | null {
 }
 
 export class DiagnosticsManager {
-  private byStmt = new Map<number, Diagnostic>();
-  private pendingParseError: { idx: number; diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
-  private inFlight = new Map<number, { range: Range; timer: NodeJS.Timeout }>();
+  private byStmt = new Map<string, Diagnostic>();
+  private pendingParseError: { diagnostic: Diagnostic; timer: NodeJS.Timeout } | null = null;
+  private inFlight = new Map<string, { range: Range; timer: NodeJS.Timeout }>();
   private editLine = 0;
 
   constructor(private connection: Connection) {}
@@ -47,17 +51,18 @@ export class DiagnosticsManager {
 
   private commitPending(uri: string): void {
     if (!this.pendingParseError) return;
-    const { idx, diagnostic } = this.pendingParseError;
+    const { diagnostic } = this.pendingParseError;
     this.pendingParseError = null;
-    this.byStmt.set(idx, diagnostic);
+    this.byStmt.set(rangeKey(diagnostic.range), diagnostic);
     this.flush(uri);
   }
 
-  private invalidate(idx: number): void {
-    this.byStmt.delete(idx);
-    const entry = this.inFlight.get(idx);
-    if (entry !== undefined) { clearTimeout(entry.timer); this.inFlight.delete(idx); }
-    if (this.pendingParseError !== null && this.pendingParseError.idx >= idx) {
+  private invalidate(key: string, range: Range): void {
+    this.byStmt.delete(key);
+    const entry = this.inFlight.get(key);
+    if (entry !== undefined) { clearTimeout(entry.timer); this.inFlight.delete(key); }
+    if (this.pendingParseError !== null &&
+        this.pendingParseError.diagnostic.range.start.line >= range.start.line) {
       clearTimeout(this.pendingParseError.timer);
       this.pendingParseError = null;
     }
@@ -66,12 +71,13 @@ export class DiagnosticsManager {
   handle(uri: string, msg: OcamlMessage): void {
     switch (msg.tag) {
       case 'pending': {
-        const existing = this.inFlight.get(msg.idx);
+        const key = rangeKey(msg.range);
+        const existing = this.inFlight.get(key);
         if (existing !== undefined) clearTimeout(existing.timer);
-        this.inFlight.set(msg.idx, {
+        this.inFlight.set(key, {
           range: msg.range,
           timer: setTimeout(() => {
-            this.byStmt.set(msg.idx, {
+            this.byStmt.set(key, {
               range: msg.range,
               message: 'checking...',
               severity: DiagnosticSeverity.Warning,
@@ -86,12 +92,12 @@ export class DiagnosticsManager {
         if (this.pendingParseError !== null) {
           clearTimeout(this.pendingParseError.timer);
         }
-        for (const [idx, diag] of this.byStmt) {
-          if (diag.range.start.line >= this.editLine) this.byStmt.delete(idx);
+        for (const [key, diag] of this.byStmt) {
+          if (diag.range.end.line >= this.editLine) this.byStmt.delete(key);
         }
         this.flush(uri);
         this.pendingParseError = {
-          idx: Number.MAX_SAFE_INTEGER, diagnostic,
+          diagnostic,
           timer: setTimeout(() => { this.commitPending(uri); }, 1000),
         };
         break;
@@ -101,7 +107,8 @@ export class DiagnosticsManager {
       case 'timeout':
       case 'unknown':
       case 'exhausted_pruned': {
-        this.invalidate(msg.idx);
+        const key = rangeKey(msg.range);
+        this.invalidate(key, msg.range);
         const severity = toSeverity(msg.tag)!;
         const diagnostic: Diagnostic = {
           range: msg.range,
@@ -110,17 +117,17 @@ export class DiagnosticsManager {
         };
 
         if (msg.tag === 'error' && msg.msg.includes('Unbound variable')) {
-          for (const key of this.byStmt.keys()) {
-            if (key >= msg.idx) this.byStmt.delete(key);
+          for (const [k, diag] of this.byStmt) {
+            if (diag.range.start.line >= msg.range.start.line) this.byStmt.delete(k);
           }
         }
-        this.byStmt.set(msg.idx, diagnostic);
+        this.byStmt.set(key, diagnostic);
         this.flush(uri);
         break;
       }
 
       case 'ok': {
-        this.invalidate(msg.idx);
+        this.invalidate(rangeKey(msg.range), msg.range);
         this.flush(uri);
         break;
       }
@@ -137,9 +144,10 @@ export class DiagnosticsManager {
       this.editLine = 0;
     } else {
       this.editLine = Math.min(...changes.map(c => c.start.line));
-      if (this.byStmt.delete(Number.MAX_SAFE_INTEGER)) {
-        this.flush(uri);
+      for (const [key, diag] of this.byStmt) {
+        if (diag.range.end.line >= this.editLine) this.byStmt.delete(key);
       }
+      this.flush(uri);
     }
   }
 
@@ -148,9 +156,9 @@ export class DiagnosticsManager {
       clearTimeout(this.pendingParseError.timer);
       this.pendingParseError = null;
     }
-    for (const [idx, { range, timer }] of this.inFlight) {
+    for (const [key, { range, timer }] of this.inFlight) {
       clearTimeout(timer);
-      this.byStmt.set(idx, {
+      this.byStmt.set(key, {
         range,
         message: 'timeout',
         severity: DiagnosticSeverity.Warning,
