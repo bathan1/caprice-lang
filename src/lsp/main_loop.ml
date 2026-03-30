@@ -71,6 +71,7 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_pac
       match find_baseline_error ~options stmts_with_pos with
       | None -> stmts_with_pos
       | Some (error_span, a) ->
+        (* TODO: extend error message to say statements after this are unreachable *)
         let () = Print.print_answer error_span a in
         let rec take = function
           | (_, span) :: _ when span = error_span -> []
