@@ -60,7 +60,6 @@ let rec simplify : 'k simplifier = fun solve expr ->
     (*
       If there is any (key = int) formula, then we can subst it through, for it
       is an "implied concretization".
-
       This idea originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
       from Section 3.3, paragraph _Constraint Set Simplification_.
     *)
@@ -78,3 +77,8 @@ let rec simplify : 'k simplifier = fun solve expr ->
     end
   | _ ->
     solve expr
+
+(** TODO: Port over `rewrite` + friends here *)
+module Simplify_bounds = struct
+end
+
