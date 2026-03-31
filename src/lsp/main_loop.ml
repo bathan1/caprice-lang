@@ -51,10 +51,9 @@ let find_baseline_error ~options stmts_with_pos =
   let baseline =
     Concolic.Loop.begin_ceval ~print_outcome:false ~options (List.map fst all_disabled)
   in
-  let min_pos = { Lexing.pos_fname = "" ; pos_lnum = 0 ; pos_bol = 0 ; pos_cnum = -1 } in
-  let min_pos_span = Lang.Ast.{ begins = min_pos ; ends = min_pos } in
   match baseline with
   | Grammar.Answer.Found_error _ ->
+    let min_pos_span = { Lang.Ast.begins = Lexing.dummy_pos ; ends = Lexing.dummy_pos } in
     Stmt_check.mk_pgms all_disabled ~start_pos:min_pos_span
     |> List.find_map (fun (span, pgm) ->
       match Concolic.Loop.begin_ceval ~print_outcome:false ~options pgm with
