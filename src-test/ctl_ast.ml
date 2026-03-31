@@ -16,6 +16,8 @@ open Variables
 *)
 type testkind =
   | Typecheck
+  | Position_check
+  | Statement_index_check
   | Skip
 
 type env_stmt =

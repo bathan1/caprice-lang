@@ -1,9 +1,10 @@
 (executables
- (names typecheck bench)
+ (names typecheck typecheck_lsp bench)
  (libraries
   ; internal
   lang
   concolic
+  lsp
   ; external
   cmdliner
   benchmark

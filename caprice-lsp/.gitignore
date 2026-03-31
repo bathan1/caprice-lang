@@ -1,0 +1,6 @@
+node_modules
+**/out/
+*.tsbuildinfo
+*.caprice
+test
+**/package-lock.json

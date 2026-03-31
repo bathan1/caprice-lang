@@ -433,13 +433,12 @@ and iequal_closure bindings closure1 closure2 =
     match s1, s2 with
     | SLet r1, SLet r2 ->
       let- () = iequal_expr bindings r1.defn r2.defn in
-      iequal_type_opts bindings r1.annot r2.annot
+      iequal_annot bindings r1.annot r2.annot
     | SLetRec r1, SLetRec r2 ->
       let- () = iequal_expr ((r1.param, r2.param) :: (r1.name, r2.name) :: bindings) r1.defn r2.defn in
-      iequal_type_opts bindings r1.annot r2.annot
+      iequal_annot bindings r1.annot r2.annot
     | _ ->
       make false
-
 
   and iequal_id bindings id1 id2 =
     let de_bruijn_eq =
@@ -476,11 +475,11 @@ and iequal_closure bindings closure1 closure2 =
       end
 
   (* check that types annotations on variables are the same *)
-  and iequal_type_opts bindings var1 var2 =
-    match var1, var2 with
-    | None, None ->
+  and iequal_annot bindings annot1 annot2 =
+    match annot1, annot2 with
+    | Lang.Ast.ANone, Lang.Ast.ANone ->
       make true
-    | Some t1, Some t2 ->
+    | AType { tau = t1 ; do_check = _ } , AType { tau = t2 ; do_check = _ } ->
       iequal_expr bindings t1 t2
     | _ ->
       make false

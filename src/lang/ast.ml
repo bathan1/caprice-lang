@@ -38,13 +38,30 @@ type t =
   | ETypeVariant of t Variant.t list
   | ETypeSingle of t
 
+and annot =
+  | ANone
+  | AType of { tau : t ; do_check : bool }
+
 and statement =
-  | SLet of { name : Ident.t ; annot : t option ; defn : t }
-  | SLetRec of { name : Ident.t ; annot : t option ; param : Ident.t ; defn : t }
+  | SLet of { name : Ident.t ; annot : annot ; defn : t }
+  | SLetRec of { name : Ident.t ; annot : annot ; param : Ident.t ; defn : t }
+
+type pos_span = { begins : Lexing.position ; ends : Lexing.position }
+
+type statement_with_pos = statement * pos_span
 
 type program = statement list
 
+type program_with_pos = statement_with_pos list
+
 module Tools = struct
+  let compare_pos_span a b =
+    match Int.compare a.begins.pos_cnum b.begins.pos_cnum with
+    | 0 -> Int.compare a.ends.pos_cnum b.ends.pos_cnum
+    | cmp -> cmp
+
+  let equal_pos_span a b = compare_pos_span a b = 0
+
   let id_of_stmt = function
     | SLet { name ; _ }
     | SLetRec { name ; _ } -> name

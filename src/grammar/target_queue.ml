@@ -23,4 +23,3 @@ let pop (BFS q : t) : (Target.t * t) option =
 (* contains only the empty target *)
 let initial : t =
   push_one empty Target.empty
-

@@ -56,8 +56,9 @@ module Default_Z3 = Overlays.Typed_z3.Default
 module Simple_solver = Smt.Solve.Simplify (Smt.Solve.Default)
 module Z3_solver = Smt.Solve.Specialize (Simple_solver) (Default_Z3)
 
-let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_count:int =
-  let run_count = Utils.Counter.create () in
+module Make (Y : sig val yield : unit -> unit end) = struct
+  let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_count:int =
+    let run_count = Utils.Counter.create () in
 
   (* Run the program concolically in a loop *)
   let run do_splay =
@@ -68,6 +69,7 @@ let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_
     (* explore the target queue *)
     let rec explore tq =
       let () = Utils.Time.yield_to_timer () in
+      let () = Y.yield () in
       match Target_queue.pop tq with
       | Some (target, tq) -> handle_target target tq
       | None -> Answer.Exhausted
@@ -99,34 +101,37 @@ let begin_loop ~(options : Options.t) (pgm : Lang.Ast.program) : Answer.t * run_
     explore Target_queue.initial
   in
 
-  let run_splaying_modes () =
-    match options.splay with
-    | Splay_only -> run true
-    | Never_splay -> run false
-    | Fallback ->
-      (* try to splay first *)
-      let answer = run true in
-      if Answer.is_error answer then
-        (* The loop stopped due to error, so try without splaying in
-          case the error was due to incompleteness. *)
-        let () = Utils.Counter.reset run_count in
-        run false
-      else
-        answer
-  in
+    let run_splaying_modes () =
+      match options.splay with
+      | Splay_only -> run true
+      | Never_splay -> run false
+      | Fallback ->
+        (* try to splay first *)
+        let answer = run true in
+        if Answer.is_error answer then
+          (* The loop stopped due to error, so try without splaying in
+            case the error was due to incompleteness. *)
+          let () = Utils.Counter.reset run_count in
+          run false
+        else
+          answer
+    in
 
-  let answer =
-    match Utils.Time.with_timeout options.global_timeout run_splaying_modes () with
-    | Ok a -> a
-    | Error t -> Answer.Timeout t
-  in
-  answer, ~run_count:(Utils.Counter.get run_count)
+    let answer =
+      match Utils.Time.with_timeout options.global_timeout run_splaying_modes () with
+      | Ok a -> a
+      | Error t -> Answer.Timeout t
+    in
+    answer, ~run_count:(Utils.Counter.get run_count)
 
-let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
-  (pgm : Lang.Ast.program) : Answer.t =
-  if options.is_random then Random.self_init () else Random.init 999;
-  let span, (answer, ~run_count) = Utils.Time.time (begin_loop ~options) pgm in
-  if print_outcome then
-    Printf.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
-      (Utils.Time.span_to_ms span) run_count (Answer.to_string answer);
-  answer
+  let begin_ceval ?(print_outcome : bool = true) ~(options : Options.t)
+    (pgm : Lang.Ast.program) : Answer.t =
+    if options.is_random then Random.self_init () else Random.init 999;
+    let span, (answer, ~run_count) = Utils.Time.time (begin_loop ~options) pgm in
+    if print_outcome then
+      Printf.printf "Finished type checking in %0.3f ms and %d runs:\n    %s\n"
+        (Utils.Time.span_to_ms span) run_count (Answer.to_string answer);
+    answer
+end
+
+include Make (struct let yield () = () end)

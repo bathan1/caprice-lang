@@ -1,7 +1,11 @@
-
 open Lexing
 
 exception Parse_error of exn * int * int * string
+
+module type PARSER_ENTRY = sig
+  type result
+  val entry_point : (Lexing.lexbuf -> Caprice_parser.token) -> Lexing.lexbuf -> result
+end
 
 let handle_parse_error buf f =
   try f ()
@@ -12,21 +16,35 @@ let handle_parse_error buf f =
     let tok = lexeme buf in
     raise @@ Parse_error (exn, line, column, tok)
 
-let parse_program (input : in_channel) : Ast.statement list =
-  let buf = Lexing.from_channel input in
-  handle_parse_error buf @@ fun () ->
-  Caprice_parser.prog Caprice_lexer.token buf
+module Make(Parser_entry: PARSER_ENTRY) = struct
+  let parse_lexbuf (buf : Lexing.lexbuf) : Parser_entry.result =
+    handle_parse_error buf @@ fun () ->
+    Parser_entry.entry_point Caprice_lexer.token buf
 
-let parse_file (filename : string) : Ast.statement list =
-  let channel = In_channel.open_bin filename in
-  let pgm = parse_program channel in
-  In_channel.close channel;
-  pgm
+  let parse_string (input : string) : Parser_entry.result =
+    parse_lexbuf (Lexing.from_string input)
 
-let parse_program_from_argv =
-  let open Cmdliner.Term.Syntax in
-  let+ src_file =
-    let open Cmdliner.Arg in
-    required & pos 0 (some' file) None & info [] ~docv:"FILE" ~doc:"Input filename"
-  in
-  parse_file src_file
+  let parse_program (input : in_channel) : Parser_entry.result =
+    parse_lexbuf (Lexing.from_channel input)
+
+  let parse_file (filename : string) : Parser_entry.result =
+    In_channel.with_open_bin filename parse_program
+
+  let parse_program_from_argv =
+    let open Cmdliner.Term.Syntax in
+    let+ src_file =
+      let open Cmdliner.Arg in
+      required & pos 0 (some' file) None & info [] ~docv:"FILE" ~doc:"Input filename"
+    in
+    parse_file src_file
+end
+
+include Make (struct
+  type result = Ast.statement list
+  let entry_point = Caprice_parser.prog
+end)
+
+module Positioned = Make (struct
+  type result = Ast.statement_with_pos list
+  let entry_point = Caprice_parser.prog_with_pos
+end)
