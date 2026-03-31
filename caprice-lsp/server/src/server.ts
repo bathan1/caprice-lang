@@ -25,13 +25,13 @@ let ocamlChecker: ChildProcessWithoutNullStreams;
 let buffer = '';
 let currentUri = '';
 let checkerBusy = false;
- 
+
 function startChecker(): ChildProcessWithoutNullStreams {
 	const checker = spawn(typecheckerPath);
 
 	checker.stdout.on('data', (data) => {
 		console.log(data.toString());
-		
+
 		buffer += data.toString();
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;

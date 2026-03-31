@@ -4,7 +4,7 @@ let disable_annot_check (annot : annot) : annot =
   match annot with
   | ANone -> ANone
   | AType r -> AType { r with do_check = false }
-  
+
 let disable_stmt_check (stmt : statement) : statement =
   match stmt with
   | SLet r -> SLet { r with annot = disable_annot_check r.annot }
