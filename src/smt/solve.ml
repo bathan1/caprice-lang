@@ -24,7 +24,7 @@ let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   As more simplifiers are added, we could instead name this after implied
   concretization.
 *)
-let rec simplify : 'k simplifier = fun solve expr ->
+let rec propagate_constants : 'k simplifier = fun solve expr ->
   let assign i k = Solution.Sat (Model.singleton i k) in
   (* Hand-write a lot of special cases for single formulas *)
   match expr with
@@ -71,7 +71,7 @@ let rec simplify : 'k simplifier = fun solve expr ->
     begin match List.find_map find e_ls with
     | Some (~const, k) ->
       let reduced_expr = Formula.and_ (List.map (Formula.subst const k) e_ls) in
-      Solution.merge (simplify solve reduced_expr) (assign const k)
+      Solution.merge (propagate_constants solve reduced_expr) (assign const k)
     | None ->
       solve expr
     end
@@ -81,4 +81,14 @@ let rec simplify : 'k simplifier = fun solve expr ->
 (** TODO: Port over `rewrite` + friends here *)
 module Simplify_bounds = struct
 end
+
+(** TODO: Port over `bellman_ford` + friends here. *)
+let idl : 'k simplifier = fun solve expr ->
+  solve expr
+
+(** TODO: Replace direct_solve with concolic/loop.ml *)
+let main_solve (module Oracle : SOLVABLE) : 'k solver =
+  propagate_constants
+  @@ idl
+  @@ direct_solve (module Oracle)
 
