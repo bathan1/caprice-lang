@@ -108,6 +108,7 @@ export class DiagnosticsManager {
       case 'unknown':
       case 'exhausted_pruned': {
         const key = rangeKey(msg.range);
+        if (msg.tag !== 'error' && this.byStmt.get(key)?.source === 'splay') break;
         this.invalidate(key, msg.range);
         const severity = toSeverity(msg.tag)!;
         const diagnostic: Diagnostic = {
@@ -122,6 +123,20 @@ export class DiagnosticsManager {
           }
         }
         this.byStmt.set(key, diagnostic);
+        this.flush(uri);
+        break;
+      }
+
+      case 'splay_error': {
+        const key = rangeKey(msg.range);
+        const entry = this.inFlight.get(key);
+        if (entry !== undefined) { clearTimeout(entry.timer); this.inFlight.delete(key); }
+        this.byStmt.set(key, {
+          range: msg.range,
+          message: msg.msg,
+          severity: DiagnosticSeverity.Warning,
+          source: 'splay',
+        });
         this.flush(uri);
         break;
       }
@@ -166,9 +181,5 @@ export class DiagnosticsManager {
     }
     this.inFlight.clear();
     this.flush(uri);
-  }
-
-  resetForNewDoc(): void {
-    this.byStmt.clear();
   }
 }
