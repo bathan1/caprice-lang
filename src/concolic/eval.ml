@@ -1288,9 +1288,8 @@ let eval
       let* v = gen domain in
       Val.handle_two a b (function
         | `Data (a, b) ->
-          (* FIXME: need to handle wrapping *)
-          let* v_a = eval_appl a v in
-          let* v_b = eval_appl a v in
+          let* v_a = eval_appl (Val.discard_wrapper a) v in
+          let* v_b = eval_appl (Val.discard_wrapper b) v in
           let* cod = eval_codomain codomain v in
           extensional_equal cod v_a v_b
         | `Types _ | `Mismatch _ -> false_

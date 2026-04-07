@@ -137,6 +137,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
           ~typeval:(fun t2 -> f (`Types (t1, t2)))
       )
 
+  let discard_wrapper : dval -> dval = function
+    | VWrapped x -> x.data
+    | x -> x
+
   (*
     True if the value has any mu type in its representation.
     This is used to dodge recursion by default.
