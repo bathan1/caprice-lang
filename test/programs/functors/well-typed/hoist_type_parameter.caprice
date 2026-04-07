@@ -3,6 +3,11 @@
 *)
 
 (*
+  This ill-typed version of this program depended on nondeterminism, which
+  has since been removed.
+*)
+
+(*
   Module type where the type t has a parameter.
 *)
 let S1 = sig
@@ -50,28 +55,32 @@ end
 
 let Identity0 = F Identity1
 
-(* optionally apply no-op *)
-let Id1 = if input == 0 then NoOp Identity1 else Identity1
-let Id0 = if input == 0 then NoOp' Identity0 else Identity0
+let config = { b1 : bool ; b2 : bool ; b3 : bool }
 
-let pick_t t1 t2 =
-  if input == 0 then
-    t1
-  else
-    t2
+let Make (c : config) : sig end = struct
+  (* optionally apply no-op *)
+  let Id1 = if c.b1 then NoOp Identity1 else Identity1
+  let Id0 = if c.b2 then NoOp' Identity0 else Identity0
 
-(*
-  Check that the forms are equivalent by exhausting the combinations.
-*)
-let check_ret (type a) (x : a) (b : bool) : pick_t (Id1.t a) (Id0 a).t =
-  if b then
-    Id1.return a x
-  else
-    (Id0 a).return x
+  let pick_t t1 t2 =
+    if c.b3 then
+      t1
+    else
+      t2
 
-let check_appl (type a) (x : pick_t (Id1.t a) (Id0 a).t)
-  (f : a -> a) (b : bool) : pick_t (Id1.t a) (Id0 a).t =
-  if b then
-    Id1.appl a x f
-  else
-    (Id0 a).appl x f
+  (*
+    Check that the forms are equivalent by exhausting the combinations.
+  *)
+  let check_ret (type a) (x : a) (b : bool) : pick_t (Id1.t a) (Id0 a).t =
+    if b then
+      Id1.return a x
+    else
+      (Id0 a).return x
+
+  let check_appl (type a) (x : pick_t (Id1.t a) (Id0 a).t)
+    (f : a -> a) (b : bool) : pick_t (Id1.t a) (Id0 a).t =
+    if b then
+      Id1.appl a x f
+    else
+      (Id0 a).appl x f
+end

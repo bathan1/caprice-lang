@@ -1,6 +1,0 @@
-(* TEST
-  include refute;
-*)
-
-(* ERROR: this checks if (int -> int) is in (int -> int). It's not. *)
-let _ : ((int -> int) -> int) -> (int -> int) -> int = fun f -> f

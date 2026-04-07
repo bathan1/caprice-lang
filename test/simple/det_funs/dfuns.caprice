@@ -49,3 +49,16 @@ let _ : ((int -> bool) -> int) -> (int -> bool) -> int =
   fun f g ->
     let _ = assert (f g == f g) in
     f g
+
+let _ : ((int -> int) -> int) -> (int -> int) -> int =
+  fun f -> f
+
+let _ : ((int -> int) -> int) -> (int -> int) -> int =
+  fun f g ->
+    f g
+
+let _ : ((int -> int) -> int) -> unit =
+  fun f ->
+    let a = fun x -> x + 1 in
+    let b = fun x -> 1 + x in (* op eq to a *)
+    assert (f a == f b)
