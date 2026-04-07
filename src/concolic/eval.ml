@@ -1260,7 +1260,8 @@ let eval
   and extensional_equal
     : 'env. Val.tval -> Val.any -> Val.any -> (bool Cdata.t, 'env) m
     = fun t a b ->
-    if Val.equal_any a b then return (true, Formula.const_bool true) else
+    (* if Val.equal_any a b then return (true, Formula.const_bool true) else *)
+    if a == b then return (true, Formula.const_bool true) else
     let false_ = return (false, Formula.const_bool false) in
     let ( let- ) x f =
       let* (b, e) = x in
