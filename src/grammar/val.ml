@@ -44,10 +44,10 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
     is_symbolic t1 || is_symbolic t2
   | VTypeSingle Any v ->
     is_symbolic v
-  | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
-  | VGenFun { funtype = { domain ; codomain = CodValue t ; mode = _ } ; nonce = _ ; alist = _ } ->
+  | VTypeFun { domain ; codomain = CodValue t }
+  | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; alist = _ } ->
     is_symbolic domain || is_symbolic t
-  | VWrapped { data ; tau = { domain ; codomain = CodValue t ; mode = _ } } ->
+  | VWrapped { data ; tau = { domain ; codomain = CodValue t } } ->
     is_symbolic data || is_symbolic domain || is_symbolic t
   (* Closures cases: assume true, but may want to inspect closure *)
   | VFunClosure _
@@ -56,9 +56,9 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VLazy _
   | VTypeMu _
   | VTypeRefine _
-  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ ; mode = _ } ; nonce = _ ; alist = _ }
-  | VTypeFun { domain = _ ; codomain = CodDependent _ ; mode = _ }
-  | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ ; mode = _ } } -> true
+  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; alist = _ }
+  | VTypeFun { domain = _ ; codomain = CodDependent _ }
+  | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ } } -> true
 
 let is_any_symbolic (Any v) = is_symbolic v
 
@@ -261,10 +261,6 @@ and iequal : type a. a t -> a t -> bool X.t = fun x y ->
 and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t)
   (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
   let open X in
-  (* similar to dependent vs nondependent, a deterministic function type
-    is not equal to a nondeterministic function type, but it is not a shape
-    mismatch. *)
-  let= () = Funtype.equal_mode tf1.mode tf2.mode in
   let- () = iequal tf1.domain tf2.domain in
   iequal_cod tf1.codomain tf2.codomain
 
@@ -313,7 +309,6 @@ and iequal_closure bindings closure1 closure2 =
     (* trivially equal *)
     | Ast.EUnit, Ast.EUnit
     | EEmptyList, EEmptyList
-    | EPick_i, EPick_i
     | EAbstractType, EAbstractType
     | EType, EType
     | ETypeInt, ETypeInt

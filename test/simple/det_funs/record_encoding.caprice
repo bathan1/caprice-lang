@@ -3,7 +3,7 @@
 *)
 
 (* Encodes a record with two labels. *)
-let t = (x : `l of unit | `m of unit) -->
+let t = (x : `l of unit | `m of unit) ->
   match x with
   | `l _ -> int
   | `m _ -> bool

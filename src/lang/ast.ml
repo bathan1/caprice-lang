@@ -16,7 +16,6 @@ type t =
   | EListCons of { hd : t ; tl : t }
   | EModule of statement list
   | ENot of t
-  | EPick_i
   | EFunction of { param : Ident.t ; body : t }
   | EVariant of t Variant.t
   | EAssert of t
@@ -71,11 +70,9 @@ module Tools = struct
       EFunction { param ; body }
     ) params body
 
-  let default_fun_mode = Funtype.Det
-
   let mk_curried_funtype params codomain =
     List.fold_right (fun (_, domain) codomain ->
-      ETypeFun { domain ; codomain ; mode = default_fun_mode }
+      ETypeFun { domain ; codomain }
     ) params codomain
 
   let extract_param_names params =

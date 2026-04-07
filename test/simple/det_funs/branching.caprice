@@ -14,7 +14,7 @@
   We take the inefficient approach and solve to see what happens if they
   are equivalent rather than relax the constraints as needed.
 *)
-let _ : (int --> int) -> int -> int =
+let _ : (int -> int) -> int -> int =
   fun f x ->
     if f x <> 11 then
       1

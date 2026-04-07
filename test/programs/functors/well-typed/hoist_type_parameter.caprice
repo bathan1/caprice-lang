@@ -6,7 +6,7 @@
   Module type where the type t has a parameter.
 *)
 let S1 = sig
-  val t : type --> type
+  val t : type -> type
   val return : (type a) -> a -> t a
   val appl : (type a) -> t a -> (a -> a) -> t a
 end
@@ -15,7 +15,7 @@ end
   Module type that is itself parameterized.
   The type t has no parameter.
 *)
-let S0 = (type a) --> sig
+let S0 = (type a) -> sig
   val t : type
   val return : a -> t
   val appl : t -> (a -> a) -> t
@@ -39,8 +39,8 @@ let G : S0 -> S1 = fun M -> struct
   let appl a x f = (M a).appl x f
 end
 
-let NoOp : S1 --> S1 = fun M -> G (F M)
-let NoOp': S0 --> S0 = fun M -> F (G M)
+let NoOp : S1 -> S1 = fun M -> G (F M)
+let NoOp': S0 -> S0 = fun M -> F (G M)
 
 let Identity1 : S1 = struct
   let t a = a

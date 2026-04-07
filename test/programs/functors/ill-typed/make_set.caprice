@@ -4,7 +4,7 @@
 
 let F :
   (S : sig
-    val t : type --> type
+    val t : type -> type
     val empty : (type a) -> t a
     val add : (type a) -> a -> t a -> t a
     val map : (type a) -> (b : type) -> t a -> (a -> b) -> t b

@@ -2,4 +2,4 @@
   include exhaust;
 *)
 
-let _ : ((int -> int) --> int) --> (int --> int) --> int = fun f -> f
+let _ : ((int -> int) -> int) -> (int -> int) -> int = fun f -> f

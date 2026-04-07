@@ -3,7 +3,7 @@
 *)
 
 let MONAD = sig
-  val m : type --> type
+  val m : type -> type
   val return : (type a) -> a -> m a
   val bind : (type a b) -> m a -> (a -> m b) -> m b
   (* val map : (type a b) -> (a -> b) -> m a -> m b

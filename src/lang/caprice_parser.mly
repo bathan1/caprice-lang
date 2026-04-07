@@ -47,10 +47,8 @@
 %token LESS_EQUAL
 %token GREATER
 %token GREATER_EQUAL
-%token LONG_ARROW
 %token BOOL_KEYWORD
 %token BOTTOM_KEYWORD
-%token INPUT
 %token INT_KEYWORD
 %token MU
 %token OF
@@ -91,7 +89,7 @@
 %right DOUBLE_COLON           /* :: */
 %right prec_variant_pattern   /* variant destruction pattern */
 %left PLUS MINUS              /* + - */
-%right ARROW LONG_ARROW       /* -> for type declaration, and --> for deterministic */
+%right ARROW                  /* -> for type declaration */
 %left ASTERISK SLASH PERCENT  /* * / % */
 
 (* HACK: Precedence declarations to resolve (type a) -> t parsing.
@@ -209,22 +207,16 @@ expr:
 
 %inline function_type:
   (* regular function *)
-  | tdom=expr mode=type_arrow codomain=expr
-    { ETypeFun { domain = None, tdom ; codomain ; mode } }
+  | tdom=expr ARROW codomain=expr
+    { ETypeFun { domain = None, tdom ; codomain } }
   (* standard dependent function type *)
-  | OPEN_PAREN pair=typed_name CLOSE_PAREN mode=type_arrow codomain=expr
-    { ETypeFun { domain = Some (fst pair), snd pair ; codomain ; mode } }
-  | OPEN_PAREN TYPE type_ids=ident+ CLOSE_PAREN mode=type_arrow codomain=expr
+  | OPEN_PAREN pair=typed_name CLOSE_PAREN ARROW codomain=expr
+    { ETypeFun { domain = Some (fst pair), snd pair ; codomain } }
+  | OPEN_PAREN TYPE type_ids=ident+ CLOSE_PAREN ARROW codomain=expr
     { List.fold_right (fun type_id acc ->
-      ETypeFun { domain = Some type_id, EType ; codomain = acc ; mode }
+      ETypeFun { domain = Some type_id, EType ; codomain = acc }
       ) type_ids codomain }
   ;
-
-%inline type_arrow:
-  | ARROW
-    { Funtype.Det }  (* regular nondeterministic function arrow *)
-  | LONG_ARROW
-    { Funtype.Det } (* deterministic function arrow *)
 
 variant_type_body:
   | label=variant_label OF payload=expr
@@ -254,8 +246,6 @@ primary_expr:
     { EBool $1 }
   | ident_usage
     { $1 }
-  | INPUT
-    { EPick_i }
   | TYPE
     { EType }
   | INT_KEYWORD

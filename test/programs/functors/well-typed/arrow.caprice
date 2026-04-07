@@ -35,7 +35,7 @@
 *)
 
 let ARROW = sig
-  val t : type --> type --> type
+  val t : type -> type -> type
   val arr : (type a b) -> (a -> b) -> t a b
   val fst : (type a b d) -> t a b -> t (a * d) (b * d)
   val compose : (type a b c) -> t b c -> t a b -> t a c

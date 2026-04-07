@@ -47,7 +47,7 @@ let eval
       let* () = push_and_log_tag @@ Right reason in
       right
     in
-    let* l_opt = allow_inputs (read_input KTag input_env) in
+    let* l_opt = read_input KTag input_env in
     match l_opt with
     | Some Left reason' when reason = reason' -> run_left
     | Some Right reason' when reason = reason' -> run_right
@@ -170,10 +170,6 @@ let eval
       let* v = eval e in
       return_any (VTypeSingle v)
     (* symbolic values and branching *)
-    | EPick_i ->
-      let* step = step in
-      let* i = read_and_log_input KInt input_env ~default:(default_int ()) in
-      return_any (VInt (i, Stepkey.int_symbol step))
     | ENot e ->
       let* v = force_eval e in
       begin match v with
@@ -231,14 +227,14 @@ let eval
         ) (return Record.empty) t_record_body
       in
       return_any (VTypeRecord record_body)
-    | ETypeFun { domain = None, tau ; codomain ; mode } ->
+    | ETypeFun { domain = None, tau ; codomain } ->
       let* dom_t = eval_type tau in
       let* cod_t = eval_type codomain in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t ; mode })
-    | ETypeFun { domain = Some id, tau ; codomain ; mode } ->
+      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t })
+    | ETypeFun { domain = Some id, tau ; codomain } ->
       let* dom_t = eval_type tau in
       let* env = read in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) ; mode })
+      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) })
     | ETypeRefine { var ; tau ; predicate } ->
       let* tval = eval_type tau in
       let* env = read in
@@ -350,16 +346,13 @@ let eval
           Env.set fvar (Any self_fun) env
           |> Env.set param v_arg
         ) (eval captured)
-    | VGenFun { funtype = { domain = _ ; codomain ; mode = Nondet } ; _ } ->
-      let* cod_tval = eval_codomain codomain v_arg in
-      gen cod_tval
-    | VGenFun { funtype = { domain ; codomain ; mode = Det } ; alist ; _ } ->
-      let* mappings = read_cell SAlist (Option.get alist) in
+    | VGenFun { funtype = { domain ; codomain } ; alist ; _ } ->
+      let* mappings = read_cell SAlist alist in
       let rec loop = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
-          let* genned = allow_inputs (gen cod_tval) in
-          let* () = set_cell SAlist (Option.get alist) ((v_arg, genned) :: mappings) in
+          let* genned = gen cod_tval in
+          let* () = set_cell SAlist alist ((v_arg, genned) :: mappings) in
           return genned
         | (input, output) :: tl ->
           let* (b, s) = extensional_equal domain v_arg input in
@@ -486,55 +479,26 @@ let eval
     | VType ->
       let* v = force_value v in
       handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
-    | VTypeFun { domain ; codomain ; mode } ->
+    | VTypeFun { domain ; codomain } ->
       let* v = force_value v in
       begin match v with
       | Any (VFunClosure _ as vfun)
       | Any (VFunFix _ as vfun) ->
-        let* genned = allow_inputs (gen domain) in
-        let* res = local_mode mode (eval_appl vfun genned) in
+        let* genned = gen domain in
+        let* res = eval_appl vfun genned in
         let* cod_tval = eval_codomain codomain genned in
         check res cod_tval
-      | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' ; mode = mode' } ; _ } as v_candidate) ->
+      | Any (VGenFun { funtype = { domain = domain' ; codomain = codomain' } ; _ } as v_candidate) ->
         fork_on_left ~reason:CheckGenFun
           ~left:(domain <: domain')
           ~right:(
-            if Val.equal_fun_cod codomain codomain'
-              && Funtype.equal_mode mode mode' then confirm else
-            match mode' with
-            | Nondet ->
-              let* cod_tval, cod_tval' =
-                match codomain, codomain' with
-                | CodValue cod_tval, CodValue cod_tval' ->
-                  return (cod_tval, cod_tval')
-                | _ ->
-                  let* genned = allow_inputs (gen domain) in
-                  let* cod_tval = eval_codomain codomain genned in
-                  (*
-                    Since we can assume domain <: domain', it's possible
-                    that codomain' can misuse genned with respect to
-                    domain. We must therefore wrap genned with domain to
-                    check that codomain' does not misuse it.
-                  *)
-                  let* wrapped = wrap genned domain' in
-                  let* cod_tval' = eval_codomain codomain' wrapped in
-                  return (cod_tval, cod_tval')
-              in
-              begin match mode with
-              | Nondet -> cod_tval' <: cod_tval
-              | Det ->
-                (* inlining this until it's clear we can extract *)
-                (* it looks a lot like `cod_tval' <: cod_tval` but disallowing inputs. *)
-                let* genned = disallow_inputs (gen cod_tval') in
-                check genned cod_tval
-              end
-            | Det ->
-              let* v_arg = allow_inputs (gen domain) in
-              let* res = eval_appl v_candidate v_arg in
-              let* cod_tval = eval_codomain codomain v_arg in
-              check res cod_tval
+            if Val.equal_fun_cod codomain codomain' then confirm else
+            let* v_arg = gen domain in
+            let* res = eval_appl v_candidate v_arg in
+            let* cod_tval = eval_codomain codomain v_arg in
+            check res cod_tval
           )
-      | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' ; mode = mode' } } as self_fun) ->
+      | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' } } as self_fun) ->
         fork_on_left ~reason:CheckWrappedFun
           ~left:(domain <: domain')
           ~right:(
@@ -545,52 +509,26 @@ let eval
               We can skip the work on the right if the codomains are equal
                 because the wrapper means it has been checked.
             *)
-            if Val.equal_fun_cod codomain codomain'
-              && Funtype.equal_mode mode mode' then confirm else
+            if Val.equal_fun_cod codomain codomain' then confirm else
             (* TODO: remove this duplication with all the above cases
               (this is almost just the "right" side of checking functions but
               with wrapping the result in the wrapping codomain'). *)
             match data with
             | VFunClosure _
             | VFunFix _ ->
-              let* genned = allow_inputs (gen domain) in
+              let* genned = gen domain in
               let* cod_tval = eval_codomain codomain genned in
               let* wrapped = wrap genned domain' in
-              let* res = local_mode mode (eval_appl data ~self_fun genned) in
+              let* res = eval_appl data ~self_fun genned in
               let* cod_tval' = eval_codomain codomain' wrapped in
               let* w_res = wrap res cod_tval' in
               check w_res cod_tval
-            | VGenFun { funtype = { domain = _ ; codomain = codomain'' ; mode = Nondet } ; _ } ->
-              let* cod_tval, cod_tval', cod_tval'' =
-                match codomain, codomain', codomain'' with
-                | CodValue cod_tval, CodValue cod_tval', CodValue cod_tval'' ->
-                  return (cod_tval, cod_tval', cod_tval'')
-                | _ ->
-                  let* genned = allow_inputs (gen domain) in
-                  let* cod_tval = eval_codomain codomain genned in
-                  let* wrapped = wrap genned domain' in
-                  let* cod_tval' = eval_codomain codomain' wrapped in
-                  (*
-                    Since codomain'' has already been evaluated depending on any
-                    v in domain' wrapped with domain'', we know that codomain''
-                    does not misuse any value in domain'' with respect to the type
-                    domain'. Hence there is no need to wrap with domain' before
-                    evaluating codomain'' because it cannot possibly go wrong.
-                  *)
-                  let* cod_tval'' = eval_codomain codomain'' wrapped in
-                  return (cod_tval, cod_tval', cod_tval'')
-              in
-              if Funtype.equal_mode mode Nondet
-                && Val.equal cod_tval cod_tval'' then confirm else
-              let* genned = local_mode mode (gen cod_tval'') in
-              let* w = wrap genned cod_tval' in
-              check w cod_tval
-            | VGenFun { funtype = { domain = domain'' ; codomain = _ ; mode = Det } ; _ } ->
+            | VGenFun { funtype = { domain = domain'' ; codomain = _ } ; _ } ->
               fork_on_left ~reason:CheckGenFun
                 ~left:(domain <: domain'')
                 ~right:(
                   if Val.equal_fun_cod codomain codomain' then confirm else
-                  let* v_arg = allow_inputs (gen domain) in
+                  let* v_arg = gen domain in
                   let* w_arg = wrap v_arg domain' in
                   let* res = eval_appl data w_arg in
                   let* cod_tval = eval_codomain codomain v_arg in
@@ -663,11 +601,11 @@ let eval
         | LLazy LGenList _ ->
           check v t_body
         | LLazy LGenMu { var = var' ; closure = { captured = captured' ; env = env' } } ->
-          let* a = allow_inputs (gen VType) in (* fresh type to use as a stub *)
+          let* a = gen VType in (* fresh type to use as a stub *)
           let* t_body = local' (Env.set var a env) (eval_type captured) in
           let* t_body' = local' (Env.set var' a env') (eval_type captured') in
           if Val.equal t_body t_body' && wrapping_types = [] then confirm else
-          let* genned = allow_inputs (gen t_body') in
+          let* genned = gen t_body' in
           let* wrapped = wrap_multi wrapping_types genned in
           check wrapped t_body
         end
@@ -687,7 +625,7 @@ let eval
           tval_mu_body <: t
         | LLazy LGenList t' ->
           if wrapping_types = [] && Val.equal t' t_body then confirm else
-          let* genned = allow_inputs (gen t') in
+          let* genned = gen t' in
           (* genned is only a single element of the list, so wrap it
             by extracting the type bodies out of the list type *)
           let* wrapping_bodies =
@@ -765,7 +703,7 @@ let eval
       if Labels.Record.Set.subset t_labels v_labels then
         (* incr step because about to read an input *)
         let* () = incr_step ~max_step in
-        let* l_opt = allow_inputs (read_input KTag input_env) in
+        let* l_opt = read_input KTag input_env in
         match l_opt with
         | Some Label (id, Check) -> (check_label (Labels.Record.RecordLabel id))
         | Some _ -> raise bad_input_env
@@ -799,7 +737,7 @@ let eval
       if Val.equal t1 t2 then
         escape Confirmation
       else
-        let* genned = allow_inputs (gen t1) in
+        let* genned = gen t1 in
         check genned t2
 
   (*
@@ -826,12 +764,8 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
       let* Step nonce = step in
-      begin match funtype.mode with
-      | Nondet -> return_any (VGenFun { funtype ; nonce ; alist = None })
-      | Det ->
-        let* cell = make_alist in
-        return_any (VGenFun { funtype ; nonce ; alist = Some cell })
-      end
+      let* cell = make_alist in
+      return_any (VGenFun { funtype ; nonce ; alist = cell })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })
@@ -877,7 +811,6 @@ let eval
       end
     | VTypeList t ->
       if do_splay then
-        let* () = assert_inputs_allowed in
         let* l = make_lazy (LGenList t) in
         return_any l
       else
@@ -896,9 +829,6 @@ let eval
       end
     | VTypeMu { var ; closure } ->
       if do_splay then
-        (* Be overly cautious and assume that the generated value
-          will have several choices and hence uses an input. *)
-        let* () = assert_inputs_allowed in
         let* lgen = make_lazy (LGenMu { var ; closure }) in
         return_any lgen
       else
@@ -1230,11 +1160,6 @@ let eval
   (*
     Forces the value to weak head normal form and wraps
     with any lazily-done wrappings.
-
-    Since it is asserted that inputs are allowed when the
-    lazy value is made, we allow all inputs here. The inputs
-    here only realize any choices that could have been made
-    when the lazy value was first created.
   *)
   and resolve_lazy
     : 'env. Val.lazy_cell -> (Val.any, 'env) m
@@ -1245,7 +1170,6 @@ let eval
       match lazy_v with
       | LLazy lv ->
         let* genned =
-          allow_inputs @@
           match lv with
           | LGenMu { var ; closure } -> force_gen_mu var closure
           | LGenList t -> force_gen_list t
@@ -1284,7 +1208,7 @@ let eval
     | VTypePoly _
     | VTypeTop -> intensional_equal a b
     | VTypeBottom -> mismatch "Comparing values with type bottom"
-    | VTypeFun { domain ; codomain ; mode = _ } ->
+    | VTypeFun { domain ; codomain } ->
       let* v = gen domain in
       Val.handle_two a b (function
         | `Data (a, b) ->

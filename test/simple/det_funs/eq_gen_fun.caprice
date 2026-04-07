@@ -2,7 +2,7 @@
   include refute;
 *)
 
-let _ : ((int -> int) --> int) -> (int -> int) -> (int -> int) -> int =
+let _ : ((int -> int) -> int) -> (int -> int) -> (int -> int) -> int =
   fun f g h ->
     if f g == f h
     then 0

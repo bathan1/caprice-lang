@@ -31,7 +31,7 @@ let f (x : int) (y : bool) : int * bool =
   id Int x, id Bool y
 
 let Map = sig
-  val t : type --> type
+  val t : type -> type
   val map : (type a b) -> (a -> b) -> t a -> t b
 end
 
@@ -147,7 +147,7 @@ let should_be_principal (f : (M : Typ) -> (N : Typ) -> M.t * N.t) : Int.t * Int.
 
 (* Provided in PR description, not in the linked file *)
 let MONAD = sig
-  val m : type --> type
+  val m : type -> type
   val return : (type a) -> a -> m a
   val bind : (type a b) -> m a -> (a -> m b) -> m b
 end

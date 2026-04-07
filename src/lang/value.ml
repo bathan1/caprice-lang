@@ -28,7 +28,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VEmptyList : data t
     | VListCons : { hd : any ; tl : data t } -> data t
     (* generated values *)
-    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; alist : alist Suspension.t option } -> data t
+    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; alist : alist Suspension.t } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
     | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
@@ -181,16 +181,16 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       contains_mu v
     | VWrapped { data ; tau } ->
       contains_mu data || contains_mu (VTypeFun tau)
-    | VTypeFun { domain ; codomain = CodValue t ; mode = _ }
-    | VGenFun { funtype = { domain ; codomain = CodValue t ; mode = _  } ; nonce = _ ; alist = _ }->
+    | VTypeFun { domain ; codomain = CodValue t }
+    | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; alist = _ }->
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
     | VFunClosure _
     | VFunFix _
     | VTypeModule _
     | VLazy _
-    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ ; mode = _ } ; nonce = _ ; alist = _ }
-    | VTypeFun { domain = _ ; codomain = CodDependent _ ; mode = _ } -> true
+    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; alist = _ }
+    | VTypeFun { domain = _ ; codomain = CodDependent _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
 
@@ -263,11 +263,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       Printf.sprintf "(mu %s. <body>)" (Ident.to_string var)
     | VTypeList t ->
       Printf.sprintf "(list %s)" (to_string t)
-    | VTypeFun { domain ; codomain ; mode } ->
-      let s_arrow = match mode with Funtype.Nondet -> "->" | Det -> "-->" in
+    | VTypeFun { domain ; codomain } ->
       begin match codomain with
-      | CodValue cod_tval -> Printf.sprintf "%s %s %s" (to_string domain) s_arrow (to_string cod_tval)
-      | CodDependent (id, _closure) -> Printf.sprintf "(%s : %s) %s <codomain>" (Ident.to_string id) (to_string domain) s_arrow
+      | CodValue cod_tval -> Printf.sprintf "%s -> %s" (to_string domain) (to_string cod_tval)
+      | CodDependent (id, _closure) -> Printf.sprintf "(%s : %s) -> <codomain>" (Ident.to_string id) (to_string domain)
       end
     | VTypeRecord map_body ->
       if Labels.Record.Map.is_empty map_body then "{:}" else

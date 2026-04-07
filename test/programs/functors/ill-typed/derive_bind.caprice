@@ -3,7 +3,7 @@
 *)
 
 let BASIC = sig
-  val m : type --> type
+  val m : type -> type
   val map  : (type a b) -> m a -> (a -> b) -> m b
   val join : (type a) -> m (m a) -> m a
   val return : (type a) -> a -> m a

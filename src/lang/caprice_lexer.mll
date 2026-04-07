@@ -64,10 +64,8 @@ rule token = parse
 | "<="                 { LESS_EQUAL }
 | ">"                  { GREATER }
 | ">="                 { GREATER_EQUAL }
-| "-->"                { LONG_ARROW }
 | "bool"               { BOOL_KEYWORD }
 | "bottom"             { BOTTOM_KEYWORD }
-| "input"              { INPUT }
 | "int"                { INT_KEYWORD }
 | "mu"                 { MU }
 | "of"                 { OF }
