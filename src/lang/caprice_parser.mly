@@ -222,7 +222,7 @@ expr:
 
 %inline type_arrow:
   | ARROW
-    { Funtype.Nondet }  (* regular nondeterministic function arrow *)
+    { Funtype.Det }  (* regular nondeterministic function arrow *)
   | LONG_ARROW
     { Funtype.Det } (* deterministic function arrow *)
 

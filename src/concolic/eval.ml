@@ -353,7 +353,7 @@ let eval
     | VGenFun { funtype = { domain = _ ; codomain ; mode = Nondet } ; _ } ->
       let* cod_tval = eval_codomain codomain v_arg in
       gen cod_tval
-    | VGenFun { funtype = { domain = _ ; codomain ; mode = Det } ; alist ; _ } ->
+    | VGenFun { funtype = { domain ; codomain ; mode = Det } ; alist ; _ } ->
       let* mappings = read_cell SAlist (Option.get alist) in
       let rec loop = function
         | [] ->
@@ -362,16 +362,13 @@ let eval
           let* () = set_cell SAlist (Option.get alist) ((v_arg, genned) :: mappings) in
           return genned
         | (input, output) :: tl ->
-          begin match Val.intensional_equal v_arg input with
-          | Value (true, s) ->
+          let* (b, s) = extensional_equal domain v_arg input in
+          if b then
             let* () = push_formula_to_path s in
             return output
-          | Value (false, s) ->
+          else
             let* () = push_formula_to_path (Formula.not_ s) in
             loop tl
-          | ShapeMismatch ->
-            mismatch @@ shape_mismatch v_arg input
-          end
       in
       loop mappings
     | _ -> mismatch @@ apply_non_function (Any v_func)
@@ -1259,6 +1256,123 @@ let eval
         return v_any
     in
     wrap_multi wrapping_types v_any
+
+  and extensional_equal
+    : 'env. Val.tval -> Val.any -> Val.any -> (bool Cdata.t, 'env) m
+    = fun t a b ->
+    if Val.equal_any a b then return (true, Formula.const_bool true) else
+    let false_ = return (false, Formula.const_bool false) in
+    let ( let- ) x f =
+      let* (b, e) = x in
+      match e with
+      | Smt.Formula.Const_bool false -> x
+      | _ ->
+        let* (b', e') = f () in
+        return (b && b', Smt.Formula.and_ [ e ; e' ])
+    in
+    let intensional_equal x y =
+      begin match Val.intensional_equal x y with
+      | Value (b, e) -> return (b, e)
+      | ShapeMismatch -> false_
+      end
+    in
+    match t with
+    | VTypeUnit
+    | VTypeInt
+    | VTypeBool
+    | VTypePoly _
+    | VTypeTop -> intensional_equal a b
+    | VTypeBottom -> mismatch "Comparing values with type bottom"
+    | VTypeFun { domain ; codomain ; mode = _ } ->
+      let* v = gen domain in
+      Val.handle_two a b (function
+        | `Data (a, b) ->
+          (* FIXME: need to handle wrapping *)
+          let* v_a = eval_appl a v in
+          let* v_b = eval_appl a v in
+          let* cod = eval_codomain codomain v in
+          extensional_equal cod v_a v_b
+        | `Types _ | `Mismatch _ -> false_
+      )
+    | VTypeMu { var ; closure } ->
+      let* t_body = unroll_mu var closure in
+      extensional_equal t_body a b
+    | VTypeList t_body ->
+      let rec eq_lists x y =
+        match x, y with
+        | VListCons { hd = hd1 ; tl = tl1 }, VListCons { hd = hd2 ; tl = tl2 } ->
+          let- () = eq_lists tl1 tl2 in
+          extensional_equal t_body hd1 hd2
+        | _ -> false_
+      in
+      Val.handle_two a b (function
+        | `Data (a, b) -> eq_lists a b
+        | `Types _ | `Mismatch _ -> false_
+      )
+    | VTypeRecord m ->
+      begin match a, b with
+      | Any VRecord x, Any VRecord y ->
+        Record.fold (fun l t_body acc ->
+          let- () = acc in
+          match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
+          | Some u, Some v -> extensional_equal t_body u v
+          | _ -> mismatch "missing record label"
+        ) (return (true, Formula.const_bool true)) m
+      | _ -> false_
+      end
+    | VTypeModule { captured ; env } ->
+      begin match a, b with
+      | Any VModule x, Any VModule y ->
+        let rec loop = function
+          | [] -> return (true, Formula.const_bool true)
+          | (l, tau) :: tl ->
+            let* t_body = eval_type tau in
+            match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
+            | Some u, Some v ->
+              let- () = extensional_equal t_body u v in
+              local (Env.set (Labels.Record.to_ident l) (Any t_body)) (loop tl)
+            | _ -> mismatch "missing record label"
+        in
+        local' env (loop captured)
+      | _ -> false_
+      end
+    | VTypeVariant m ->
+      begin match a, b with
+      | Any VVariant va, Any VVariant vb ->
+        if Labels.Variant.equal va.label vb.label then
+          match Labels.Variant.Map.find_opt va.label m with
+          | Some t_body -> extensional_equal t_body va.payload vb.payload
+          | None -> mismatch "variant label not found"
+        else
+          false_
+      | _ -> false_
+      end
+    | VTypeRefine { tau ; predicate = _ } ->
+      extensional_equal tau a b
+    | VTypeTuple (t1, t2) ->
+      begin match a, b with
+      | Any VTuple (a1, a2), Any VTuple (b1, b2) ->
+        let- () = extensional_equal t1 a1 a2 in
+        extensional_equal t2 b1 b2
+      | _ -> false_
+      end
+    | VType ->
+      (* FIXME: do structural equality and then for modules,
+        we have to make tables like the functions *)
+      intensional_equal a b
+    | VTypeSingle Any x ->
+      handle x ~data:(fun _ ->
+        (* a and b should both be intensionally equal to x *)
+        intensional_equal a b
+      ) ~typeval:(fun t_body ->
+        (* a and b should both be the type t_body *)
+        handle_two a b (function
+          | `Types (x, y) ->
+            let* () = x <: y in
+            x <: y
+          | _ -> false_
+        )
+      )
 
   in
 

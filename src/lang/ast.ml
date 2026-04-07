@@ -71,7 +71,7 @@ module Tools = struct
       EFunction { param ; body }
     ) params body
 
-  let default_fun_mode = Funtype.Nondet
+  let default_fun_mode = Funtype.Det
 
   let mk_curried_funtype params codomain =
     List.fold_right (fun (_, domain) codomain ->
