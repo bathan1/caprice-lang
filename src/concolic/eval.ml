@@ -1186,7 +1186,6 @@ let eval
     = fun t a b ->
     (* if Val.equal_any a b then return (true, Formula.const_bool true) else *)
     if a == b then return (true, Formula.const_bool true) else
-    let false_ = return (false, Formula.const_bool false) in
     let ( let- ) x f =
       let* (b, e) = x in
       match e with
@@ -1198,7 +1197,7 @@ let eval
     let intensional_equal x y =
       begin match Val.intensional_equal x y with
       | Value (b, e) -> return (b, e)
-      | ShapeMismatch -> false_
+      | ShapeMismatch -> return Cdata.false_
       end
     in
     match t with
@@ -1216,7 +1215,7 @@ let eval
           let* v_b = eval_appl (Val.discard_wrapper b) v in
           let* cod = eval_codomain codomain v in
           extensional_equal cod v_a v_b
-        | `Types _ | `Mismatch _ -> false_
+        | `Types _ | `Mismatch _ -> return Cdata.false_
       )
     | VTypeMu { var ; closure } ->
       let* t_body = unroll_mu var closure in
@@ -1224,14 +1223,24 @@ let eval
     | VTypeList t_body ->
       let rec eq_lists x y =
         match x, y with
-        | VListCons { hd = hd1 ; tl = tl1 }, VListCons { hd = hd2 ; tl = tl2 } ->
-          let- () = eq_lists tl1 tl2 in
-          extensional_equal t_body hd1 hd2
-        | _ -> false_
+        | VListCons xs, VListCons ys ->
+          let- () = eq_lists xs.tl ys.tl in
+          extensional_equal t_body xs.hd ys.hd
+        | VEmptyList, VEmptyList -> return Cdata.true_
+        | VLazy xc, VLazy yc ->
+          if xc.cell = yc.cell then return Cdata.true_ else
+          (* FIXME: we should handle lazy everywhere, not just here *)
+          let* lx = read_cell SLazy xc.cell in
+          let* ly = read_cell SLazy yc.cell in
+          begin match lx, ly with
+          | LValue a, LValue b -> extensional_equal t a b
+          | _ -> return Cdata.false_ (* incomplete *)
+          end
+        | _ -> return Cdata.false_
       in
       Val.handle_two a b (function
         | `Data (a, b) -> eq_lists a b
-        | `Types _ | `Mismatch _ -> false_
+        | `Types _ | `Mismatch _ -> return Cdata.false_
       )
     | VTypeRecord m ->
       begin match a, b with
@@ -1241,14 +1250,14 @@ let eval
           match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
           | Some u, Some v -> extensional_equal t_body u v
           | _ -> mismatch "missing record label"
-        ) (return (true, Formula.const_bool true)) m
-      | _ -> false_
+        ) (return Cdata.true_) m
+      | _ -> return Cdata.false_
       end
     | VTypeModule { captured ; env } ->
       begin match a, b with
       | Any VModule x, Any VModule y ->
         let rec loop = function
-          | [] -> return (true, Formula.const_bool true)
+          | [] -> return Cdata.true_
           | (l, tau) :: tl ->
             let* t_body = eval_type tau in
             match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
@@ -1258,7 +1267,7 @@ let eval
             | _ -> mismatch "missing record label"
         in
         local' env (loop captured)
-      | _ -> false_
+      | _ -> return Cdata.false_
       end
     | VTypeVariant m ->
       begin match a, b with
@@ -1268,8 +1277,8 @@ let eval
           | Some t_body -> extensional_equal t_body va.payload vb.payload
           | None -> mismatch "variant label not found"
         else
-          false_
-      | _ -> false_
+          return Cdata.false_
+      | _ -> return Cdata.false_
       end
     | VTypeRefine { tau ; predicate = _ } ->
       extensional_equal tau a b
@@ -1278,7 +1287,7 @@ let eval
       | Any VTuple (a1, a2), Any VTuple (b1, b2) ->
         let- () = extensional_equal t1 a1 a2 in
         extensional_equal t2 b1 b2
-      | _ -> false_
+      | _ -> return Cdata.false_
       end
     | VType ->
       (* FIXME: do structural equality and then for modules,
@@ -1294,7 +1303,7 @@ let eval
           | `Types (x, y) ->
             let* () = x <: y in
             x <: y
-          | _ -> false_
+          | _ -> return Cdata.false_
         )
       )
 
