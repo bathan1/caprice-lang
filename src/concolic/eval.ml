@@ -494,8 +494,15 @@ let eval
           ~right:(
             if Val.equal_fun_cod codomain codomain' then confirm else
             let* v_arg = gen domain in
-            let* res = eval_appl v_candidate v_arg in
-            let* cod_tval = eval_codomain codomain v_arg in
+            (*
+              Since we can assume domain <: domain', it's possible
+              that codomain' can misuse genned with respect to
+              domain. We must therefore wrap genned with domain to
+              check that codomain' does not misuse it.
+            *)
+            let* w_arg = wrap v_arg domain' in
+            let* res = eval_appl v_candidate w_arg in
+            let* cod_tval = eval_codomain codomain w_arg in
             check res cod_tval
           )
       | Any (VWrapped { data ; tau = { domain = domain' ; codomain = codomain' } } as self_fun) ->
@@ -510,29 +517,34 @@ let eval
                 because the wrapper means it has been checked.
             *)
             if Val.equal_fun_cod codomain codomain' then confirm else
-            (* TODO: remove this duplication with all the above cases
-              (this is almost just the "right" side of checking functions but
-              with wrapping the result in the wrapping codomain'). *)
             match data with
             | VFunClosure _
             | VFunFix _ ->
-              let* genned = gen domain in
-              let* cod_tval = eval_codomain codomain genned in
-              let* wrapped = wrap genned domain' in
-              let* res = eval_appl data ~self_fun genned in
-              let* cod_tval' = eval_codomain codomain' wrapped in
+              let* v_arg = gen domain in
+              let* cod_tval = eval_codomain codomain v_arg in
+              let* w_arg = wrap v_arg domain' in
+              let* res = eval_appl data ~self_fun v_arg in
+              let* cod_tval' = eval_codomain codomain' w_arg in
               let* w_res = wrap res cod_tval' in
               check w_res cod_tval
-            | VGenFun { funtype = { domain = domain'' ; codomain = _ } ; _ } ->
+            | VGenFun { funtype = { domain = domain'' ; codomain = codomain'' } ; _ } ->
               fork_on_left ~reason:CheckGenFun
                 ~left:(domain <: domain'')
                 ~right:(
-                  if Val.equal_fun_cod codomain codomain' then confirm else
                   let* v_arg = gen domain in
                   let* w_arg = wrap v_arg domain' in
                   let* res = eval_appl data w_arg in
+                  (*
+                    Since codomain'' has already been evaluated depending on any
+                    v in domain' wrapped with domain'', we know that codomain''
+                    does not misuse any value in domain'' with respect to the type
+                    domain'. Hence there is no need to wrap with domain' before
+                    evaluating codomain'' because it cannot possibly go wrong.
+                  *)
+                  let* cod_tval'' = eval_codomain codomain'' w_arg in
+                  let* w = wrap res cod_tval'' in
                   let* cod_tval = eval_codomain codomain v_arg in
-                  check res cod_tval
+                  check w cod_tval
                 )
             | _ -> refute
           )
