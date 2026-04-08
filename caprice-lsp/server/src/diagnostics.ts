@@ -108,8 +108,8 @@ export class DiagnosticsManager {
       case 'unknown':
       case 'exhausted_pruned': {
         const key = rangeKey(msg.range);
-        if (msg.tag !== 'error' && this.byStmt.get(key)?.source === 'splay') break;
         this.invalidate(key, msg.range);
+        if (msg.tag === 'error') this.byStmt.delete(key + ':splay');
         const severity = toSeverity(msg.tag)!;
         const diagnostic: Diagnostic = {
           range: msg.range,
@@ -129,20 +129,19 @@ export class DiagnosticsManager {
 
       case 'splay_error': {
         const key = rangeKey(msg.range);
-        const entry = this.inFlight.get(key);
-        if (entry !== undefined) { clearTimeout(entry.timer); this.inFlight.delete(key); }
-        this.byStmt.set(key, {
+        this.byStmt.set(key + ':splay', {
           range: msg.range,
           message: msg.msg,
           severity: DiagnosticSeverity.Warning,
-          source: 'splay',
         });
         this.flush(uri);
         break;
       }
 
       case 'ok': {
-        this.invalidate(rangeKey(msg.range), msg.range);
+        const key = rangeKey(msg.range);
+        this.invalidate(key, msg.range);
+        this.byStmt.delete(key + ':splay');
         this.flush(uri);
         break;
       }

@@ -48,12 +48,13 @@ let ceval_many ~(options : Concolic.Options.t) pgms =
               M.begin_ceval ~print_outcome:false
                 ~options:{ options with splay = Splay_only } pgm
             in
-            (match splay_answer with
+            begin match splay_answer with
             | Grammar.Answer.Found_error msg ->
               let () = Print.print_splay_error span msg in
               Done (M.begin_ceval ~print_outcome:false
                 ~options:{ options with splay = Never_splay } pgm)
-            | answer -> Done answer)
+            | answer -> Done answer
+            end
           | _ ->
             Done (M.begin_ceval ~print_outcome:false ~options pgm) }
     ) pgms
