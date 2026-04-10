@@ -9,6 +9,49 @@ end
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
 type 'k simplifier = 'k solver -> 'k solver
 
+type int_bound = {
+  lower : int option;
+  upper : int option;
+  nots : int list;
+}
+
+let greater_than_eq = Formula.binop Greater_than_eq
+let greater_than = Formula.binop Greater_than
+
+let less_than_eq = Formula.binop Less_than_eq
+let less_than = Formula.binop Less_than
+
+let constraints_for_var x { lower; upper; nots } =
+  let base =
+    []
+    |> (fun acc ->
+      match lower with
+      | Some l -> greater_than_eq (Formula.symbol (I x)) (Formula.const_int l) :: acc
+      | None -> acc)
+    |> (fun acc ->
+      match upper with
+      | Some u -> less_than_eq (Formula.symbol (I x)) (Formula.const_int u) :: acc
+      | None -> acc)
+  in
+
+  let nots_formula =
+    nots
+    |> List.map (fun n ->
+      Formula.binop Not_equal (Formula.symbol (I x)) (Formula.const_int n)
+    )
+  in
+
+  base @ nots_formula
+
+let rebuild bounds_state rest =
+  bounds_state
+  |> List.concat_map (fun (x, b) -> constraints_for_var x b)
+  |> (function
+     | [] -> rest
+     | [f] -> f :: rest
+     | xs -> (xs @ rest))
+  |> Formula.and_
+
 let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   X.solve (Formula.transform (module X) e)
 
@@ -79,11 +122,6 @@ let rec propagate_constants : 'k simplifier = fun solve expr ->
   | _ ->
     solve expr
 
-type int_bound = {
-  lower : int option;
-  upper : int option;
-  nots : int list;
-}
 
 let append_neq 
   (uid : Uid.t)
@@ -158,10 +196,11 @@ let rec linearize : type k.
     None
 
 (** TODO: Port over `rewrite` + friends here. *)
-let bounds_rewrite : 'k simplifier = fun solve expr ->
+let rewrite_int_bounds : 'k simplifier = fun solve expr ->
   let rec loop_over 
     (bounds_state : (Uid.t * int_bound) list)
     (rest : (bool, 'k) Formula.t list) =
+    let next = loop_over bounds_state rest in
     function
     | Formula.Not (Formula.Binop (Binop.Equal, Const_int c, Key (I x)))
     | Not (Binop (Equal, Key (I x), Const_int c))
@@ -170,37 +209,21 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
       append_neq x c bounds_state, rest
     )
     | Binop (Less_than_eq, Const_int c1, rhs) -> 
-      loop_over bounds_state rest (
-        Formula.binop Greater_than_eq rhs (Formula.const_int c1)
-      )
+      greater_than_eq rhs (Formula.const_int c1) |> next
     | Binop (Less_than, Const_int c1, rhs) ->
-      loop_over bounds_state rest (
-        Formula.binop Greater_than rhs (Formula.const_int c1)
-      )
+      greater_than rhs (Formula.const_int c1) |> next
     | Binop (Greater_than_eq, Const_int c1, rhs) ->
-      loop_over bounds_state rest (
-        Formula.binop Less_than_eq rhs (Formula.const_int c1)
-      )
+      less_than_eq rhs (Formula.const_int c1) |> next
     | Binop (Greater_than, Const_int c1, rhs) ->
-      loop_over bounds_state rest (
-        Formula.binop Less_than rhs (Formula.const_int c1)
-      )
+      less_than rhs (Formula.const_int c1) |> next
     | Not (Binop (Less_than, a, b)) ->
-      loop_over bounds_state rest (
-        Formula.binop Greater_than_eq a b
-      )
+      greater_than_eq a b |> next
     | Not (Binop (Less_than_eq, a, b)) ->
-      loop_over bounds_state rest (
-        Formula.binop Greater_than a b
-      )
+      greater_than a b |> next
     | Not (Binop (Greater_than, a, b)) ->
-      loop_over bounds_state rest (
-        Formula.binop Less_than_eq a b
-      )
+      less_than_eq a b |> next
     | Not (Binop (Greater_than_eq, a, b)) ->
-      loop_over bounds_state rest (
-        Formula.binop Less_than a b
-      )
+      less_than a b |> next
     | Binop ((Less_than | Less_than_eq
       | Greater_than | Greater_than_eq) as op,
       lhs,
@@ -212,7 +235,8 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
           let bounds_state = (
             match op with
             | Less_than_eq -> (
-                update_bounds 
+                bounds_state
+                |> update_bounds 
                   x 
                   (fun b -> {
                     b with upper = Some (
@@ -221,10 +245,10 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
                       | Some u -> min u c
                     )
                   })
-                  bounds_state
               )
             | Less_than -> (
-                update_bounds
+                bounds_state
+                |> update_bounds
                   x
                   (fun b -> { 
                     b with upper = Some (
@@ -233,10 +257,10 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
                       | Some u -> min u (c - 1)
                     ) 
                   })
-                  bounds_state
               )
             | Greater_than_eq -> (
-                update_bounds 
+                bounds_state
+                |> update_bounds 
                   x 
                   (fun b -> {
                     b with lower = Some (
@@ -245,10 +269,10 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
                       | Some l -> max l c
                     )
                   })
-                  bounds_state
               )
             | Greater_than -> (
-                update_bounds
+                bounds_state
+                |> update_bounds
                   x
                   (fun b -> {
                     b with lower = Some (
@@ -257,7 +281,6 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
                       | Some l -> max l (c + 1)
                     )
                   })
-                  bounds_state
               )
             | _ -> bounds_state
           ) in (bounds_state, rest)
@@ -272,7 +295,9 @@ let bounds_rewrite : 'k simplifier = fun solve expr ->
       ) (bounds_state, rest)
     | f -> (bounds_state, f :: rest)
   in
-  solve expr
+  let bounds, rest = loop_over [] [] expr in 
+  rebuild bounds rest
+  |> solve
 
 (** TODO: Port over `bellman_ford` + friends here. *)
 let integer_difference : 'k simplifier = fun solve expr ->
@@ -295,7 +320,7 @@ let (@>) : 'k simplifier -> 'k simplifier -> 'k simplifier =
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
-  let pipeline = bounds_rewrite
+  let pipeline = rewrite_int_bounds
   @> propagate_constants
   @> integer_difference 
   in
