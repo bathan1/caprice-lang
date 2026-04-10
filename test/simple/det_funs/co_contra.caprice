@@ -1,0 +1,17 @@
+(* TEST
+  include refute;
+*)
+
+(*
+  This test comes from
+    Sound and Complete Concolic Testing for Higher-order Functions
+  by
+    Shu-Hung You, Robert Bruce Findler, and Christos Dimoulas
+
+  Figure 7
+*)
+
+let pgm (G : (int -> int) -> int) : int =
+  if G (fun x -> x + 1) + G (fun x -> x + 2) == 9
+  then assert false
+  else 11
