@@ -348,7 +348,7 @@ let eval
         ) (eval captured)
     | VGenFun { funtype = { domain ; codomain } ; alist ; _ } ->
       let* mappings = read_cell SAlist alist in
-      let rec loop = function
+      let rec loop i = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
@@ -366,15 +366,33 @@ let eval
           in
           return genned
         | (input, output) :: tl ->
+          (* HACK HACK HACK only compare the functions on the first i inputs
+              because that preserves deterministic behavior amongst repeated
+              calls. So save the witnesses, then truncate them down to only
+              the first i, and then set it back again. *)
+          let* tmp =
+            match domain with
+            | VTypeFun r ->
+              let tmp = r.witnesses in
+              r.witnesses <- List.take i r.witnesses;
+              return tmp
+            | _ -> return []
+          in
           let* (b, s) = extensional_equal domain v_arg input in
+          (* HACK HACK HACK setting it back *)
+          let () =
+            match domain with
+            | VTypeFun r -> r.witnesses <- tmp
+            | _ -> ()
+          in
           if b then
             let* () = push_formula_to_path s in
             return output
           else
             let* () = push_formula_to_path (Formula.not_ s) in
-            loop tl
+            loop (i + 1) tl
       in
-      loop mappings
+      loop 1 mappings
     | _ -> mismatch @@ apply_non_function (Any v_func)
 
   (*
