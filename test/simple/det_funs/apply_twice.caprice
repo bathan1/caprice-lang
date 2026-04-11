@@ -1,0 +1,29 @@
+(* TEST
+  include exhaust;
+*)
+
+(*
+  j and k should always be the same.
+  However, since f is already called with some other function
+  first that behaves like the zero function on some arguments,
+  we should not confuse the zero function with that first one.
+*)
+
+let pgm (f : (int -> int) -> int) : int =
+  let _ = f (fun x -> x) in
+  let j = f (fun y -> y * 0) in
+  let k = f (fun y -> 0 * y) in
+  if j == k
+  then 1
+  else assert false
+
+(*
+  Same deal but the first function is similar to the others on even more inputs.
+*)
+let pgm (f : (int -> int) -> int) : int =
+  let _ = f (fun x -> if x <= 100 then 0 else x) in
+  let j = f (fun y -> y * 0) in
+  let k = f (fun y -> 0 * y) in
+  if j == k
+  then 1
+  else assert false

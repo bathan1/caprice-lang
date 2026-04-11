@@ -230,11 +230,11 @@ let eval
     | ETypeFun { domain = None, tau ; codomain } ->
       let* dom_t = eval_type tau in
       let* cod_t = eval_type codomain in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t })
+      return_any (make_tfun { domain = dom_t ; codomain = CodValue cod_t })
     | ETypeFun { domain = Some id, tau ; codomain } ->
       let* dom_t = eval_type tau in
       let* env = read in
-      return_any (VTypeFun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) })
+      return_any (make_tfun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) })
     | ETypeRefine { var ; tau ; predicate } ->
       let* tval = eval_type tau in
       let* env = read in
@@ -353,6 +353,17 @@ let eval
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
           let* () = set_cell SAlist alist ((v_arg, genned) :: mappings) in
+          let* () =
+            begin match domain with
+            | VTypeFun ({ tfun ; _ } as r) ->
+              let* v = gen tfun.domain in
+              (* HACK HACK HACK. FIXME: This should be done in a nested way
+                and not with mutation because it could mess with forking. *)
+              r.witnesses <- v :: r.witnesses;
+              return ()
+            | _ -> return ()
+            end
+          in
           return genned
         | (input, output) :: tl ->
           let* (b, s) = extensional_equal domain v_arg input in
@@ -479,7 +490,7 @@ let eval
     | VType ->
       let* v = force_value v in
       handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
-    | VTypeFun { domain ; codomain } ->
+    | VTypeFun { tfun = { domain ; codomain } ; witnesses = _ } ->
       let* v = force_value v in
       begin match v with
       | Any (VFunClosure _ as vfun)
@@ -774,7 +785,7 @@ let eval
       let* step = step in
       let* b = read_and_log_input KBool input_env ~default:(default_bool ()) in
       return_any (VBool (b, Stepkey.bool_symbol step))
-    | VTypeFun funtype ->
+    | VTypeFun { tfun = funtype ; witnesses = _ } ->
       let* Step nonce = step in
       let* cell = make_alist in
       return_any (VGenFun { funtype ; nonce ; alist = cell })
@@ -965,7 +976,7 @@ let eval
       | _ -> (* ignore mismatches, and just do nothing *)
         return v
       end
-    | VTypeFun tfun ->
+    | VTypeFun { tfun ; witnesses = _ } ->
       begin match v with
       | Any VWrapped { data ; tau = _ } ->
         return_any (VWrapped { data ; tau = tfun })
@@ -1219,14 +1230,16 @@ let eval
     | VTypePoly _
     | VTypeTop -> intensional_equal a b
     | VTypeBottom -> mismatch "Comparing values with type bottom"
-    | VTypeFun { domain ; codomain } ->
-      let* v = gen domain in
+    | VTypeFun { tfun = { domain ; codomain } ; witnesses } ->
       Val.handle_two a b (function
         | `Data (a, b) ->
-          let* v_a = eval_appl (Val.discard_wrapper a) v in
-          let* v_b = eval_appl (Val.discard_wrapper b) v in
-          let* cod = eval_codomain codomain v in
-          extensional_equal cod v_a v_b
+          List.fold_left (fun acc v ->
+            let- () = acc in
+            let* v_a = eval_appl (Val.discard_wrapper a) v in
+            let* v_b = eval_appl (Val.discard_wrapper b) v in
+            let* cod = eval_codomain codomain v in
+            extensional_equal cod v_a v_b
+          ) (return Cdata.true_) witnesses
         | `Types _ | `Mismatch _ -> return Cdata.false_
       )
     | VTypeMu { var ; closure } ->

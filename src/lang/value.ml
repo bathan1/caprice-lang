@@ -43,7 +43,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeBool : typeval t
     | VTypeMu : { var : Ident.t ; closure : Ast.t closure } -> typeval t
     | VTypeList : typeval t -> typeval t
-    | VTypeFun : (typeval t, fun_cod) Funtype.t -> typeval t
+    | VTypeFun : { tfun : (typeval t, fun_cod) Funtype.t ; mutable witnesses : any list } -> typeval t (* HACK HACK HACK mutable *)
     | VTypeRecord : typeval t Record.t -> typeval t
     | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typeval t (* not eagerly evaluating first label *)
     | VTypeVariant : typeval t Labels.Variant.Map.t -> typeval t
@@ -141,6 +141,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VWrapped x -> x.data
     | x -> x
 
+  (* TODO: make this pretty. This is temporary *)
+  let make_tfun tfun = VTypeFun { tfun ; witnesses = [] }
+
   (*
     True if the value has any mu type in its representation.
     This is used to dodge recursion by default.
@@ -180,8 +183,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeSingle Any v ->
       contains_mu v
     | VWrapped { data ; tau } ->
-      contains_mu data || contains_mu (VTypeFun tau)
-    | VTypeFun { domain ; codomain = CodValue t }
+      contains_mu data || contains_mu (make_tfun tau)
+    | VTypeFun { tfun = { domain ; codomain = CodValue t } ; witnesses = _ }
     | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; alist = _ }->
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
@@ -190,7 +193,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeModule _
     | VLazy _
     | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; alist = _ }
-    | VTypeFun { domain = _ ; codomain = CodDependent _ } -> true
+    | VTypeFun { tfun = { domain = _ ; codomain = CodDependent _ } ; witnesses = _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
 
@@ -236,11 +239,11 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VListCons { hd ; tl } ->
       Printf.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
     | VGenFun { funtype ; nonce ; alist = _ } ->
-      Printf.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) nonce
+      Printf.sprintf "G(%s, %d)" (to_string (make_tfun funtype)) nonce
     | VGenPoly { id ; nonce } ->
       Printf.sprintf "G(poly id : %d, nonce : %d)" id nonce
     | VWrapped { data ; tau } ->
-      Printf.sprintf "W(%s, %s)" (to_string data) (to_string (VTypeFun tau))
+      Printf.sprintf "W(%s, %s)" (to_string data) (to_string (make_tfun tau))
     | VLazy { cell = _ ; wrapping_types } ->
       List.fold_right (fun t acc ->
         Printf.sprintf "W(%s, %s)" acc (to_string t)
@@ -263,7 +266,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       Printf.sprintf "(mu %s. <body>)" (Ident.to_string var)
     | VTypeList t ->
       Printf.sprintf "(list %s)" (to_string t)
-    | VTypeFun { domain ; codomain } ->
+    | VTypeFun { tfun = { domain ; codomain } ; witnesses = _ } ->
       begin match codomain with
       | CodValue cod_tval -> Printf.sprintf "%s -> %s" (to_string domain) (to_string cod_tval)
       | CodDependent (id, _closure) -> Printf.sprintf "(%s : %s) -> <codomain>" (Ident.to_string id) (to_string domain)

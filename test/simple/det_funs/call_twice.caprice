@@ -7,6 +7,13 @@
     Sound and Complete Concolic Testing for Higher-order Functions
   by
     Shu-Hung You, Robert Bruce Findler, and Christos Dimoulas
+  Figure 1
+
+  The idea is that the counterexample f needs to call its argument
+  twice in order to reach the assertion. Since (int -> bool) functions
+  only have two outcomes, when a third function is applied to f, a
+  single call can only distinguish it from the first or second functions,
+  not both.
 *)
 
 let equals a b = a == b

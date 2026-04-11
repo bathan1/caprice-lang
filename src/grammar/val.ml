@@ -44,7 +44,7 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
     is_symbolic t1 || is_symbolic t2
   | VTypeSingle Any v ->
     is_symbolic v
-  | VTypeFun { domain ; codomain = CodValue t }
+  | VTypeFun { tfun = { domain ; codomain = CodValue t } ; witnesses = _ }
   | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; alist = _ } ->
     is_symbolic domain || is_symbolic t
   | VWrapped { data ; tau = { domain ; codomain = CodValue t } } ->
@@ -57,7 +57,7 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VTypeMu _
   | VTypeRefine _
   | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; alist = _ }
-  | VTypeFun { domain = _ ; codomain = CodDependent _ }
+  | VTypeFun { tfun = { domain = _ ; codomain = CodDependent _ } ; witnesses = _ }
   | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ } } -> true
 
 let is_any_symbolic (Any v) = is_symbolic v
@@ -188,7 +188,8 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VTypeTuple (tl1, tr1), Any VTypeTuple (tl2, tr2) ->
     let- () = iequal tl1 tl2 in
     iequal tr1 tr2
-  | Any VTypeFun tf1, Any VTypeFun tf2 ->
+  | Any VTypeFun { tfun = tf1 ; witnesses = _ }
+  , Any VTypeFun { tfun = tf2 ; witnesses = _ } ->
     iequal_ftype tf1 tf2
   | Any VRecord m1, Any VRecord m2
   | Any VModule m1, Any VModule m2 ->

@@ -1,0 +1,19 @@
+(* TEST
+  include refute;
+*)
+
+(*
+  This test comes from
+    Sound and Complete Concolic Testing for Higher-order Functions
+  by
+    Shu-Hung You, Robert Bruce Findler, and Christos Dimoulas
+  Figure 5
+
+  It is very basic, but we take it for good measure.
+*)
+
+let f (F : int -> int) (X : int) : int =
+  if F X * 3 == F (X * 2) + 3 then
+    assert false (* ERROR: this is reachable *)
+  else
+    11
