@@ -1,0 +1,22 @@
+(* TEST
+  include refute;
+  speed = slow;
+*)
+
+let obj = mu t.
+  { get_a : unit -> int
+  ; set_a : unit -> int -> t
+  }
+
+let rec make a =
+  { get_a = fun _ -> a
+  ; set_a = fun _ a -> make a }
+
+let x1 = make 0
+let x2 = x1.set_a () 1
+let x3 = x1.set_a () 2
+
+let f (g : obj -> int) : unit =
+  let _ = assert (g x1 == g x1) in
+  let _ = assert (g x2 == g x2) in
+  assert (g x3 == g x2) (* ERROR! x2 <> x3, so this fails *)

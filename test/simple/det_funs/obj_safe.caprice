@@ -1,0 +1,26 @@
+(* TEST
+  include diverges;
+*)
+
+let obj = mu t.
+  { get_a : unit -> int
+  ; set_a : unit -> int -> t
+  }
+
+let rec make a =
+  { get_a = fun _ -> a
+  ; set_a = fun _ a -> make a }
+
+let x1 = make 0
+let x2 = x1.set_a () 1
+let x3 = x1.set_a () 2
+
+let _ : singleton 2 = x3.get_a ()
+
+let f (g : obj -> int) : unit =
+  let i = g x2 in
+  let j = g x3 in
+  let _ = assert (g x1 == g x1) in
+  let _ = assert (g x2 == i) in
+  assert (j == g x3)
+
