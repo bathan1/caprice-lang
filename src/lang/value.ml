@@ -28,7 +28,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VEmptyList : data t
     | VListCons : { hd : any ; tl : data t } -> data t
     (* generated values *)
-    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; alist : alist Suspension.t } -> data t
+    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; table : table Suspension.t } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
     | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
@@ -53,7 +53,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
   and 'a closure = { captured : 'a ; env : env }
 
-  and alist = (any * any) list
+  and table = (any * any) list
 
   and env = any Env.t
 
@@ -185,14 +185,14 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VWrapped { data ; tau } ->
       contains_mu data || contains_mu (make_tfun tau)
     | VTypeFun { tfun = { domain ; codomain = CodValue t } ; witnesses = _ }
-    | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; alist = _ }->
+    | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; table = _ }->
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
     | VFunClosure _
     | VFunFix _
     | VTypeModule _
     | VLazy _
-    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; alist = _ }
+    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; table = _ }
     | VTypeFun { tfun = { domain = _ ; codomain = CodDependent _ } ; witnesses = _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
@@ -238,7 +238,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       "[]"
     | VListCons { hd ; tl } ->
       Printf.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
-    | VGenFun { funtype ; nonce ; alist = _ } ->
+    | VGenFun { funtype ; nonce ; table = _ } ->
       Printf.sprintf "G(%s, %d)" (to_string (make_tfun funtype)) nonce
     | VGenPoly { id ; nonce } ->
       Printf.sprintf "G(poly id : %d, nonce : %d)" id nonce
@@ -277,8 +277,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       |> List.map (fun (label, tau) -> Printf.sprintf "%s : %s" (Labels.Record.to_string label) (to_string tau))
       |> String.concat " ; "
       |> Printf.sprintf "{ %s }"
-    | VTypeModule { captured = alist ; env = _ } ->
-      alist
+    | VTypeModule { captured = table ; env = _ } ->
+      table
       |> List.map (fun (label, _closure) -> Printf.sprintf "val %s" (Labels.Record.to_string label))
       |> String.concat " "
       |> Printf.sprintf "sig %s end"

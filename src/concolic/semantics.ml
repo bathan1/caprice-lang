@@ -10,7 +10,7 @@ module State = struct
     ; logged_inputs : Input_env.t
     ; runs : Logged_run.t list
     ; lazies : Val.vlazy Suspension.Map.t
-    ; detfun_alists : Val.alist Suspension.Map.t
+    ; tables : Val.table Suspension.Map.t
     }
 
   let empty : t =
@@ -18,7 +18,7 @@ module State = struct
     ; logged_inputs = Input_env.empty
     ; runs = []
     ; lazies = Suspension.Map.empty
-    ; detfun_alists = Suspension.Map.empty
+    ; tables = Suspension.Map.empty
     }
 end
 
@@ -217,7 +217,7 @@ let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
 
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind
-  | SAlist : Val.alist suspension_kind
+  | STable : Val.table suspension_kind
 
 let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
   fun kind susp ->
@@ -225,7 +225,7 @@ let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
     let map : a Suspension.Map.t =
       match kind with
       | SLazy -> s.lazies
-      | SAlist -> s.detfun_alists
+      | STable -> s.tables
     in
     return (Suspension.Map.find_exn susp map)
 
@@ -234,21 +234,21 @@ let set_cell : type a env. a suspension_kind -> a Suspension.t -> a -> (unit, en
     modify (fun (s : State.t) ->
       match kind with
       | SLazy -> { s with lazies = Suspension.Map.add susp v s.lazies}
-      | SAlist -> { s with detfun_alists = Suspension.Map.add susp v s.detfun_alists}
+      | STable -> { s with tables = Suspension.Map.add susp v s.tables}
     )
 
 (* Because of value restriction, we must inline this definition. We would prefer to write
       let* Step id = step in
       let susp = { Suspension.id } in
-      let* () = set_cell SAlist { id } [] in
+      let* () = set_cell STable { id } [] in
       return susp
 *)
-let make_alist : 'env. (Val.alist Suspension.t, 'env) m =
+let make_table : 'env. (Val.table Suspension.t, 'env) m =
   { run = fun ~reject:_ ~accept state step _ _ ->
     let Step id = step in
     let susp = { Suspension.id } in
-    accept susp { state with detfun_alists =
-      Suspension.Map.add susp [] state.detfun_alists } step
+    accept susp { state with tables =
+      Suspension.Map.add susp [] state.tables } step
   }
 
 let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->

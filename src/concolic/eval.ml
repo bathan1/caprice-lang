@@ -346,13 +346,13 @@ let eval
           Env.set fvar (Any self_fun) env
           |> Env.set param v_arg
         ) (eval captured)
-    | VGenFun { funtype = { domain ; codomain } ; alist ; _ } ->
-      let* mappings = read_cell SAlist alist in
+    | VGenFun { funtype = { domain ; codomain } ; table ; _ } ->
+      let* mappings = read_cell STable table in
       let rec loop i = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
-          let* () = set_cell SAlist alist ((v_arg, genned) :: mappings) in
+          let* () = set_cell STable table ((v_arg, genned) :: mappings) in
           let* () =
             begin match domain with
             | VTypeFun ({ tfun ; _ } as r) ->
@@ -805,8 +805,8 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun { tfun = funtype ; witnesses = _ } ->
       let* Step nonce = step in
-      let* cell = make_alist in
-      return_any (VGenFun { funtype ; nonce ; alist = cell })
+      let* cell = make_table in
+      return_any (VGenFun { funtype ; nonce ; table = cell })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })
