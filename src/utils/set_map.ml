@@ -19,6 +19,16 @@ module Make_W (K : Baby.OrderedType) = struct
 
     let random_binding_opt (m : 'a t) : (K.t * 'a) option =
       random_from_seq ~size:(cardinal m) (to_seq m)
+
+    let mapM (module M : Types.INDEXED_MONAD) (f :'a -> ('b, 'i) M.m)
+        (x : 'a t) : ('b t, 'i) M.m =
+      fold (fun k a s ->
+        M.bind s (fun acc ->
+          M.bind (f a) (fun b ->
+            M.return (add k b acc)
+          )
+        )
+      ) x (M.return empty)
   end
 
   module Set = struct

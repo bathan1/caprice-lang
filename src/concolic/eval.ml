@@ -39,24 +39,11 @@ let make_comparator
       let* witnesses = make_list_susp SWitness in
       return (CFun { tfun ; dom_c ; witnesses })
     | VTypeRecord m ->
-      let* c_rec =
-        (* TODO: create a Map.mapM function for this common pattern *)
-        Record.fold (fun l t acc_m ->
-          let* acc = acc_m in
-          let* c = mk t in
-          return (Labels.Record.Map.add l c acc)
-        ) (return Record.empty) m
-      in
+      let* c_rec = Labels.Record.Map.mapM (module Semantics) mk m in
       return (CRecord c_rec)
     | VTypeVariant m ->
-      let* c_rec =
-        Labels.Variant.Map.fold (fun l t acc_m ->
-          let* acc = acc_m in
-          let* c = mk t in
-          return (Labels.Variant.Map.add l c acc)
-        ) m (return Labels.Variant.Map.empty)
-      in
-      return (CVariant c_rec)
+      let* c_var = Labels.Variant.Map.mapM (module Semantics) mk m in
+      return (CVariant c_var)
     | VTypeRefine { var = _ ; tau ; predicate = _ } ->
       mk tau
     | VTypeTuple (t1, t2) ->
@@ -133,11 +120,7 @@ let eval
       return_any (VFunClosure { param ; closure = { captured = body ; env }})
     | ERecord e_record_body ->
       let* record_body =
-        Record.fold (fun l e acc_m ->
-          let* acc = acc_m in
-          let* v = eval e in
-          return (Labels.Record.Map.add l v acc)
-        ) (return Record.empty) e_record_body
+        Labels.Record.Map.mapM (module Semantics) eval e_record_body
       in
       return_any (VRecord record_body)
     | EModule stmt_ls ->
@@ -277,11 +260,7 @@ let eval
     | ETypeUnit -> return_any VTypeUnit
     | ETypeRecord t_record_body ->
       let* record_body =
-        Record.fold (fun l e acc_m ->
-          let* acc = acc_m in
-          let* tval = eval_type e in
-          return (Labels.Record.Map.add l tval acc)
-        ) (return Record.empty) t_record_body
+        Labels.Record.Map.mapM (module Semantics) eval_type t_record_body
       in
       return_any (VTypeRecord record_body)
     | ETypeFun { domain = None, tau ; codomain } ->
@@ -853,11 +832,7 @@ let eval
     | VTypeBottom -> escape Vanish
     | VTypeRecord record_t ->
       let* genned_body =
-        Record.fold (fun l t acc_m ->
-          let* acc = acc_m in
-          let* v = gen t in
-          return (Labels.Record.Map.add l v acc)
-        ) (return Record.empty) record_t
+        Labels.Record.Map.mapM (module Semantics) gen record_t
       in
       return_any (VRecord genned_body)
     | VTypeVariant variant_t ->
