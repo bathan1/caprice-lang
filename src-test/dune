@@ -30,6 +30,5 @@
   ; external
   alcotest
  )
- (action (run %{test} -q -e))
  (deps
   (source_tree ../test/)))

@@ -1,5 +1,7 @@
 .PHONY: test
 test:
-	dune test --no-buffer --force
+	dune exec src-test/main.exe --no-buffer --force -- -e -q
+test-slow:
+	dune exec src-test/main.exe --no-buffer --force -- -e
 clean:
 	dune clean
