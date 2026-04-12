@@ -348,7 +348,8 @@ let eval
         ) (eval captured)
     | VGenFun { funtype = { domain ; codomain } ; table ; _ } ->
       let* mappings = read_cell STable table in
-      let rec loop i = function
+      (* HACK HACK HACK n is a hack to trim witnesses in this prototype *)
+      let rec find_output n = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
@@ -374,7 +375,7 @@ let eval
             match domain with
             | VTypeFun r ->
               let tmp = r.witnesses in
-              r.witnesses <- List.take i r.witnesses;
+              r.witnesses <- List.drop n r.witnesses;
               return tmp
             | _ -> return []
           in
@@ -390,9 +391,9 @@ let eval
             return output
           else
             let* () = push_formula_to_path (Formula.not_ s) in
-            loop (i + 1) tl
+            find_output (n - 1) tl
       in
-      loop 1 mappings
+      find_output (List.length mappings - 1) (List.rev mappings)
     | _ -> mismatch @@ apply_non_function (Any v_func)
 
   (*

@@ -2,7 +2,7 @@
   include exhaust;
 *)
 
-let pgm (f : (int -> int) -> int) : int =
+let pgm (f : (int -> int) -> int) : unit =
   (* put an entry into f *)
   let _ = f (fun y -> y * 0) in
   (* This will look the same as the above on 1 input *)
@@ -16,6 +16,4 @@ let pgm (f : (int -> int) -> int) : int =
     for n entries is sufficient, but it's just challenging to get
     this right lazily. *)
   let k = f (fun x -> x) in
-  if j == k
-  then 1
-  else assert false
+  assert (j == k)
