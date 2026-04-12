@@ -1,0 +1,37 @@
+(* TEST
+  include refute;
+*)
+
+let t = mu t.
+  | `A of int -> t
+  | `B of bool
+
+let a =
+  let rec f y x =
+    if x < y then `B (x < 0) else `A (f (y + 1))
+  in
+  `A (f 0)
+
+(* similar but slightly different *)
+let b =
+  let rec f y x =
+    if x < y then `B (x < 0) else `A (f (y + 2))
+  in
+  `A (f 0)
+
+
+let f (g : t -> int) : unit =
+  let i = g a in
+  let j = g b in
+  assert (i == j) (* ERROR: g can tell that a and b are different, so this fails *)
+
+(* Here is a concrete counterexample that can fail the assertion in f *)
+let g t =
+  match t with
+  | `A f ->
+    match f (-1) with
+    | `B b -> if b then 0 else 1
+    | `A _ -> assume false
+    end
+  | `B _ -> assume false
+  end

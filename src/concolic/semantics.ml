@@ -11,6 +11,8 @@ module State = struct
     ; runs : Logged_run.t list
     ; lazies : Val.vlazy Suspension.Map.t
     ; tables : Val.table Suspension.Map.t
+    ; comps : Val.comp_mu Suspension.Map.t
+    ; witnesses : Val.witness list Suspension.Map.t
     }
 
   let empty : t =
@@ -19,6 +21,8 @@ module State = struct
     ; runs = []
     ; lazies = Suspension.Map.empty
     ; tables = Suspension.Map.empty
+    ; comps = Suspension.Map.empty
+    ; witnesses = Suspension.Map.empty
     }
 end
 
@@ -218,6 +222,8 @@ let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
 type 'a suspension_kind =
   | SLazy : Val.vlazy suspension_kind
   | STable : Val.table suspension_kind
+  | SComp_mu : Val.comp_mu suspension_kind
+  | SWitness : Val.witness list suspension_kind
 
 let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
   fun kind susp ->
@@ -226,6 +232,8 @@ let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
       match kind with
       | SLazy -> s.lazies
       | STable -> s.tables
+      | SComp_mu -> s.comps
+      | SWitness -> s.witnesses
     in
     return (Suspension.Map.find_exn susp map)
 
@@ -233,23 +241,28 @@ let set_cell : type a env. a suspension_kind -> a Suspension.t -> a -> (unit, en
   fun kind susp v ->
     modify (fun (s : State.t) ->
       match kind with
-      | SLazy -> { s with lazies = Suspension.Map.add susp v s.lazies}
-      | STable -> { s with tables = Suspension.Map.add susp v s.tables}
+      | SLazy -> { s with lazies = Suspension.Map.add susp v s.lazies }
+      | STable -> { s with tables = Suspension.Map.add susp v s.tables }
+      | SComp_mu -> { s with comps = Suspension.Map.add susp v s.comps }
+      | SWitness -> { s with witnesses = Suspension.Map.add susp v s.witnesses }
     )
 
-(* Because of value restriction, we must inline this definition. We would prefer to write
-      let* Step id = step in
-      let susp = { Suspension.id } in
-      let* () = set_cell STable { id } [] in
-      return susp
-*)
-let make_table : 'env. (Val.table Suspension.t, 'env) m =
-  { run = fun ~reject:_ ~accept state step _ _ ->
-    let Step id = step in
+let make_list_susp
+  : type a env. a list suspension_kind -> (a list Suspension.t, env) m
+  = fun kind ->
+  let* Step id = step in
+  let susp = { Suspension.id } in
+  let* () = set_cell kind { id } [] in
+  return susp
+
+let make_waiting_mu
+  : 'env. Ident.t -> Ast.t Val.closure -> (Val.comp_mu Suspension.t, 'env) m =
+  fun var closure ->
+    let* Step id = step in
+    let comp_mu = Val.Waiting { var ; closure } in
     let susp = { Suspension.id } in
-    accept susp { state with tables =
-      Suspension.Map.add susp [] state.tables } step
-  }
+    let* () = set_cell SComp_mu susp comp_mu in
+    return susp
 
 let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
   let* Step id = step in

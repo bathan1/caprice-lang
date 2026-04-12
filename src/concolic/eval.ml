@@ -11,6 +11,63 @@ let[@inline] return_any v = return (Any v)
 let bad_input_env =
   InvariantException "Input environment is ill-formed"
 
+let make_comparator
+  : 'env. max_step:Step.t -> Val.tval -> (Val.comparator, 'env) m
+  = fun ~max_step t ->
+  let rec mk = function
+    | VType
+    | VTypeUnit
+    | VTypeTop
+    | VTypeInt
+    | VTypeBool
+    | VTypePoly _
+    | VTypeModule _ -> return CAtomic
+    | VTypeSingle _ -> return CSingle
+    | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
+    | VTypeMu { var ; closure } ->
+      (* TODO: branch by possibly giving up *)
+      let* Step id = step in
+      let* () = incr_step ~max_step in
+      let* suspension = make_waiting_mu var closure in
+      return (CMu suspension)
+    | VTypeList t ->
+      let* c = mk t in
+      return (CList c)
+    | VTypeFun ({ domain ; codomain } as tfun) ->
+      let* dom_c = mk domain in
+      let* () = incr_step ~max_step in
+      let* witnesses = make_list_susp SWitness in
+      return (CFun { tfun ; dom_c ; witnesses })
+    | VTypeRecord m ->
+      let* c_rec =
+        (* TODO: create a Map.mapM function for this common pattern *)
+        Record.fold (fun l t acc_m ->
+          let* acc = acc_m in
+          let* c = mk t in
+          return (Labels.Record.Map.add l c acc)
+        ) (return Record.empty) m
+      in
+      return (CRecord c_rec)
+    | VTypeVariant m ->
+      let* c_rec =
+        Labels.Variant.Map.fold (fun l t acc_m ->
+          let* acc = acc_m in
+          let* c = mk t in
+          return (Labels.Variant.Map.add l c acc)
+        ) m (return Labels.Variant.Map.empty)
+      in
+      return (CVariant c_rec)
+    | VTypeRefine { var = _ ; tau ; predicate = _ } ->
+      mk tau
+    | VTypeTuple (t1, t2) ->
+      let* c1 = mk t1 in
+      let* c2 = mk t2 in
+      return (CTuple (c1, c2))
+  in
+  mk t
+
+
+
 open Grammar.Val.Error_messages
 
 (**
@@ -230,11 +287,12 @@ let eval
     | ETypeFun { domain = None, tau ; codomain } ->
       let* dom_t = eval_type tau in
       let* cod_t = eval_type codomain in
-      return_any (make_tfun { domain = dom_t ; codomain = CodValue cod_t })
+      return_any (VTypeFun { domain = dom_t ; codomain = CodValue cod_t })
     | ETypeFun { domain = Some id, tau ; codomain } ->
       let* dom_t = eval_type tau in
       let* env = read in
-      return_any (make_tfun { domain = dom_t ; codomain = CodDependent (id, { captured = codomain ; env }) })
+      return_any (VTypeFun { domain = dom_t
+        ; codomain = CodDependent (id, { captured = codomain ; env }) })
     | ETypeRefine { var ; tau ; predicate } ->
       let* tval = eval_type tau in
       let* env = read in
@@ -346,7 +404,7 @@ let eval
           Env.set fvar (Any self_fun) env
           |> Env.set param v_arg
         ) (eval captured)
-    | VGenFun { funtype = { domain ; codomain } ; table ; _ } ->
+    | VGenFun { funtype = { domain ; codomain } ; table ; dom_comp } ->
       let* mappings = read_cell STable table in
       (* HACK HACK HACK n is a hack to trim witnesses in this prototype *)
       let rec find_output n = function
@@ -354,38 +412,9 @@ let eval
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
           let* () = set_cell STable table ((v_arg, genned) :: mappings) in
-          let* () =
-            begin match domain with
-            | VTypeFun ({ tfun ; _ } as r) ->
-              let* v = gen tfun.domain in
-              (* HACK HACK HACK. FIXME: This should be done in a nested way
-                and not with mutation because it could mess with forking. *)
-              r.witnesses <- v :: r.witnesses;
-              return ()
-            | _ -> return ()
-            end
-          in
           return genned
         | (input, output) :: tl ->
-          (* HACK HACK HACK only compare the functions on the first i inputs
-              because that preserves deterministic behavior amongst repeated
-              calls. So save the witnesses, then truncate them down to only
-              the first i, and then set it back again. *)
-          let* tmp =
-            match domain with
-            | VTypeFun r ->
-              let tmp = r.witnesses in
-              r.witnesses <- List.drop n r.witnesses;
-              return tmp
-            | _ -> return []
-          in
-          let* (b, s) = extensional_equal domain v_arg input in
-          (* HACK HACK HACK setting it back *)
-          let () =
-            match domain with
-            | VTypeFun r -> r.witnesses <- tmp
-            | _ -> ()
-          in
+          let* (b, s) = extensional_equal n dom_comp v_arg input in
           if b then
             let* () = push_formula_to_path s in
             return output
@@ -509,7 +538,7 @@ let eval
     | VType ->
       let* v = force_value v in
       handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
-    | VTypeFun { tfun = { domain ; codomain } ; witnesses = _ } ->
+    | VTypeFun { domain ; codomain } ->
       let* v = force_value v in
       begin match v with
       | Any (VFunClosure _ as vfun)
@@ -804,10 +833,11 @@ let eval
       let* step = step in
       let* b = read_and_log_input KBool input_env ~default:(default_bool ()) in
       return_any (VBool (b, Stepkey.bool_symbol step))
-    | VTypeFun { tfun = funtype ; witnesses = _ } ->
+    | VTypeFun funtype ->
       let* Step nonce = step in
-      let* cell = make_table in
-      return_any (VGenFun { funtype ; nonce ; table = cell })
+      let* table = make_list_susp STable in
+      let* dom_comp = make_comparator ~max_step funtype.domain in
+      return_any (VGenFun { funtype ; nonce ; table ; dom_comp })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })
@@ -995,7 +1025,7 @@ let eval
       | _ -> (* ignore mismatches, and just do nothing *)
         return v
       end
-    | VTypeFun { tfun ; witnesses = _ } ->
+    | VTypeFun tfun ->
       begin match v with
       | Any VWrapped { data ; tau = _ } ->
         return_any (VWrapped { data ; tau = tfun })
@@ -1223,10 +1253,18 @@ let eval
     in
     wrap_multi wrapping_types v_any
 
+  (*
+    --------------------
+    EXTENSIONAL EQUALITY
+    --------------------
+
+    The integer argument is the number of witnesses to ignore for comparison.
+    If it is at least the number of existing witnesses, then a witness is
+    needed, so it is generated and added.
+  *)
   and extensional_equal
-    : 'env. Val.tval -> Val.any -> Val.any -> (bool Cdata.t, 'env) m
-    = fun t a b ->
-    (* if Val.equal_any a b then return (true, Formula.const_bool true) else *)
+    : 'env. int -> Val.comparator -> Val.any -> Val.any -> (bool Cdata.t, 'env) m
+    = fun n c a b ->
     if a == b then return (true, Formula.const_bool true) else
     let ( let- ) x f =
       let* (b, e) = x in
@@ -1242,34 +1280,53 @@ let eval
       | ShapeMismatch -> return Cdata.false_
       end
     in
-    match t with
-    | VTypeUnit
-    | VTypeInt
-    | VTypeBool
-    | VTypePoly _
-    | VTypeTop -> intensional_equal a b
-    | VTypeBottom -> mismatch "Comparing values with type bottom"
-    | VTypeFun { tfun = { domain ; codomain } ; witnesses } ->
+    match c with
+    | CSingle | CGiveUp -> return Cdata.true_
+    | CAtomic -> intensional_equal a b
+    | CFun { tfun = { domain ; codomain } ; dom_c ; witnesses } ->
+      let* original_wits = read_cell SWitness witnesses in
+      assert (n >= 0 && n <= List.length original_wits);
+      let* witnesses =
+        if n = List.length original_wits then
+          (* We're supposed to drop the entire list of witnesses. This means there
+            are not enough witnesses for this comparison, so make another *)
+          let* witness = gen domain in
+          let* cod_tval = eval_codomain codomain witness in
+          let* cod = make_comparator ~max_step cod_tval in
+          let ls = { witness ; cod } :: original_wits in
+          let* () = set_cell SWitness witnesses ls in
+          return ls
+        else
+          return original_wits
+      in
       Val.handle_two a b (function
         | `Data (a, b) ->
-          List.fold_left (fun acc v ->
+          List.fold_left (fun acc { witness ; cod } ->
             let- () = acc in
-            let* v_a = eval_appl (Val.discard_wrapper a) v in
-            let* v_b = eval_appl (Val.discard_wrapper b) v in
-            let* cod = eval_codomain codomain v in
-            extensional_equal cod v_a v_b
-          ) (return Cdata.true_) witnesses
+            let* v_a = eval_appl (Val.discard_wrapper a) witness in
+            let* v_b = eval_appl (Val.discard_wrapper b) witness in
+            extensional_equal n cod v_a v_b
+          ) (return Cdata.true_) (List.drop n witnesses)
         | `Types _ | `Mismatch _ -> return Cdata.false_
       )
-    | VTypeMu { var ; closure } ->
-      let* t_body = unroll_mu var closure in
-      extensional_equal t_body a b
-    | VTypeList t_body ->
+    | CMu suspension ->
+      let* mu = read_cell SComp_mu suspension in
+      let* comp =
+        match mu with
+        | Waiting { var ; closure } ->
+          let* t_body = unroll_mu var closure in
+          let* comp = make_comparator ~max_step t_body in
+          let* () = set_cell SComp_mu suspension (Unrolled comp) in
+          return comp
+        | Unrolled comp -> return comp
+      in
+      extensional_equal n comp a b
+    | CList c_body ->
       let rec eq_lists x y =
         match x, y with
         | VListCons xs, VListCons ys ->
           let- () = eq_lists xs.tl ys.tl in
-          extensional_equal t_body xs.hd ys.hd
+          extensional_equal n c_body xs.hd ys.hd
         | VEmptyList, VEmptyList -> return Cdata.true_
         | VLazy xc, VLazy yc ->
           if xc.cell = yc.cell then return Cdata.true_ else
@@ -1277,7 +1334,7 @@ let eval
           let* lx = read_cell SLazy xc.cell in
           let* ly = read_cell SLazy yc.cell in
           begin match lx, ly with
-          | LValue a, LValue b -> extensional_equal t a b
+          | LValue a, LValue b -> extensional_equal n c a b
           | _ -> return Cdata.false_ (* incomplete *)
           end
         | _ -> return Cdata.false_
@@ -1286,18 +1343,18 @@ let eval
         | `Data (a, b) -> eq_lists a b
         | `Types _ | `Mismatch _ -> return Cdata.false_
       )
-    | VTypeRecord m ->
+    | CRecord m ->
       begin match a, b with
       | Any VRecord x, Any VRecord y ->
-        Record.fold (fun l t_body acc ->
+        Record.fold (fun l c_body acc ->
           let- () = acc in
           match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
-          | Some u, Some v -> extensional_equal t_body u v
+          | Some u, Some v -> extensional_equal n c_body u v
           | _ -> mismatch "missing record label"
         ) (return Cdata.true_) m
       | _ -> return Cdata.false_
       end
-    | VTypeModule { captured ; env } ->
+    (* | VTypeModule { captured ; env } ->
       begin match a, b with
       | Any VModule x, Any VModule y ->
         let rec loop = function
@@ -1306,51 +1363,31 @@ let eval
             let* t_body = eval_type tau in
             match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
             | Some u, Some v ->
-              let- () = extensional_equal t_body u v in
+              let- () = extensional_equal n t_body u v in
               local (Env.set (Labels.Record.to_ident l) (Any t_body)) (loop tl)
             | _ -> mismatch "missing record label"
         in
         local' env (loop captured)
       | _ -> return Cdata.false_
-      end
-    | VTypeVariant m ->
+      end *)
+    | CVariant m ->
       begin match a, b with
       | Any VVariant va, Any VVariant vb ->
         if Labels.Variant.equal va.label vb.label then
           match Labels.Variant.Map.find_opt va.label m with
-          | Some t_body -> extensional_equal t_body va.payload vb.payload
+          | Some c_body -> extensional_equal n c_body va.payload vb.payload
           | None -> mismatch "variant label not found"
         else
           return Cdata.false_
       | _ -> return Cdata.false_
       end
-    | VTypeRefine { tau ; predicate = _ } ->
-      extensional_equal tau a b
-    | VTypeTuple (t1, t2) ->
+    | CTuple (c1, c2) ->
       begin match a, b with
       | Any VTuple (a1, a2), Any VTuple (b1, b2) ->
-        let- () = extensional_equal t1 a1 a2 in
-        extensional_equal t2 b1 b2
+        let- () = extensional_equal n c1 a1 a2 in
+        extensional_equal n c2 b1 b2
       | _ -> return Cdata.false_
       end
-    | VType ->
-      (* FIXME: do structural equality and then for modules,
-        we have to make tables like the functions *)
-      intensional_equal a b
-    | VTypeSingle Any x ->
-      handle x ~data:(fun _ ->
-        (* a and b should both be intensionally equal to x *)
-        intensional_equal a b
-      ) ~typeval:(fun t_body ->
-        (* a and b should both be the type t_body *)
-        handle_two a b (function
-          | `Types (x, y) ->
-            let* () = x <: y in
-            x <: y
-          | _ -> return Cdata.false_
-        )
-      )
-
   in
 
   let result, state = run (eval_statement_list pgm) target in

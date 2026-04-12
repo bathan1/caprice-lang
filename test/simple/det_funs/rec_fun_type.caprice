@@ -1,0 +1,32 @@
+(* TEST
+  include diverges;
+*)
+
+let t = mu t.
+  | `A of int -> t
+  | `B of bool
+
+let a =
+  let rec f y x =
+    if x < y then `B (x < 0) else `A (f (y + 1))
+  in
+  `A (f 0)
+
+(* similar but slightly different *)
+let b =
+  let rec f y x =
+    if x < y then `B (x < 0) else `A (f (y + 2))
+  in
+  `A (f 0)
+
+let f (g : t -> int) : unit =
+  let _ = g b in (* distraction! We need to memoize the witnesses inside recursive types. *)
+  let i = g a in
+  let j = g a in
+  assert (i == j)
+
+let f' (g : t -> int) : unit =
+  let i = g a in
+  let _ = g b in (* distraction! We need to memoize the witnesses inside recursive types. *)
+  let j = g a in
+  assert (i == j)

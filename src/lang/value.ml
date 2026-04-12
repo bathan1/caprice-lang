@@ -24,15 +24,16 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VRecord : any Record.t -> data t
     | VModule : any Record.t -> data t
     | VTuple : any * any -> data t
-    | VFunFix : { fvar : Ident.t ; param : Ident.t ; closure : Ast.t closure } -> data t (* no mutual recursion yet *)
+    | VFunFix : { fvar : Ident.t ; param : Ident.t ; closure : Ast.t closure } -> data t
     | VEmptyList : data t
     | VListCons : { hd : any ; tl : data t } -> data t
     (* generated values *)
-    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int ; table : table Suspension.t } -> data t
+    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int
+      ; table : table Suspension.t ; dom_comp : comparator } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
     | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
-    | VWrapped : { data : data t ; tau : (typeval t, fun_cod) Funtype.t }  -> data t
+    | VWrapped : { data : data t ; tau : (typeval t, fun_cod) Funtype.t } -> data t
     (* type values only *)
     | VType : typeval t
     | VTypePoly : { id : int } -> typeval t
@@ -43,9 +44,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeBool : typeval t
     | VTypeMu : { var : Ident.t ; closure : Ast.t closure } -> typeval t
     | VTypeList : typeval t -> typeval t
-    | VTypeFun : { tfun : (typeval t, fun_cod) Funtype.t ; mutable witnesses : any list } -> typeval t (* HACK HACK HACK mutable *)
+    | VTypeFun : (typeval t, fun_cod) Funtype.t -> typeval t
     | VTypeRecord : typeval t Record.t -> typeval t
-    | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typeval t (* not eagerly evaluating first label *)
+    | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typeval t
     | VTypeVariant : typeval t Labels.Variant.Map.t -> typeval t
     | VTypeRefine : (typeval t, Ast.t closure) Refinement.t -> typeval t
     | VTypeTuple : typeval t * typeval t -> typeval t
@@ -78,6 +79,28 @@ module Make (Atom_cell : Utils.Types.P1) = struct
   and vlazy =
     | LLazy of lgen
     | LValue of any
+
+  and witness = { witness : any ; cod : comparator }
+
+  and comparator =
+    | CGiveUp
+    | CAtomic (* signals to just use structural comparison because not nested *)
+    (* | CPoly of { id : int } *) (* poly is atomic, right? *)
+    | CMu of comp_mu Suspension.t
+    | CList of comparator
+    | CFun of { tfun : (typeval t, fun_cod) Funtype.t ; dom_c : comparator
+              ; witnesses : witness list Suspension.t }
+    | CRecord of comparator Record.t
+    (* The comparator could be specialized to a certain module value, much like
+      the codomain of a function. This is a TODO. *)
+    (* | CModule of (Labels.Record.t * Ast.t) list closure *)
+    | CVariant of comparator Labels.Variant.Map.t
+    | CTuple of comparator * comparator
+    | CSingle (* Same behavior as giving up! We know they must be equal already *)
+
+  and comp_mu =
+    | Unrolled of comparator
+    | Waiting of { var : Ident.t ; closure : Ast.t closure }
 
   module Env = Env.Make (struct type t = any end)
 
@@ -141,9 +164,6 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VWrapped x -> x.data
     | x -> x
 
-  (* TODO: make this pretty. This is temporary *)
-  let make_tfun tfun = VTypeFun { tfun ; witnesses = [] }
-
   (*
     True if the value has any mu type in its representation.
     This is used to dodge recursion by default.
@@ -183,8 +203,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeSingle Any v ->
       contains_mu v
     | VWrapped { data ; tau } ->
-      contains_mu data || contains_mu (make_tfun tau)
-    | VTypeFun { tfun = { domain ; codomain = CodValue t } ; witnesses = _ }
+      contains_mu data || contains_mu (VTypeFun tau)
+    | VTypeFun { domain ; codomain = CodValue t }
     | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; table = _ }->
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
@@ -193,7 +213,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeModule _
     | VLazy _
     | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; table = _ }
-    | VTypeFun { tfun = { domain = _ ; codomain = CodDependent _ } ; witnesses = _ } -> true
+    | VTypeFun { domain = _ ; codomain = CodDependent _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
 
@@ -239,11 +259,11 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VListCons { hd ; tl } ->
       Printf.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
     | VGenFun { funtype ; nonce ; table = _ } ->
-      Printf.sprintf "G(%s, %d)" (to_string (make_tfun funtype)) nonce
+      Printf.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) nonce
     | VGenPoly { id ; nonce } ->
       Printf.sprintf "G(poly id : %d, nonce : %d)" id nonce
     | VWrapped { data ; tau } ->
-      Printf.sprintf "W(%s, %s)" (to_string data) (to_string (make_tfun tau))
+      Printf.sprintf "W(%s, %s)" (to_string data) (to_string (VTypeFun tau))
     | VLazy { cell = _ ; wrapping_types } ->
       List.fold_right (fun t acc ->
         Printf.sprintf "W(%s, %s)" acc (to_string t)
@@ -266,7 +286,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       Printf.sprintf "(mu %s. <body>)" (Ident.to_string var)
     | VTypeList t ->
       Printf.sprintf "(list %s)" (to_string t)
-    | VTypeFun { tfun = { domain ; codomain } ; witnesses = _ } ->
+    | VTypeFun { domain ; codomain } ->
       begin match codomain with
       | CodValue cod_tval -> Printf.sprintf "%s -> %s" (to_string domain) (to_string cod_tval)
       | CodDependent (id, _closure) -> Printf.sprintf "(%s : %s) -> <codomain>" (Ident.to_string id) (to_string domain)

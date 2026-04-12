@@ -1,0 +1,25 @@
+(* TEST
+  include refute;
+  speed = slow;
+*)
+
+(* infinite producer of ints, given an int *)
+let t = mu t. int -> int * t
+
+let x =
+  let rec x j i =
+    i*j, x (j + 1)
+  in
+  x 0
+
+let y =
+  let rec y j i =
+    i*j, y (j + 2)
+  in
+  y 0
+
+let f (g : t -> int) : unit =
+  let _ = g x in
+  let a = g x in
+  let b = g y in
+  assert (a == b) (* ERROR: x <> y so a <> b *)
