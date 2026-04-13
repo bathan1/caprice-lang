@@ -28,7 +28,7 @@ let make_comparator
       (* TODO: branch by possibly giving up *)
       let* Step id = step in
       let* () = incr_step ~max_step in
-      let* suspension = make_waiting_mu var closure in
+      let* suspension = new_mu_cell var closure in
       return (CMu suspension)
     | VTypeList t ->
       let* c = mk t in
@@ -36,7 +36,7 @@ let make_comparator
     | VTypeFun ({ domain ; codomain } as tfun) ->
       let* dom_c = mk domain in
       let* () = incr_step ~max_step in
-      let* witnesses = make_list_susp SWitness in
+      let* witnesses = new_list_cell SWitness in
       return (CFun { tfun ; dom_c ; witnesses })
     | VTypeRecord m ->
       let* c_rec = Labels.Record.Map.mapM (module Semantics) mk m in
@@ -195,7 +195,7 @@ let eval
       | Any (VEmptyList as tl)
       | Any (VListCons _ as tl) -> cons_with_hd tl
       | Any (VLazy { cell ; _ } as tl) ->
-        let* v_lazy = read_cell SLazy cell in
+        let* v_lazy = get_cell SLazy cell in
         begin match v_lazy with
         | LLazy LGenList _
         | LValue Any VEmptyList
@@ -384,7 +384,7 @@ let eval
           |> Env.set param v_arg
         ) (eval captured)
     | VGenFun { funtype = { domain ; codomain } ; table ; dom_comp } ->
-      let* mappings = read_cell STable table in
+      let* mappings = get_cell STable table in
       (* HACK HACK HACK n is a hack to trim witnesses in this prototype *)
       let rec find_output n = function
         | [] ->
@@ -644,7 +644,7 @@ let eval
       let* t_body = unroll_mu var closure in
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
-        let* lazy_v = read_cell SLazy cell in
+        let* lazy_v = get_cell SLazy cell in
         begin match lazy_v with
         | LValue any_v ->
           check any_v t
@@ -664,7 +664,7 @@ let eval
     | VTypeList t_body -> (* don't force v *)
       begin match v with
       | Any VLazy { cell ; wrapping_types } ->
-        let* lazy_v = read_cell SLazy cell in
+        let* lazy_v = get_cell SLazy cell in
         begin match lazy_v with
         | LValue any_v ->
           let* wrapped = wrap_multi wrapping_types any_v in
@@ -814,7 +814,7 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
       let* Step nonce = step in
-      let* table = make_list_susp STable in
+      let* table = new_list_cell STable in
       let* dom_comp = make_comparator ~max_step funtype.domain in
       return_any (VGenFun { funtype ; nonce ; table ; dom_comp })
     | VType ->
@@ -858,7 +858,7 @@ let eval
       end
     | VTypeList t ->
       if do_splay then
-        let* l = make_lazy (LGenList t) in
+        let* l = new_lazy_cell (LGenList t) in
         return_any l
       else
         force_gen_list t
@@ -876,7 +876,7 @@ let eval
       end
     | VTypeMu { var ; closure } ->
       if do_splay then
-        let* lgen = make_lazy (LGenMu { var ; closure }) in
+        let* lgen = new_lazy_cell (LGenMu { var ; closure }) in
         return_any lgen
       else
         force_gen_mu var closure
@@ -1213,7 +1213,7 @@ let eval
     = fun { cell ; wrapping_types } ->
     assert do_splay;
     let* v_any =
-      let* lazy_v = read_cell SLazy cell in
+      let* lazy_v = get_cell SLazy cell in
       match lazy_v with
       | LLazy lv ->
         let* genned =
@@ -1259,7 +1259,7 @@ let eval
     | CSingle | CGiveUp -> return Cdata.true_
     | CAtomic -> intensional_equal a b
     | CFun { tfun = { domain ; codomain } ; dom_c ; witnesses } ->
-      let* original_wits = read_cell SWitness witnesses in
+      let* original_wits = get_cell SWitness witnesses in
       assert (n >= 0 && n <= List.length original_wits);
       let* witnesses =
         if n = List.length original_wits then
@@ -1285,7 +1285,7 @@ let eval
         | `Types _ | `Mismatch _ -> return Cdata.false_
       )
     | CMu suspension ->
-      let* mu = read_cell SComp_mu suspension in
+      let* mu = get_cell SComp_mu suspension in
       let* comp =
         match mu with
         | Waiting { var ; closure } ->
@@ -1306,8 +1306,8 @@ let eval
         | VLazy xc, VLazy yc ->
           if xc.cell = yc.cell then return Cdata.true_ else
           (* FIXME: we should handle lazy everywhere, not just here *)
-          let* lx = read_cell SLazy xc.cell in
-          let* ly = read_cell SLazy yc.cell in
+          let* lx = get_cell SLazy xc.cell in
+          let* ly = get_cell SLazy yc.cell in
           begin match lx, ly with
           | LValue a, LValue b -> extensional_equal n c a b
           | _ -> return Cdata.false_ (* incomplete *)

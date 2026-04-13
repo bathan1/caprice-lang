@@ -9,20 +9,14 @@ module State = struct
     { rev_stem : Rev_stem.t (* we will cons to the path instead of union a log *)
     ; logged_inputs : Input_env.t
     ; runs : Logged_run.t list
-    ; lazies : Val.vlazy Suspension.Map.t
-    ; tables : Val.table Suspension.Map.t
-    ; comps : Val.comp_mu Suspension.Map.t
-    ; witnesses : Val.witness list Suspension.Map.t
+    ; cells : Cell.Map.t
     }
 
   let empty : t =
     { rev_stem = Rev_stem.empty
     ; logged_inputs = Input_env.empty
     ; runs = []
-    ; lazies = Suspension.Map.empty
-    ; tables = Suspension.Map.empty
-    ; comps = Suspension.Map.empty
-    ; witnesses = Suspension.Map.empty
+    ; cells = Cell.Map.empty
     }
 end
 
@@ -219,55 +213,40 @@ let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
       end
     )
 
-type 'a suspension_kind =
-  | SLazy : Val.vlazy suspension_kind
-  | STable : Val.table suspension_kind
-  | SComp_mu : Val.comp_mu suspension_kind
-  | SWitness : Val.witness list suspension_kind
+let get_cell
+  : type a env. a Cell.kind -> a Suspension.t -> (a, env) m
+  = fun kind susp ->
+  let* (s : State.t) = get in
+  return (Cell.get (kind, susp) s.cells)
 
-let read_cell : type a env. a suspension_kind -> a Suspension.t -> (a, env) m =
-  fun kind susp ->
-    let* (s : State.t) = get in
-    let map : a Suspension.Map.t =
-      match kind with
-      | SLazy -> s.lazies
-      | STable -> s.tables
-      | SComp_mu -> s.comps
-      | SWitness -> s.witnesses
-    in
-    return (Suspension.Map.find_exn susp map)
+let set_cell
+  : type a env. a Cell.kind -> a Suspension.t -> a -> (unit, env) m
+  = fun kind susp v ->
+  modify (fun (s : State.t) ->
+    { s with cells = Cell.set (kind, susp) v s.cells }
+  )
 
-let set_cell : type a env. a suspension_kind -> a Suspension.t -> a -> (unit, env) m =
-  fun kind susp v ->
-    modify (fun (s : State.t) ->
-      match kind with
-      | SLazy -> { s with lazies = Suspension.Map.add susp v s.lazies }
-      | STable -> { s with tables = Suspension.Map.add susp v s.tables }
-      | SComp_mu -> { s with comps = Suspension.Map.add susp v s.comps }
-      | SWitness -> { s with witnesses = Suspension.Map.add susp v s.witnesses }
-    )
-
-let make_list_susp
-  : type a env. a list suspension_kind -> (a list Suspension.t, env) m
-  = fun kind ->
+let new_cell
+  : type a env. a Cell.kind -> a -> (a Suspension.t, env) m
+  = fun kind a ->
   let* Step id = step in
   let susp = { Suspension.id } in
-  let* () = set_cell kind { id } [] in
+  let* () = set_cell kind { id } a in
   return susp
 
-let make_waiting_mu
-  : 'env. Ident.t -> Ast.t Val.closure -> (Val.comp_mu Suspension.t, 'env) m =
-  fun var closure ->
-    let* Step id = step in
-    let comp_mu = Val.Waiting { var ; closure } in
-    let susp = { Suspension.id } in
-    let* () = set_cell SComp_mu susp comp_mu in
-    return susp
+let new_list_cell
+  : type a env. a list Cell.kind -> (a list Suspension.t, env) m
+  = fun kind ->
+  new_cell kind []
 
-let make_lazy : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
-  let* Step id = step in
-  let* () = set_cell SLazy { id } (Val.LLazy lgen) in
-  return (Val.VLazy { cell = { id } ; wrapping_types = [] })
+let new_mu_cell
+  : 'env. Ident.t -> Ast.t Val.closure -> (Val.comp_mu Suspension.t, 'env) m
+  = fun var closure ->
+  new_cell SComp_mu (Val.Waiting { var ; closure })
+
+let new_lazy_cell : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
+  let* susp = new_cell SLazy (Val.LLazy lgen) in
+  return (Val.VLazy { cell = susp ; wrapping_types = [] })
 
 (**
   [run x target] runs [x] with [target] as the context, beginning with
