@@ -26,14 +26,13 @@ let make_comparator
     | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
     | VTypeMu { var ; closure } ->
       (* TODO: branch by possibly giving up *)
-      let* Step id = step in
       let* () = incr_step ~max_step in
       let* suspension = new_mu_cell var closure in
       return (CMu suspension)
     | VTypeList t ->
       let* c = mk t in
       return (CList c)
-    | VTypeFun ({ domain ; codomain } as tfun) ->
+    | VTypeFun tfun ->
       let* () = incr_step ~max_step in
       let* witnesses = new_cell [] in
       return (CFun { tfun ; witnesses })
@@ -382,7 +381,7 @@ let eval
           Env.set fvar (Any self_fun) env
           |> Env.set param v_arg
         ) (eval captured)
-    | VGenFun { funtype = { domain ; codomain } ; table ; dom_comp } ->
+    | VGenFun { funtype = { domain = _ ; codomain } ; table ; dom_comp } ->
       let* mappings = get_cell table in
       (* HACK HACK HACK n is a hack to trim witnesses in this prototype *)
       let rec find_output n = function
@@ -812,10 +811,9 @@ let eval
       let* b = read_and_log_input KBool input_env ~default:(default_bool ()) in
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
-      let* Step nonce = step in
       let* table = new_cell [] in
       let* dom_comp = make_comparator ~max_step funtype.domain in
-      return_any (VGenFun { funtype ; nonce ; table ; dom_comp })
+      return_any (VGenFun { funtype ; table ; dom_comp })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })

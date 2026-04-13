@@ -45,7 +45,8 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VTypeSingle Any v ->
     is_symbolic v
   | VTypeFun { domain ; codomain = CodValue t }
-  | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; table = _ } ->
+  | VGenFun { funtype = { domain ; codomain = CodValue t } ; table = _
+            ; dom_comp = _ } ->
     is_symbolic domain || is_symbolic t
   | VWrapped { data ; tau = { domain ; codomain = CodValue t } } ->
     is_symbolic data || is_symbolic domain || is_symbolic t
@@ -56,9 +57,11 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VLazy _
   | VTypeMu _
   | VTypeRefine _
-  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; table = _ }
+  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; table = _
+            ; dom_comp = _ }
   | VTypeFun { domain = _ ; codomain = CodDependent _ }
-  | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ } } -> true
+  | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ } } ->
+    true
 
 let is_any_symbolic (Any v) = is_symbolic v
 
@@ -178,9 +181,9 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VTuple (l1, r1), Any VTuple (l2, r2) ->
     let- () = intensional_equal l1 l2 in
     intensional_equal r1 r2
-  | Any VGenFun { nonce = n1 ; funtype = _ ; table = _ }
-  , Any VGenFun { nonce = n2 ; funtype = _ ; table = _ } ->
-    make (n1 = n2)
+  | Any VGenFun { funtype = _ ; table = t1 ; dom_comp = _ }
+  , Any VGenFun { funtype = _ ; table = t2 ; dom_comp = _ } ->
+    make (Utils.Cell.equal t1 t2)
   | Any VTypeSingle v1, Any VTypeSingle v2 ->
     intensional_equal v1 v2
   | Any VTypeList t1, Any VTypeList t2 ->

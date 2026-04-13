@@ -28,8 +28,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VEmptyList : data t
     | VListCons : { hd : any ; tl : data t } -> data t
     (* generated values *)
-    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int
-      ; table : table Utils.Cell.t ; dom_comp : comparator } -> data t
+    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; dom_comp : comparator
+                ; table : table Utils.Cell.t } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
     | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
@@ -205,14 +205,16 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VWrapped { data ; tau } ->
       contains_mu data || contains_mu (VTypeFun tau)
     | VTypeFun { domain ; codomain = CodValue t }
-    | VGenFun { funtype = { domain ; codomain = CodValue t } ; nonce = _ ; table = _ }->
+    | VGenFun { funtype = { domain ; codomain = CodValue t } ; table = _
+              ; dom_comp = _ } ->
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
     | VFunClosure _
     | VFunFix _
     | VTypeModule _
     | VLazy _
-    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; nonce = _ ; table = _ }
+    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; table = _
+              ; dom_comp = _ }
     | VTypeFun { domain = _ ; codomain = CodDependent _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
@@ -242,12 +244,16 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       Printf.sprintf "(%s %s)" (Labels.Variant.to_string label) (any_to_string payload)
     | VRecord map_body ->
       Labels.Record.Map.to_list map_body
-      |> List.map (fun (key, data) -> Printf.sprintf "%s = %s" (Labels.Record.to_string key) (any_to_string data))
+      |> List.map (fun (key, data) -> Printf.sprintf "%s = %s"
+          (Labels.Record.to_string key) (any_to_string data)
+        )
       |> String.concat " ; "
       |> Printf.sprintf "{ %s }"
     | VModule map_body ->
       Labels.Record.Map.to_list map_body
-      |> List.map (fun (key, data) -> Printf.sprintf "let %s = %s" (Labels.Record.to_string key) (any_to_string data))
+      |> List.map (fun (key, data) -> Printf.sprintf "let %s = %s"
+          (Labels.Record.to_string key) (any_to_string data)
+        )
       |> String.concat " "
       |> Printf.sprintf "struct %s end"
     | VTuple (v1, v2) ->
@@ -258,8 +264,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       "[]"
     | VListCons { hd ; tl } ->
       Printf.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
-    | VGenFun { funtype ; nonce ; table = _ } ->
-      Printf.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) nonce
+    | VGenFun { funtype ; table ; dom_comp = _ } ->
+      Printf.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) (Utils.Cell.id table)
     | VGenPoly { id ; nonce } ->
       Printf.sprintf "G(poly id : %d, nonce : %d)" id nonce
     | VWrapped { data ; tau } ->

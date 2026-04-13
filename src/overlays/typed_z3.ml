@@ -38,9 +38,6 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
 
   let list_curry f x y = f [ x ; y ]
 
-  let divides a b =
-    Z3.Boolean.mk_eq ctx (const_int 0) (Z3.Arithmetic.Integer.mk_mod ctx b a)
-
   let rec binop : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t = function
     | Plus            -> list_curry @@ Z3.Arithmetic.mk_add ctx
     | Minus           -> list_curry @@ Z3.Arithmetic.mk_sub ctx

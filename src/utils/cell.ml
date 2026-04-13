@@ -12,6 +12,10 @@ include T
   map. *)
 let new_cell () = Type.Id.make ()
 
+let equal c1 c2 = Type.Id.uid c1 = Type.Id.uid c2
+
+let id c = Type.Id.uid c
+
 (* Heterogenous map from cells to values in those cells *)
 module Map = struct
   type binding = Binding : 'a t * 'a -> binding
