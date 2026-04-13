@@ -88,7 +88,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     (* | CPoly of { id : int } *) (* poly is atomic, right? *)
     | CMu of comp_mu Utils.Cell.t
     | CList of comparator
-    | CFun of { tfun : (typeval t, fun_cod) Funtype.t ; dom_c : comparator
+    | CFun of { tfun : (typeval t, fun_cod) Funtype.t
               ; witnesses : witness list Utils.Cell.t }
     | CRecord of comparator Record.t
     (* The comparator could be specialized to a certain module value, much like

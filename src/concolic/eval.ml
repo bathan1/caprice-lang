@@ -34,10 +34,9 @@ let make_comparator
       let* c = mk t in
       return (CList c)
     | VTypeFun ({ domain ; codomain } as tfun) ->
-      let* dom_c = mk domain in
       let* () = incr_step ~max_step in
       let* witnesses = new_cell [] in
-      return (CFun { tfun ; dom_c ; witnesses })
+      return (CFun { tfun ; witnesses })
     | VTypeRecord m ->
       let* c_rec = Labels.Record.Map.mapM (module Semantics) mk m in
       return (CRecord c_rec)
@@ -1258,7 +1257,7 @@ let eval
     match c with
     | CSingle | CGiveUp -> return Cdata.true_
     | CAtomic -> intensional_equal a b
-    | CFun { tfun = { domain ; codomain } ; dom_c ; witnesses } ->
+    | CFun { tfun = { domain ; codomain } ; witnesses } ->
       let* original_wits = get_cell witnesses in
       assert (n >= 0 && n <= List.length original_wits);
       let* witnesses =
