@@ -9,14 +9,14 @@ module State = struct
     { rev_stem : Rev_stem.t (* we will cons to the path instead of union a log *)
     ; logged_inputs : Input_env.t
     ; runs : Logged_run.t list
-    ; cells : Cell.Map.t
+    ; cells : Utils.Cell.Map.t
     }
 
   let empty : t =
     { rev_stem = Rev_stem.empty
     ; logged_inputs = Input_env.empty
     ; runs = []
-    ; cells = Cell.Map.empty
+    ; cells = Utils.Cell.Map.empty
     }
 end
 
@@ -214,39 +214,33 @@ let fork (forked_m : 'a. ('a, 'env) m) : (unit, 'env) m =
     )
 
 let get_cell
-  : type a env. a Cell.kind -> a Suspension.t -> (a, env) m
-  = fun kind susp ->
+  : type a env. a Utils.Cell.t -> (a, env) m
+  = fun key ->
   let* (s : State.t) = get in
-  return (Cell.get (kind, susp) s.cells)
+  return (Utils.Cell.Map.find key s.cells)
 
 let set_cell
-  : type a env. a Cell.kind -> a Suspension.t -> a -> (unit, env) m
-  = fun kind susp v ->
+  : type a env. a Utils.Cell.t -> a -> (unit, env) m
+  = fun key v ->
   modify (fun (s : State.t) ->
-    { s with cells = Cell.set (kind, susp) v s.cells }
+    { s with cells = Utils.Cell.Map.add key v s.cells }
   )
 
 let new_cell
-  : type a env. a Cell.kind -> a -> (a Suspension.t, env) m
-  = fun kind a ->
-  let* Step id = step in
-  let susp = { Suspension.id } in
-  let* () = set_cell kind { id } a in
-  return susp
-
-let new_list_cell
-  : type a env. a list Cell.kind -> (a list Suspension.t, env) m
-  = fun kind ->
-  new_cell kind []
+  : type a env. a -> (a Utils.Cell.t, env) m
+  = fun a ->
+  let key = Utils.Cell.new_cell () in
+  let* () = set_cell key a in
+  return key
 
 let new_mu_cell
-  : 'env. Ident.t -> Ast.t Val.closure -> (Val.comp_mu Suspension.t, 'env) m
+  : 'env. Ident.t -> Ast.t Val.closure -> (Val.comp_mu Utils.Cell.t, 'env) m
   = fun var closure ->
-  new_cell SComp_mu (Val.Waiting { var ; closure })
+  new_cell (Val.Waiting { var ; closure })
 
 let new_lazy_cell : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
-  let* susp = new_cell SLazy (Val.LLazy lgen) in
-  return (Val.VLazy { cell = susp ; wrapping_types = [] })
+  let* cell = new_cell (Val.LLazy lgen) in
+  return (Val.VLazy { cell ; wrapping_types = [] })
 
 (**
   [run x target] runs [x] with [target] as the context, beginning with

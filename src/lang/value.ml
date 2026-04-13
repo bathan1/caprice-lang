@@ -29,7 +29,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VListCons : { hd : any ; tl : data t } -> data t
     (* generated values *)
     | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; nonce : int
-      ; table : table Suspension.t ; dom_comp : comparator } -> data t
+      ; table : table Utils.Cell.t ; dom_comp : comparator } -> data t
     | VGenPoly : { id : int ; nonce : int } -> data t
     | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
@@ -70,7 +70,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
     The lazy state itself is not updated because wrapping is flow sensitive.
   *)
-  and lazy_cell = { cell : vlazy Suspension.t ; wrapping_types : typeval t list }
+  and lazy_cell = { cell : vlazy Utils.Cell.t ; wrapping_types : typeval t list }
 
   and lgen =
     | LGenList of typeval t
@@ -86,10 +86,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | CGiveUp
     | CAtomic (* signals to just use structural comparison because not nested *)
     (* | CPoly of { id : int } *) (* poly is atomic, right? *)
-    | CMu of comp_mu Suspension.t
+    | CMu of comp_mu Utils.Cell.t
     | CList of comparator
     | CFun of { tfun : (typeval t, fun_cod) Funtype.t ; dom_c : comparator
-              ; witnesses : witness list Suspension.t }
+              ; witnesses : witness list Utils.Cell.t }
     | CRecord of comparator Record.t
     (* The comparator could be specialized to a certain module value, much like
       the codomain of a function. This is a TODO. *)
