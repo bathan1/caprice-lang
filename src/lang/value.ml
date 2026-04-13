@@ -5,8 +5,8 @@
   symbolic components.
 *)
 module Make (Atom_cell : Utils.Types.P1) = struct
-  type data = private Data
-  type typeval = private Typeval
+  type dat = private Data_value
+  type typ = private Type_value
 
   (*
     Data values and type values are all the same type constructor
@@ -16,41 +16,41 @@ module Make (Atom_cell : Utils.Types.P1) = struct
   *)
   type _ t =
     (* non-type value *)
-    | VUnit : data t
-    | VInt : int Atom_cell.t -> data t
-    | VBool : bool Atom_cell.t -> data t
-    | VFunClosure : { param : Ident.t ; closure : Ast.t closure } -> data t
-    | VVariant : any Variant.t -> data t
-    | VRecord : any Record.t -> data t
-    | VModule : any Record.t -> data t
-    | VTuple : any * any -> data t
-    | VFunFix : { fvar : Ident.t ; param : Ident.t ; closure : Ast.t closure } -> data t
-    | VEmptyList : data t
-    | VListCons : { hd : any ; tl : data t } -> data t
+    | VUnit : dat t
+    | VInt : int Atom_cell.t -> dat t
+    | VBool : bool Atom_cell.t -> dat t
+    | VFunClosure : { param : Ident.t ; closure : Ast.t closure } -> dat t
+    | VVariant : any Variant.t -> dat t
+    | VRecord : any Record.t -> dat t
+    | VModule : any Record.t -> dat t
+    | VTuple : any * any -> dat t
+    | VFunFix : { fvar : Ident.t ; param : Ident.t ; closure : Ast.t closure } -> dat t
+    | VEmptyList : dat t
+    | VListCons : { hd : any ; tl : dat t } -> dat t
     (* generated values *)
-    | VGenFun : { funtype : (typeval t, fun_cod) Funtype.t ; dom_comp : comparator
-                ; table : table Utils.Cell.t } -> data t
-    | VGenPoly : { id : int ; nonce : int } -> data t
-    | VLazy : lazy_cell -> data t (* lazily evaluated thing, so state must manage this *)
+    | VGenFun : { funtype : (typ t, fun_cod) Funtype.t ; dom_comp : comparator
+                ; table : table Utils.Cell.t } -> dat t
+    | VGenPoly : { id : int ; nonce : int } -> dat t
+    | VLazy : lazy_cell -> dat t (* lazily evaluated thing, so state must manage this *)
     (* wrapped values *)
-    | VWrapped : { data : data t ; tau : (typeval t, fun_cod) Funtype.t } -> data t
+    | VWrapped : { data : dat t ; tau : (typ t, fun_cod) Funtype.t } -> dat t
     (* type values only *)
-    | VType : typeval t
-    | VTypePoly : { id : int } -> typeval t
-    | VTypeUnit : typeval t
-    | VTypeTop : typeval t
-    | VTypeBottom : typeval t
-    | VTypeInt : typeval t
-    | VTypeBool : typeval t
-    | VTypeMu : { var : Ident.t ; closure : Ast.t closure } -> typeval t
-    | VTypeList : typeval t -> typeval t
-    | VTypeFun : (typeval t, fun_cod) Funtype.t -> typeval t
-    | VTypeRecord : typeval t Record.t -> typeval t
-    | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typeval t
-    | VTypeVariant : typeval t Labels.Variant.Map.t -> typeval t
-    | VTypeRefine : (typeval t, Ast.t closure) Refinement.t -> typeval t
-    | VTypeTuple : typeval t * typeval t -> typeval t
-    | VTypeSingle : any -> typeval t
+    | VType : typ t
+    | VTypePoly : { id : int } -> typ t
+    | VTypeUnit : typ t
+    | VTypeTop : typ t
+    | VTypeBottom : typ t
+    | VTypeInt : typ t
+    | VTypeBool : typ t
+    | VTypeMu : { var : Ident.t ; closure : Ast.t closure } -> typ t
+    | VTypeList : typ t -> typ t
+    | VTypeFun : (typ t, fun_cod) Funtype.t -> typ t
+    | VTypeRecord : typ t Record.t -> typ t
+    | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typ t
+    | VTypeVariant : typ t Labels.Variant.Map.t -> typ t
+    | VTypeRefine : (typ t, Ast.t closure) Refinement.t -> typ t
+    | VTypeTuple : typ t * typ t -> typ t
+    | VTypeSingle : any -> typ t
 
   and 'a closure = { captured : 'a ; env : env }
 
@@ -59,7 +59,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
   and env = any Env.t
 
   and fun_cod =
-    | CodValue of typeval t (* regular function codomain *)
+    | CodValue of typ t (* regular function codomain *)
     | CodDependent of Ident.t * Ast.t closure (* dependent function codomain *)
 
   and any = Any : 'a t -> any [@@unboxed]
@@ -70,10 +70,10 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
     The lazy state itself is not updated because wrapping is flow sensitive.
   *)
-  and lazy_cell = { cell : vlazy Utils.Cell.t ; wrapping_types : typeval t list }
+  and lazy_cell = { cell : vlazy Utils.Cell.t ; wrapping_types : typ t list }
 
   and lgen =
-    | LGenList of typeval t
+    | LGenList of typ t
     | LGenMu of { var : Ident.t ; closure : Ast.t closure }
 
   and vlazy =
@@ -88,7 +88,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     (* | CPoly of { id : int } *) (* poly is atomic, right? *)
     | CMu of comp_mu Utils.Cell.t
     | CList of comparator
-    | CFun of { tfun : (typeval t, fun_cod) Funtype.t
+    | CFun of { tfun : (typ t, fun_cod) Funtype.t
               ; witnesses : witness list Utils.Cell.t }
     | CRecord of comparator Record.t
     (* The comparator could be specialized to a certain module value, much like
@@ -104,12 +104,12 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
   module Env = Env.Make (struct type t = any end)
 
-  type dval = data t
-  type tval = typeval t
+  type dval = dat t
+  type tval = typ t
 
   let[@inline] to_any : type a. a t -> any = fun v -> Any v
 
-  let[@inline] handle (type a b) (v : a t) ~(data : data t -> b) ~(typeval : typeval t -> b) : b =
+  let[@inline] handle (type a b) (v : a t) ~(dat : dat t -> b) ~(typ : typ t -> b) : b =
     match v with
     | ( VUnit
       | VInt _
@@ -125,7 +125,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       | VGenFun _
       | VGenPoly _
       | VLazy _
-      | VWrapped _) as x -> data x
+      | VWrapped _) as x -> dat x
     | ( VType
       | VTypePoly _
       | VTypeUnit
@@ -141,23 +141,23 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       | VTypeVariant _
       | VTypeRefine _
       | VTypeTuple _
-      | VTypeSingle _) as x -> typeval x
+      | VTypeSingle _) as x -> typ x
 
-  let[@inline] handle_any (type a) (Any v : any) ~(data : data t -> a) ~(typeval : typeval t -> a) : a =
-    handle v ~data ~typeval
+  let[@inline] handle_any (type a) (Any v : any) ~(dat : dat t -> a) ~(typ : typ t -> a) : a =
+    handle v ~dat ~typ
 
   let[@inline] handle_two (v1 : any) (v2 : any)
     (f : [ `Data of dval * dval | `Types of tval * tval | `Mismatch of any * any ] -> 'a) : 'a =
     handle_any v1
-      ~data:(fun d1 ->
+      ~dat:(fun d1 ->
         handle_any v2
-          ~data:(fun d2 -> f (`Data (d1, d2)))
-          ~typeval:(fun _ -> f (`Mismatch (v1, v2)))
+          ~dat:(fun d2 -> f (`Data (d1, d2)))
+          ~typ:(fun _ -> f (`Mismatch (v1, v2)))
         )
-      ~typeval:(fun t1 ->
+      ~typ:(fun t1 ->
         handle_any v2
-          ~data:(fun _ -> f (`Mismatch (v1, v2)))
-          ~typeval:(fun t2 -> f (`Types (t1, t2)))
+          ~dat:(fun _ -> f (`Mismatch (v1, v2)))
+          ~typ:(fun t2 -> f (`Types (t1, t2)))
       )
 
   let discard_wrapper : dval -> dval = function
@@ -368,7 +368,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       Printf.sprintf "Bad assume: %s is not a boolean and cannot be used for an assumption"
         (any_to_string v)
 
-    let non_type_value (v : data t) : string =
+    let non_type_value (v : dat t) : string =
       Printf.sprintf "Bad type: %s is expected to be a type value"
         (to_string v)
 

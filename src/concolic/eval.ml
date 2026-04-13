@@ -412,8 +412,8 @@ let eval
   and eval_type (expr : Ast.t) : (Val.tval, Val.Env.t) m =
     let* v = force_eval expr in
     handle_any v
-      ~data:(fun d -> mismatch @@ non_type_value d)
-      ~typeval:return
+      ~dat:(fun d -> mismatch @@ non_type_value d)
+      ~typ:return
 
   (*
     -----------------------------------------------
@@ -514,7 +514,7 @@ let eval
       end
     | VType ->
       let* v = force_value v in
-      handle_any v ~data:(fun _ -> refute) ~typeval:(fun _ -> confirm)
+      handle_any v ~dat:(fun _ -> refute) ~typ:(fun _ -> confirm)
     | VTypeFun { domain ; codomain } ->
       let* v = force_value v in
       begin match v with
@@ -824,8 +824,8 @@ let eval
       (* parametric polymorphism is enough here *)
       let* newtype = gen VType in
       handle_any newtype
-        ~data:(fun _ -> raise @@ InvariantException "`type` generated data value")
-        ~typeval:gen
+        ~dat:(fun _ -> raise @@ InvariantException "`type` generated data value")
+        ~typ:gen
     | VTypeBottom -> escape Vanish
     | VTypeRecord record_t ->
       let* genned_body =
@@ -920,8 +920,8 @@ let eval
       let* hd = gen body in
       let* Any v_tl = gen (VTypeList body) in
       handle v_tl
-        ~data:(fun tl -> return_any @@ VListCons { hd ; tl })
-        ~typeval:(fun _ -> raise @@ InvariantException "List generation makes a type value")
+        ~dat:(fun tl -> return_any @@ VListCons { hd ; tl })
+        ~typ:(fun _ -> raise @@ InvariantException "List generation makes a type value")
     | _ -> raise bad_input_env
 
   (*
@@ -985,13 +985,13 @@ let eval
         let* w_hd = wrap hd t_body in
         let* Any w_tl = wrap (Any tl) t in
         handle w_tl
-          ~data:(fun w_tl_data ->
+          ~dat:(fun w_tl_data ->
             if w_hd == hd && w_tl_data == tl then
               return v
             else
               return_any (VListCons { hd = w_hd ; tl = w_tl_data })
           )
-          ~typeval:(fun _ -> raise @@ InvariantException "Wrapped list is not data")
+          ~typ:(fun _ -> raise @@ InvariantException "Wrapped list is not data")
       | Any VLazy _ (* wrap must not matter due to pattern guard above *)
       | Any VEmptyList (* wrapping empty list does nothing *)
       | _ -> (* ignore mismatches, and just do nothing *)
@@ -1003,8 +1003,8 @@ let eval
         return_any (VWrapped { data ; tau = tfun })
       | Any v' ->
         handle v'
-          ~data:(fun data -> return_any (VWrapped { data ; tau = tfun }))
-          ~typeval:(fun _ -> return v)
+          ~dat:(fun data -> return_any (VWrapped { data ; tau = tfun }))
+          ~typ:(fun _ -> return v)
       end
     | VTypeRecord t_body ->
       begin match v with

@@ -78,7 +78,7 @@ let is_any_symbolic (Any v) = is_symbolic v
   This function is used to avoid adding lazy wrappers to lazily-generated
   values.
 *)
-let rec does_wrap_matter : typeval t -> bool = function
+let rec does_wrap_matter : typ t -> bool = function
   | VType
   | VTypePoly _
   | VTypeUnit
@@ -251,18 +251,18 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
       a constant false, but not error.
     *)
     handle_any x
-      ~data:(fun _ -> ShapeMismatch)
-      ~typeval:(fun _ ->
+      ~dat:(fun _ -> ShapeMismatch)
+      ~typ:(fun _ ->
         handle_any y
-          ~data:(fun _ -> ShapeMismatch)
-          ~typeval:(fun _ -> make false)
+          ~dat:(fun _ -> ShapeMismatch)
+          ~typ:(fun _ -> make false)
         )
 
 and iequal : type a. a t -> a t -> bool X.t = fun x y ->
   intensional_equal (Any x) (Any y)
 
-and iequal_ftype (tf1 : (typeval t, fun_cod) Funtype.t)
-  (tf2 : (typeval t, fun_cod) Funtype.t) : bool X.t =
+and iequal_ftype (tf1 : (typ t, fun_cod) Funtype.t)
+  (tf2 : (typ t, fun_cod) Funtype.t) : bool X.t =
   let open X in
   let- () = iequal tf1.domain tf2.domain in
   iequal_cod tf1.codomain tf2.codomain
