@@ -243,6 +243,7 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     make false
     (* TODO: eventually we want to handle these by asking for lazy environment *)
   | _, _ ->
+    Utils.Assertions.assert_different x y;
     (*
       All data has been handled, and anything that is not
       handled above is a shape mismatch.
@@ -275,6 +276,7 @@ and iequal_cod cod1 cod2 =
   | CodDependent (id1, c1), CodDependent (id2, c2) ->
     iequal_closure [ id1, id2 ] c1 c2
   | _ ->
+    Utils.Assertions.assert_different cod1 cod2;
     (* Both are types, so not failure, but never equal because
       a dependent function is not a non-dependent function. *)
     X.make false
@@ -421,7 +423,9 @@ and iequal_closure bindings closure1 closure2 =
         | None ->
           make false
       ) r1.patterns r2.patterns
-    | _ -> make false
+    | _ ->
+      Utils.Assertions.assert_different e1 e2;
+      make false
 
   (*
     Compare statements like let-expressions. A body is required.
@@ -436,6 +440,7 @@ and iequal_closure bindings closure1 closure2 =
       let- () = iequal_expr ((r1.param, r2.param) :: (r1.name, r2.name) :: bindings) r1.defn r2.defn in
       iequal_annot bindings r1.annot r2.annot
     | _ ->
+      Utils.Assertions.assert_different s1 s2;
       make false
 
   and iequal_id bindings id1 id2 =
@@ -480,6 +485,7 @@ and iequal_closure bindings closure1 closure2 =
     | AType { tau = t1 ; do_check = _ } , AType { tau = t2 ; do_check = _ } ->
       iequal_expr bindings t1 t2
     | _ ->
+      Utils.Assertions.assert_different annot1 annot2;
       make false
 
   (** Check that patterns are equal, returning [None] if they cannot
@@ -509,7 +515,9 @@ and iequal_closure bindings closure1 closure2 =
       Option.map (fun ls ->
         (id1, id2) :: ls
       ) (check_pattern pat1 pat2)
-    | _ -> None
+    | _ ->
+      Utils.Assertions.assert_different p1 p2;
+      None
 
   and check_several_patterns l1 l2 =
     List.fold_left2 (fun acc_m p1 p2 ->
