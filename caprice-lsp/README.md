@@ -1,17 +1,17 @@
 # Caprice LSP
 
-A language server for the Caprice language, providing diagnostics in VS
-Code.
+A language server for the Caprice language, providing inline diagnostics in VS Code.
 
-## Running
+## Usage
 
-#### Build the TypeScript server (once, or after TS changes):
+Install the extension and open any `.caprice` file — type checking runs automatically.
 
-`cd caprice-lsp && npm install && npm run compile`
+## Typechecker binary
 
-#### Run in VS Code:
+The extension expects `caprice_typecheck_lsp.exe` in your workspace root. If the binary is not found, the extension will show an error and type checking will be disabled.
 
-Open any file in `caprice-lsp/server/src/` (e.g. `server.ts`), press
-`F5`, and select **VS Code Extension Development**. A new VS Code
-window will open with the extension loaded. The LSP activates
-automatically on `.caprice` files.
+## Tips
+
+- **Toggle type checking** — click the status bar item in the lower-right corner (`✓ Caprice Typecheck` / `⊘ Caprice Typecheck`) to enable or disable type checking without reloading the window.
+- **Diagnostics** — errors appear as red underlines inline. Hover over them for details.
+- **Output log** — open the Output panel (`View → Output`) and select **Caprice Language Server** to see the typechecker's raw output, useful for debugging.

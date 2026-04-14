@@ -10,6 +10,8 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { TextDocumentContentChangeEvent } from 'vscode-languageserver/node';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
+import * as fs from 'fs';
 
 import type { CheckerPacket } from './protocol';
 import type { Range } from 'vscode-languageserver-types';
@@ -20,7 +22,7 @@ const connection = createConnection(ProposedFeatures.all);
 const docs = new Map<string, TextDocument>();
 const diagnostics = new DiagnosticsManager(connection);
 
-const typecheckerPath = path.join(__dirname, '..', '..', '..', 'caprice_typecheck_lsp.exe');
+let typecheckerPath = '';
 let ocamlChecker: ChildProcessWithoutNullStreams;
 let buffer = '';
 let currentUri = '';
@@ -66,7 +68,7 @@ function restartChecker(): void {
 	ocamlChecker = startChecker();
 }
 
-ocamlChecker = startChecker();
+process.on('exit', () => ocamlChecker?.kill());
 
 function updateDocument(params: DidChangeTextDocumentParams): TextDocument | undefined {
 	const doc = docs.get(params.textDocument.uri);
@@ -88,6 +90,18 @@ function writeFramedMessage(message: CheckerPacket): void {
 }
 
 connection.onInitialize((params: InitializeParams) => {
+	const rootUri = params.workspaceFolders?.[0]?.uri;
+	if (rootUri) {
+		typecheckerPath = path.join(fileURLToPath(rootUri), 'caprice_typecheck_lsp.exe');
+	}
+	if (!fs.existsSync(typecheckerPath)) {
+		connection.window.showErrorMessage(
+			"Caprice: caprice_typecheck_lsp.exe not found in workspace root."
+		);
+	} else {
+		ocamlChecker = startChecker();
+	}
+
 	const result: InitializeResult = {
 		capabilities: {
 			textDocumentSync: TextDocumentSyncKind.Incremental
