@@ -9,7 +9,7 @@ type t =
   | ELet of { stmt : statement ; body : t }
   | EAppl of { func : t ; arg : t }
   | EMatch of { subject : t ; patterns : (Pattern.t * t) list }
-  | EProject of { record : t ; label : Labels.Record.t }
+  | EProject of { record : t ; label : Record.Label.t }
   | ERecord of t Record.t
   | ETuple of t * t
   | EEmptyList
@@ -29,7 +29,7 @@ type t =
   | ETypeBottom
   | ETypeUnit
   | ETypeRecord of t Record.t
-  | ETypeModule of (Labels.Record.t * t) list
+  | ETypeModule of (Record.Label.t * t) list
   | ETypeFun of (Ident.t option * t, t) Funtype.t
   | ETypeRefine of (t, t) Refinement.t
   | ETypeMu of { var : Ident.t ; body : t }

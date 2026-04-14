@@ -46,8 +46,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeList : typ t -> typ t
     | VTypeFun : (typ t, fun_cod) Funtype.t -> typ t
     | VTypeRecord : typ t Record.t -> typ t
-    | VTypeModule : (Labels.Record.t * Ast.t) list closure -> typ t
-    | VTypeVariant : typ t Labels.Variant.Map.t -> typ t
+    | VTypeModule : (Record.Label.t * Ast.t) list closure -> typ t
+    | VTypeVariant : typ t Variant.Label.Map.t -> typ t
     | VTypeRefine : (typ t, Ast.t closure) Refinement.t -> typ t
     | VTypeTuple : typ t * typ t -> typ t
     | VTypeSingle : any -> typ t
@@ -93,8 +93,8 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | CRecord of comparator Record.t
     (* The comparator could be specialized to a certain module value, much like
       the codomain of a function. This is a TODO. *)
-    (* | CModule of (Labels.Record.t * Ast.t) list closure *)
-    | CVariant of comparator Labels.Variant.Map.t
+    (* | CModule of (Record.Label.t * Ast.t) list closure *)
+    | CVariant of comparator Variant.Label.Map.t
     | CTuple of comparator * comparator
     | CSingle (* Same behavior as giving up! We know they must be equal already *)
 
@@ -187,7 +187,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VVariant { payload = Any v' ; label = _ } -> contains_mu v'
     | VModule map_body
     | VRecord map_body ->
-      Labels.Record.Map.exists (fun _ (Any v') -> contains_mu v') map_body
+      Record.Label.Map.exists (fun _ (Any v') -> contains_mu v') map_body
     | VTuple (Any v1, Any v2) ->
       contains_mu v1 || contains_mu v2
     | VListCons { hd = Any v_hd ; tl } ->
@@ -195,9 +195,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VTypeList t ->
       contains_mu t
     | VTypeRecord record_body ->
-      Labels.Record.Map.exists (fun _ t -> contains_mu t) record_body
+      Record.Label.Map.exists (fun _ t -> contains_mu t) record_body
     | VTypeVariant variant_body ->
-      Labels.Variant.Map.exists (fun _ t -> contains_mu t) variant_body
+      Variant.Label.Map.exists (fun _ t -> contains_mu t) variant_body
     | VTypeTuple (t1, t2) ->
       contains_mu t1 || contains_mu t2
     | VTypeSingle Any v ->
@@ -219,15 +219,15 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
 
-  let default_constructor (variant_t : tval Labels.Variant.Map.t) : Labels.Variant.t =
+  let default_constructor (variant_t : tval Variant.Label.Map.t) : Variant.Label.t =
     (* Default is a random variant constructor whose payload does not contain a mu type *)
     let without_mu =
-      Labels.Variant.Map.filter (fun _ payload ->
+      Variant.Label.Map.filter (fun _ payload ->
           not (contains_mu payload)
         ) variant_t
     in
-    Labels.Variant.Map.random_binding_opt
-      (if Labels.Variant.Map.is_empty without_mu then variant_t else without_mu)
+    Variant.Label.Map.random_binding_opt
+      (if Variant.Label.Map.is_empty without_mu then variant_t else without_mu)
     |> Option.get
     |> fst
 
@@ -241,18 +241,18 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VFunClosure { param ; closure = _ } ->
       Printf.sprintf "(fun %s -> <body>)" (Ident.to_string param)
     | VVariant { label ; payload } ->
-      Printf.sprintf "(%s %s)" (Labels.Variant.to_string label) (any_to_string payload)
+      Printf.sprintf "(%s %s)" (Variant.Label.to_string label) (any_to_string payload)
     | VRecord map_body ->
-      Labels.Record.Map.to_list map_body
+      Record.Label.Map.to_list map_body
       |> List.map (fun (key, data) -> Printf.sprintf "%s = %s"
-          (Labels.Record.to_string key) (any_to_string data)
+          (Record.Label.to_string key) (any_to_string data)
         )
       |> String.concat " ; "
       |> Printf.sprintf "{ %s }"
     | VModule map_body ->
-      Labels.Record.Map.to_list map_body
+      Record.Label.Map.to_list map_body
       |> List.map (fun (key, data) -> Printf.sprintf "let %s = %s"
-          (Labels.Record.to_string key) (any_to_string data)
+          (Record.Label.to_string key) (any_to_string data)
         )
       |> String.concat " "
       |> Printf.sprintf "struct %s end"
@@ -298,19 +298,19 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       | CodDependent (id, _closure) -> Printf.sprintf "(%s : %s) -> <codomain>" (Ident.to_string id) (to_string domain)
       end
     | VTypeRecord map_body ->
-      if Labels.Record.Map.is_empty map_body then "{:}" else
-      Labels.Record.Map.to_list map_body
-      |> List.map (fun (label, tau) -> Printf.sprintf "%s : %s" (Labels.Record.to_string label) (to_string tau))
+      if Record.Label.Map.is_empty map_body then "{:}" else
+      Record.Label.Map.to_list map_body
+      |> List.map (fun (label, tau) -> Printf.sprintf "%s : %s" (Record.Label.to_string label) (to_string tau))
       |> String.concat " ; "
       |> Printf.sprintf "{ %s }"
     | VTypeModule { captured = table ; env = _ } ->
       table
-      |> List.map (fun (label, _closure) -> Printf.sprintf "val %s" (Labels.Record.to_string label))
+      |> List.map (fun (label, _closure) -> Printf.sprintf "val %s" (Record.Label.to_string label))
       |> String.concat " "
       |> Printf.sprintf "sig %s end"
     | VTypeVariant map_body ->
-      Labels.Variant.Map.to_list map_body
-      |> List.map (fun (label, tau) -> Printf.sprintf "%s of %s" (Labels.Variant.to_string label) (to_string tau))
+      Variant.Label.Map.to_list map_body
+      |> List.map (fun (label, tau) -> Printf.sprintf "%s of %s" (Variant.Label.to_string label) (to_string tau))
       |> String.concat " | "
       |> Printf.sprintf "(%s)"
     | VTypeRefine { var ; tau ; predicate = _closure } ->
@@ -340,13 +340,13 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       |> String.concat " | "
       |> Printf.sprintf "Bad match: %s is not in pattern list %s" (any_to_string v)
 
-    let missing_label (v : any) (label : Labels.Record.t) : string =
+    let missing_label (v : any) (label : Record.Label.t) : string =
       Printf.sprintf "Missing label: %s does not have label %s"
-        (any_to_string v) (Labels.Record.to_string label)
+        (any_to_string v) (Record.Label.to_string label)
 
-    let project_non_record (v : any) (label : Labels.Record.t) : string =
+    let project_non_record (v : any) (label : Record.Label.t) : string =
       Printf.sprintf "Bad projection: %s is not a record/module; tried to project label %s"
-        (any_to_string v) (Labels.Record.to_string label)
+        (any_to_string v) (Record.Label.to_string label)
 
     let cons_non_list (v_hd : any) (v_tl : any) : string =
       Printf.sprintf "Bad cons: tried to put %s on front of %s, which is not a list"
@@ -390,9 +390,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     let wrap_typeval_fun (t : tval) (tfun : tval) : string =
       bad_wrap "a function" (Any t) tfun
 
-    let wrap_missing_label (v : any) (label : Labels.Record.t) : string =
+    let wrap_missing_label (v : any) (label : Record.Label.t) : string =
       Printf.sprintf "Bad wrap: Missing label: %s does not have label %s"
-        (any_to_string v) (Labels.Record.to_string label)
+        (any_to_string v) (Record.Label.to_string label)
 
     let wrap_non_record (v : any) (t : tval) : string =
       bad_wrap "a record" v t
@@ -482,7 +482,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
               (Pattern.to_string p))
         | PVariant { label = pattern_label ; payload = payload_pattern },
           VVariant { label = subject_label ; payload = Any v } ->
-            if Labels.Variant.equal pattern_label subject_label
+            if Variant.Label.equal pattern_label subject_label
             then matches payload_pattern v
             else return No_match
         | PTuple (p1, p2), VTuple (Any v1, Any v2) ->

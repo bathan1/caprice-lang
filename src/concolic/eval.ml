@@ -32,10 +32,10 @@ let rec make_comparator : 'env. Val.tval -> (Val.comparator, 'env) m = function
     let* witnesses = new_cell [] in
     return (CFun { tfun ; witnesses })
   | VTypeRecord m ->
-    let* c_rec = Labels.Record.Map.mapM (module Semantics) make_comparator m in
+    let* c_rec = Record.Label.Map.mapM (module Semantics) make_comparator m in
     return (CRecord c_rec)
   | VTypeVariant m ->
-    let* c_var = Labels.Variant.Map.mapM (module Semantics) make_comparator m in
+    let* c_var = Variant.Label.Map.mapM (module Semantics) make_comparator m in
     return (CVariant c_var)
   | VTypeRefine { var = _ ; tau ; predicate = _ } ->
     make_comparator tau
@@ -109,7 +109,7 @@ let eval
       return_any (VFunClosure { param ; closure = { captured = body ; env }})
     | ERecord e_record_body ->
       let* record_body =
-        Labels.Record.Map.mapM (module Semantics) eval e_record_body
+        Record.Label.Map.mapM (module Semantics) eval e_record_body
       in
       return_any (VRecord record_body)
     | EModule stmt_ls ->
@@ -161,7 +161,7 @@ let eval
       begin match v with
       | Any VRecord map_body
       | Any VModule map_body ->
-        begin match Labels.Record.Map.find_opt label map_body with
+        begin match Record.Label.Map.find_opt label map_body with
         | Some v' -> return v'
         | None -> mismatch @@ missing_label v label
         end
@@ -249,7 +249,7 @@ let eval
     | ETypeUnit -> return_any VTypeUnit
     | ETypeRecord t_record_body ->
       let* record_body =
-        Labels.Record.Map.mapM (module Semantics) eval_type t_record_body
+        Record.Label.Map.mapM (module Semantics) eval_type t_record_body
       in
       return_any (VTypeRecord record_body)
     | ETypeFun { domain = None, tau ; codomain } ->
@@ -276,8 +276,8 @@ let eval
         List.fold_left (fun acc_m { Variant.label ; payload } ->
           let* acc = acc_m in
           let* tval = eval_type payload in
-          return (Labels.Variant.Map.add label tval acc)
-        ) (return Labels.Variant.Map.empty) ls
+          return (Variant.Label.Map.add label tval acc)
+        ) (return Variant.Label.Map.empty) ls
       in
       return_any (VTypeVariant variant_bodies)
 
@@ -581,7 +581,7 @@ let eval
       let* v = force_value v in
       begin match v with
       | Any VVariant { label ; payload } ->
-        begin match Labels.Variant.Map.find_opt label variant_t with
+        begin match Variant.Label.Map.find_opt label variant_t with
         | Some t -> check payload t
         | None -> refute
         end
@@ -596,8 +596,8 @@ let eval
           let push_and_check label =
             let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
             check
-              (Labels.Record.Map.find label record_v)
-              (Labels.Record.Map.find label record_t)
+              (Record.Label.Map.find label record_v)
+              (Record.Label.Map.find label record_t)
           in
           check_struct push_and_check ~refute ~t_labels ~v_labels
       | _ -> refute
@@ -607,22 +607,22 @@ let eval
       begin match v with
       | Any VModule module_v ->
         let t_labels_ls = List.map fst captured in
-        let t_labels = Labels.Record.Set.of_list t_labels_ls in
+        let t_labels = Record.Label.Set.of_list t_labels_ls in
         let v_labels = Record.label_set module_v in
         let push_and_check label =
           let* () = push_and_log_tag (Grammar.Tag.of_record_label Check label) in
           let new_env, tau =
             (* think about sharing this computation because rn it is redone on every fork *)
             Utils.List_utils.fold_left_until (fun env (label', tau) ->
-              if Labels.Record.equal label' label
+              if Record.Label.equal label' label
               then `Stop (env, tau)
               else `Continue (
-                Env.set (Labels.Record.to_ident label') (Labels.Record.Map.find label' module_v) env
+                Env.set (Record.Label.to_ident label') (Record.Label.Map.find label' module_v) env
               )
             ) (fun _ -> raise @@ InvariantException "Label not found in module type") env captured
           in
           let* t = local' new_env (eval_type tau) in
-          check (Labels.Record.Map.find label module_v) t
+          check (Record.Label.Map.find label module_v) t
         in
         check_struct push_and_check ~refute ~t_labels ~v_labels
       | _ -> refute
@@ -736,26 +736,26 @@ let eval
     Check modules and records given a way to check each label and a default label.
   *)
   and check_struct
-    : type a env. ('any. Labels.Record.t -> ('any, env) m) -> refute:(a, env) m ->
-      t_labels:Labels.Record.Set.t -> v_labels:Labels.Record.Set.t -> (a, env) m
+    : type a env. ('any. Record.Label.t -> ('any, env) m) -> refute:(a, env) m ->
+      t_labels:Record.Label.Set.t -> v_labels:Record.Label.Set.t -> (a, env) m
     = fun check_label ~refute ~t_labels ~v_labels ->
-      if Labels.Record.Set.subset t_labels v_labels then
+      if Record.Label.Set.subset t_labels v_labels then
         (* incr step because about to read an input *)
         let* () = incr_step ~max_step in
         let* l_opt = read_input KTag input_env in
         match l_opt with
-        | Some Label (id, Check) -> (check_label (Labels.Record.RecordLabel id))
+        | Some Label (id, Check) -> (check_label (Record.Label.RecordLabel id))
         | Some _ -> raise bad_input_env
         | None ->
           (* is in exploration mode, so we want to check every label *)
           let rec go enum =
-            match Labels.Record.Set.Enum.head_opt enum with
+            match Record.Label.Set.Enum.head_opt enum with
             | Some label ->
               let* () = fork (check_label label) in
-              go (Labels.Record.Set.Enum.tail enum)
+              go (Record.Label.Set.Enum.tail enum)
             | None -> escape Eval_result.Confirmation
           in
-          go (Labels.Record.Set.Enum.enum t_labels)
+          go (Record.Label.Set.Enum.enum t_labels)
       else
         refute
 
@@ -820,24 +820,24 @@ let eval
     | VTypeBottom -> escape Vanish
     | VTypeRecord record_t ->
       let* genned_body =
-        Labels.Record.Map.mapM (module Semantics) gen record_t
+        Record.Label.Map.mapM (module Semantics) gen record_t
       in
       return_any (VRecord genned_body)
     | VTypeVariant variant_t ->
-      let t_labels = Labels.Variant.B.domain variant_t in
+      let t_labels = Variant.Label.B.domain variant_t in
       let* l =
         read_and_log_input KTag input_env
           ~default:(default_constructor variant_t |> Grammar.Tag.of_variant_label Gen)
       in
       begin match l with
       | Label (id, Gen) ->
-        let to_gen = Labels.Variant.of_ident id in
-        let t = Labels.Variant.Map.find to_gen variant_t in
+        let to_gen = Variant.Label.of_ident id in
+        let t = Variant.Label.Map.find to_gen variant_t in
         let* () =
           push_tag_to_path l
             ~alternatives:(
-              Labels.Variant.Set.remove to_gen t_labels
-              |> Labels.Variant.Set.list_map (Grammar.Tag.of_variant_label Gen)
+              Variant.Label.Set.remove to_gen t_labels
+              |> Variant.Label.Set.list_map (Grammar.Tag.of_variant_label Gen)
             )
         in
         let* payload = gen t in
@@ -879,13 +879,13 @@ let eval
           let* acc = acc_m in
           let* tval = eval_type tau in
           let* v = gen tval in
-          local (Env.set (Labels.Record.to_ident label) v) (
-            fold_labels (return @@ Labels.Record.Map.add label v acc) tl
+          local (Env.set (Record.Label.to_ident label) v) (
+            fold_labels (return @@ Record.Label.Map.add label v acc) tl
           )
       in
       let* genned_body =
         local' env (
-          fold_labels (return Labels.Record.Map.empty) captured
+          fold_labels (return Record.Label.Map.empty) captured
         )
       in
       return_any (VModule genned_body)
@@ -1003,12 +1003,12 @@ let eval
         let* w_body =
           Record.fold (fun k t acc_m ->
             let* acc = acc_m in
-            match Labels.Record.Map.find_opt k v_body with
+            match Record.Label.Map.find_opt k v_body with
             | Some v' ->
               let* w = wrap v' t in
-              return (Labels.Record.Map.add k w acc)
+              return (Record.Label.Map.add k w acc)
             | None -> return acc
-          ) (return Labels.Record.Map.empty) t_body
+          ) (return Record.Label.Map.empty) t_body
         in
         return_any (VRecord w_body)
       | _ ->
@@ -1021,12 +1021,12 @@ let eval
           | [] -> acc_m
           | (label, tau) :: tl ->
             let* acc = acc_m in
-            begin match Labels.Record.Map.find_opt label v_body with
+            begin match Record.Label.Map.find_opt label v_body with
             | Some v' ->
               let* tval = eval_type tau in
               let* v = wrap v' tval in
-              local (Env.set (Labels.Record.to_ident label) v) (
-                fold_labels (return @@ Labels.Record.Map.add label v acc) tl
+              local (Env.set (Record.Label.to_ident label) v) (
+                fold_labels (return @@ Record.Label.Map.add label v acc) tl
               )
             | None ->
               return acc
@@ -1034,7 +1034,7 @@ let eval
         in
         let* wrapped_body =
           local' env (
-            fold_labels (return Labels.Record.Map.empty) t_ls
+            fold_labels (return Record.Label.Map.empty) t_ls
           )
         in
         return_any (VModule wrapped_body)
@@ -1044,7 +1044,7 @@ let eval
     | VTypeVariant t_body ->
       begin match v with
       | Any VVariant { label ; payload } ->
-        begin match Labels.Variant.Map.find_opt label t_body with
+        begin match Variant.Label.Map.find_opt label t_body with
         | Some t ->
           let* w = wrap payload t in
           if w == payload then
@@ -1098,11 +1098,11 @@ let eval
         let* acc = acc_m in
         let* (id, v) = eval_statement stmt in
         local (Env.set id v) (
-          fold_stmts (return @@ Labels.Record.Map.add (Labels.Record.of_ident id) v acc) tl
+          fold_stmts (return @@ Record.Label.Map.add (Record.Label.of_ident id) v acc) tl
         )
     in
     let* module_body =
-      fold_stmts (return Labels.Record.Map.empty) statements
+      fold_stmts (return Record.Label.Map.empty) statements
     in
     return_any (VModule module_body)
 
@@ -1311,7 +1311,7 @@ let eval
       | Any VRecord x, Any VRecord y ->
         Record.fold (fun l c_body acc ->
           let- () = acc in
-          match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
+          match Record.Label.Map.find_opt l x, Record.Label.Map.find_opt l y with
           | Some u, Some v -> extensional_equal n c_body u v
           | _ -> mismatch "missing record label"
         ) (return Cdata.true_) m
@@ -1324,10 +1324,10 @@ let eval
           | [] -> return Cdata.true_
           | (l, tau) :: tl ->
             let* t_body = eval_type tau in
-            match Labels.Record.Map.find_opt l x, Labels.Record.Map.find_opt l y with
+            match Record.Label.Map.find_opt l x, Record.Label.Map.find_opt l y with
             | Some u, Some v ->
               let- () = extensional_equal n t_body u v in
-              local (Env.set (Labels.Record.to_ident l) (Any t_body)) (loop tl)
+              local (Env.set (Record.Label.to_ident l) (Any t_body)) (loop tl)
             | _ -> mismatch "missing record label"
         in
         local' env (loop captured)
@@ -1336,8 +1336,8 @@ let eval
     | CVariant m ->
       begin match a, b with
       | Any VVariant va, Any VVariant vb ->
-        if Labels.Variant.equal va.label vb.label then
-          match Labels.Variant.Map.find_opt va.label m with
+        if Variant.Label.equal va.label vb.label then
+          match Variant.Label.Map.find_opt va.label m with
           | Some c_body -> extensional_equal n c_body va.payload vb.payload
           | None -> mismatch "variant label not found"
         else

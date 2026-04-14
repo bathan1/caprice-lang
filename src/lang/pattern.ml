@@ -15,7 +15,7 @@ let rec to_string (p : t) : string =
   | PAny -> "_"
   | PVariable id -> Ident.to_string id
   | PVariant { label ; payload } ->
-    Printf.sprintf "%s %s" (Labels.Variant.to_string label) (to_string payload)
+    Printf.sprintf "%s %s" (Variant.Label.to_string label) (to_string payload)
   | PTuple (p1, p2) ->
     Printf.sprintf "(%s, %s)" (to_string p1) (to_string p2)
   | PUnit ->

@@ -343,7 +343,7 @@ op_expr:
   | label=record_label EQUALS e=expr
     { label, e }
   | label=record_label (* punning *)
-    { label, EVar (Labels.Record.to_ident label) }
+    { label, EVar (Record.Label.to_ident label) }
   ;
 
 record_type_body:
@@ -353,7 +353,7 @@ record_type_body:
 
 %inline record_label:
   | ident
-    { Labels.Record.RecordLabel $1 }
+    { Record.Label.RecordLabel $1 }
   ;
 
 %inline ident_usage:
@@ -388,7 +388,7 @@ record_body:
 /* e.g. `Variant 0 */
 variant_label:
   | BACKTICK label=ident
-    { Labels.Variant.VariantLabel label }
+    { Variant.Label.VariantLabel label }
   ;
 
 /* **** Pattern matching **** */

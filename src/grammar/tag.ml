@@ -33,10 +33,10 @@ type t =
   | Label of Lang.Ident.t * dir
 
 let of_variant_label dir vlabel =
-  Label (Lang.Labels.Variant.to_ident vlabel, dir)
+  Label (Lang.Variant.Label.to_ident vlabel, dir)
 
 let of_record_label dir rlabel =
-  Label (Lang.Labels.Record.to_ident rlabel, dir)
+  Label (Lang.Record.Label.to_ident rlabel, dir)
 
 let priority = function
   | Label (_, Gen) -> Path_priority.one

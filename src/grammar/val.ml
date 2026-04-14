@@ -29,7 +29,7 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VVariant { payload = Any v' ; label = _ } -> is_symbolic v'
   | VModule map_body
   | VRecord map_body ->
-    Labels.Record.Map.exists (fun _ (Any v') -> is_symbolic v') map_body
+    Record.Label.Map.exists (fun _ (Any v') -> is_symbolic v') map_body
   | VTuple (Any v1, Any v2) ->
     is_symbolic v1 || is_symbolic v2
   | VListCons { hd = Any v_hd ; tl } ->
@@ -37,9 +37,9 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VTypeList t ->
     is_symbolic t
   | VTypeRecord record_body ->
-    Labels.Record.Map.exists (fun _ t -> is_symbolic t) record_body
+    Record.Label.Map.exists (fun _ t -> is_symbolic t) record_body
   | VTypeVariant variant_body ->
-    Labels.Variant.Map.exists (fun _ t -> is_symbolic t) variant_body
+    Variant.Label.Map.exists (fun _ t -> is_symbolic t) variant_body
   | VTypeTuple (t1, t2) ->
     is_symbolic t1 || is_symbolic t2
   | VTypeSingle Any v ->
@@ -89,7 +89,7 @@ let rec does_wrap_matter : typ t -> bool = function
   | VTypeSingle _ -> false
   (* propagate *)
   | VTypeVariant variant_t ->
-    Labels.Variant.Map.exists (fun _ -> does_wrap_matter) variant_t
+    Variant.Label.Map.exists (fun _ -> does_wrap_matter) variant_t
   | VTypeList t
   | VTypeRefine { tau = t ; _ } -> does_wrap_matter t
   | VTypeTuple (t1, t2) -> does_wrap_matter t1 || does_wrap_matter t2
@@ -168,7 +168,7 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     of_cdata (b1 = b2, Formula.binop Smt.Binop.Equal s1 s2)
   (* propagate equality *)
   | Any VVariant v1, Any VVariant v2 ->
-    let= () = Labels.Variant.equal v1.label v2.label in
+    let= () = Variant.Label.equal v1.label v2.label in
     intensional_equal v1.payload v2.payload
   | Any VListCons { hd = a1 ; tl = tl1 }, Any VListCons { hd = a2 ; tl = tl2 } ->
     let- () = intensional_equal a1 a2 in
@@ -196,32 +196,32 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VRecord m1, Any VRecord m2
   | Any VModule m1, Any VModule m2 ->
     fold_lists (fun (l1, v1) (l2, v2) ->
-      let= () = Labels.Record.equal l1 l2 in
+      let= () = Record.Label.equal l1 l2 in
       intensional_equal v1 v2
-    ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
+    ) (Record.Label.Map.to_list m1) (Record.Label.Map.to_list m2)
   | Any VTypeRecord m1, Any VTypeRecord m2 ->
     fold_lists (fun (l1, v1) (l2, v2) ->
-      let= () = Labels.Record.equal l1 l2 in
+      let= () = Record.Label.equal l1 l2 in
       iequal v1 v2
-    ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
+    ) (Record.Label.Map.to_list m1) (Record.Label.Map.to_list m2)
   | Any VTypeVariant m1, Any VTypeVariant m2 ->
     fold_lists (fun (l1, v1) (l2, v2) ->
-      let= () = Labels.Variant.equal l1 l2 in
+      let= () = Variant.Label.equal l1 l2 in
       iequal v1 v2
-    ) (Labels.Variant.Map.to_list m1) (Labels.Variant.Map.to_list m2)
+    ) (Variant.Label.Map.to_list m1) (Variant.Label.Map.to_list m2)
   | Any VTypeModule c1, Any VTypeModule c2 ->
     let rec fold bindings x y =
       match x, y with
       | [], [] -> make true
       | [], _ | _, [] -> make false
       | (lx, tx) :: xs, (ly, ty) :: ys ->
-        let= () = Labels.Record.equal lx ly in
+        let= () = Record.Label.equal lx ly in
         let- () =
           iequal_closure bindings
             { captured = tx ; env = c1.env }
             { captured = ty ; env = c2.env }
         in
-        fold [ Labels.Record.to_ident lx, Labels.Record.to_ident ly ] xs ys
+        fold [ Record.Label.to_ident lx, Record.Label.to_ident ly ] xs ys
     in
     fold [] c1.captured c2.captured
   | Any VTypeRefine r1, Any VTypeRefine r2 ->
@@ -346,24 +346,24 @@ and iequal_closure bindings closure1 closure2 =
       let- () = ieq r1.func r2.func in
       ieq r1.arg r2.arg
     | EProject r1, EProject r2 ->
-      let= () = Labels.Record.equal r1.label r2.label in
+      let= () = Record.Label.equal r1.label r2.label in
       ieq r1.record r2.record
     | ERecord m1, ERecord m2
     | ETypeRecord m1, ETypeRecord m2 ->
       fold_lists (fun (l1, e1) (l2, e2) ->
-        let= () = Labels.Record.equal l1 l2 in
+        let= () = Record.Label.equal l1 l2 in
         ieq e1 e2
-      ) (Labels.Record.Map.to_list m1) (Labels.Record.Map.to_list m2)
+      ) (Record.Label.Map.to_list m1) (Record.Label.Map.to_list m2)
     | ETuple (l1, r1), ETuple (l2, r2)
     | EListCons { hd = l1 ; tl = r1 }, EListCons { hd = l2 ; tl = r2 } ->
       let- () = ieq l1 l2 in
       ieq r1 r2
     | EVariant r1, EVariant r2 ->
-      let= () = Labels.Variant.equal r1.label r2.label in
+      let= () = Variant.Label.equal r1.label r2.label in
       ieq r1.payload r2.payload
     | ETypeVariant l1, ETypeVariant l2 ->
       fold_lists (fun r1 r2 ->
-        let= () = Labels.Variant.equal r1.Variant.label r2.label in
+        let= () = Variant.Label.equal r1.Variant.label r2.label in
         ieq r1.payload r2.payload
       ) l1 l2
     (* check closures *)
@@ -391,9 +391,9 @@ and iequal_closure bindings closure1 closure2 =
       | [], _ | _, [] -> make false
       | (lbl1, t1) :: tl1, (lbl2, t2) :: tl2 ->
         let- () = ieq t1 t2 in
-        let= () = Labels.Record.equal lbl1 lbl2 in
-        let id1 = Labels.Record.to_ident lbl1 in
-        let id2 = Labels.Record.to_ident lbl2 in
+        let= () = Record.Label.equal lbl1 lbl2 in
+        let id1 = Record.Label.to_ident lbl1 in
+        let id2 = Record.Label.to_ident lbl2 in
         iequal_expr ((id1, id2) :: bindings) (ETypeModule tl1) (ETypeModule tl2)
       end
     | ETypeRefine r1, ETypeRefine r2 ->
@@ -496,7 +496,7 @@ and iequal_closure bindings closure1 closure2 =
     | PVariable id1, PVariable id2 ->
       Some [id1, id2]
     | PVariant v1, PVariant v2 ->
-      if Labels.Variant.equal v1.label v2.label then
+      if Variant.Label.equal v1.label v2.label then
         check_pattern v1.payload v2.payload
       else
         None
