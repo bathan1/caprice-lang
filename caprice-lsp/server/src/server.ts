@@ -20,7 +20,7 @@ const connection = createConnection(ProposedFeatures.all);
 const docs = new Map<string, TextDocument>();
 const diagnostics = new DiagnosticsManager(connection);
 
-const typecheckerPath = path.join(__dirname, '..', '..', '..', 'typecheck_lsp.exe');
+const typecheckerPath = path.join(__dirname, '..', '..', '..', 'caprice_typecheck_lsp.exe');
 let ocamlChecker: ChildProcessWithoutNullStreams;
 let buffer = '';
 let currentUri = '';
