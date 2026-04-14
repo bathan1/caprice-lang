@@ -11,47 +11,38 @@ let[@inline] return_any v = return (Any v)
 let bad_input_env =
   InvariantException "Input environment is ill-formed"
 
-let make_comparator
-  : 'env. max_step:Step.t -> Val.tval -> (Val.comparator, 'env) m
-  = fun ~max_step t ->
-  let rec mk = function
-    | VType
-    | VTypeUnit
-    | VTypeTop
-    | VTypeInt
-    | VTypeBool
-    | VTypePoly _
-    | VTypeModule _ -> return CAtomic
-    | VTypeSingle _ -> return CSingle
-    | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
-    | VTypeMu { var ; closure } ->
-      (* TODO: branch by possibly giving up *)
-      let* () = incr_step ~max_step in
-      let* suspension = new_mu_cell var closure in
-      return (CMu suspension)
-    | VTypeList t ->
-      let* c = mk t in
-      return (CList c)
-    | VTypeFun tfun ->
-      let* () = incr_step ~max_step in
-      let* witnesses = new_cell [] in
-      return (CFun { tfun ; witnesses })
-    | VTypeRecord m ->
-      let* c_rec = Labels.Record.Map.mapM (module Semantics) mk m in
-      return (CRecord c_rec)
-    | VTypeVariant m ->
-      let* c_var = Labels.Variant.Map.mapM (module Semantics) mk m in
-      return (CVariant c_var)
-    | VTypeRefine { var = _ ; tau ; predicate = _ } ->
-      mk tau
-    | VTypeTuple (t1, t2) ->
-      let* c1 = mk t1 in
-      let* c2 = mk t2 in
-      return (CTuple (c1, c2))
-  in
-  mk t
-
-
+let rec make_comparator : 'env. Val.tval -> (Val.comparator, 'env) m = function
+  | VType
+  | VTypeUnit
+  | VTypeTop
+  | VTypeInt
+  | VTypeBool
+  | VTypePoly _
+  | VTypeModule _ -> return CAtomic
+  | VTypeSingle _ -> return CSingle
+  | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
+  | VTypeMu { var ; closure } ->
+    (* TODO: branch by possibly giving up *)
+    let* suspension = new_mu_cell var closure in
+    return (CMu suspension)
+  | VTypeList t ->
+    let* c = make_comparator t in
+    return (CList c)
+  | VTypeFun tfun ->
+    let* witnesses = new_cell [] in
+    return (CFun { tfun ; witnesses })
+  | VTypeRecord m ->
+    let* c_rec = Labels.Record.Map.mapM (module Semantics) make_comparator m in
+    return (CRecord c_rec)
+  | VTypeVariant m ->
+    let* c_var = Labels.Variant.Map.mapM (module Semantics) make_comparator m in
+    return (CVariant c_var)
+  | VTypeRefine { var = _ ; tau ; predicate = _ } ->
+    make_comparator tau
+  | VTypeTuple (t1, t2) ->
+    let* c1 = make_comparator t1 in
+    let* c2 = make_comparator t2 in
+    return (CTuple (c1, c2))
 
 open Grammar.Val.Error_messages
 
@@ -812,7 +803,7 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
       let* table = new_cell [] in
-      let* dom_comp = make_comparator ~max_step funtype.domain in
+      let* dom_comp = make_comparator funtype.domain in
       return_any (VGenFun { funtype ; table ; dom_comp })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
@@ -1264,7 +1255,7 @@ let eval
             are not enough witnesses for this comparison, so make another *)
           let* witness = gen domain in
           let* cod_tval = eval_codomain codomain witness in
-          let* cod = make_comparator ~max_step cod_tval in
+          let* cod = make_comparator cod_tval in
           let ls = { witness ; cod } :: original_wits in
           let* () = set_cell witnesses ls in
           return ls
@@ -1287,7 +1278,7 @@ let eval
         match mu with
         | Waiting { var ; closure } ->
           let* t_body = unroll_mu var closure in
-          let* comp = make_comparator ~max_step t_body in
+          let* comp = make_comparator t_body in
           let* () = set_cell suspension (Unrolled comp) in
           return comp
         | Unrolled comp -> return comp
