@@ -147,10 +147,8 @@ let read_input (kind : 'a Input.Kind.t) (input_env : Input_env.t) : ('a option, 
 *)
 let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
   ~(default : 'a) : ('a, 'env) m =
-  let* step = step in
-  let input =
-    Option.value ~default (Input_env.find kind (Stepkey step) input_env)
-  in
+  let* input_opt = read_input kind input_env in
+  let input = Option.value input_opt ~default in
   let* () = log_input kind input in
   return input
 
@@ -159,8 +157,10 @@ let read_and_log_input (kind : 'a Input.Kind.t) (input_env : Input_env.t)
     program point. It is trivial to solve because its solution is
     the logged input environment.
 
+  The implementation is hand-rolled because of the value restriction.
+
   Invariant: this should only be sequenced when the old target has been
-    reached. It is asserted that this invariant holds
+    reached. It is asserted that this invariant holds.
 *)
 let target_to_here : 'env. (Target.t, 'env) m =
   { run = fun ~reject:_ ~accept state step _ { target ; _ } ->
