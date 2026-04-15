@@ -37,27 +37,42 @@ let round_robin (fs : work_item list) : unit =
   in
   dequeue ()
 
-let ceval_many ~(options : Concolic.Options.t) pgms =
+let splay_check ~options pgm =
+  M.begin_ceval ~print_outcome:false ~options:{ options with splay = Splay_only } pgm
+
+let full_check ~options pgm =
+  M.begin_ceval ~print_outcome:false ~options:{ options with splay = Never_splay } pgm
+
+let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm =
+  let refinement_positions = List.filter
+    (fun (p : Lang.Ast.pos_span) -> p.begins.pos_cnum <= span.ends.pos_cnum)
+    refinement_positions in
+  begin match splay_check ~options pgm with
+  | Grammar.Answer.Found_error msg ->
+    begin match splay_check ~options stripped_pgm with
+    | Grammar.Answer.Found_error _ ->
+      Print.print_splay_error span msg;
+      Done (full_check ~options pgm)
+    | _ ->
+      let answer = full_check ~options pgm in
+      begin match answer with
+      | Grammar.Answer.Found_error _ -> ()
+      | _ -> List.iter Print.print_refinement_warning refinement_positions
+      end;
+      Done answer
+    end
+  | answer -> Done answer
+  end
+
+let ceval_many ~(options : Concolic.Options.t) ~refinement_positions pgms stripped_pgms =
   round_robin (
-    List.map (fun (span, pgm) ->
+    List.map2 (fun (span, pgm) (_, stripped_pgm) ->
       { span ; task = fun () ->
           Print.print_pending span;
           match options.splay with
-          | Fallback ->
-            let splay_answer =
-              M.begin_ceval ~print_outcome:false
-                ~options:{ options with splay = Splay_only } pgm
-            in
-            begin match splay_answer with
-            | Grammar.Answer.Found_error msg ->
-              let () = Print.print_splay_error span msg in
-              Done (M.begin_ceval ~print_outcome:false
-                ~options:{ options with splay = Never_splay } pgm)
-            | answer -> Done answer
-            end
-          | _ ->
-            Done (M.begin_ceval ~print_outcome:false ~options pgm) }
-    ) pgms
+          | Fallback -> handle_fallback ~options ~refinement_positions span pgm stripped_pgm
+          | _ -> Done (M.begin_ceval ~print_outcome:false ~options pgm) }
+    ) pgms stripped_pgms
   )
 
 let find_baseline_error ~options stmts_with_pos =
@@ -75,24 +90,39 @@ let find_baseline_error ~options stmts_with_pos =
       | answer -> Some (span, answer))
   | _ -> None
 
+let parse_normal text =
+  Lang.Parser.reset_refinement_positions ();
+  Lang.Parser.set_strip_refinements false;
+  let stmts = Lang.Parser.Positioned.parse_string text in
+  stmts, Lang.Parser.get_refinement_positions ()
+
+let parse_stripped text =
+  Lang.Parser.set_strip_refinements true;
+  let stmts = Lang.Parser.Positioned.parse_string text in
+  Lang.Parser.set_strip_refinements false; (* defensive reset: strip_refinements is global state *)
+  stmts
+
 let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_packet) =
   try
-    let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
-    let stmts_to_check =
+    let stmts_with_pos, refinement_positions = parse_normal packet.full_text in
+    let stripped_stmts = parse_stripped packet.full_text in
+    let stmts_to_check, stripped_to_check =
       match find_baseline_error ~options stmts_with_pos with
-      | None -> stmts_with_pos
+      | None -> stmts_with_pos, stripped_stmts
       | Some (error_span, a) ->
         (* TODO: extend error message to say statements after this are unreachable *)
         let () = Print.print_answer error_span a in
-        fst (Stmt_check.split_on_pos stmts_with_pos error_span)
+        fst (Stmt_check.split_on_pos stmts_with_pos error_span),
+        fst (Stmt_check.split_on_pos stripped_stmts error_span)
     in
     let check_index = Range_check.compute_check_pos stmts_to_check packet.changes in
-    match check_index with
+    begin match check_index with
     | None -> ()
     | Some start_pos ->
-      stmts_to_check
-      |> Stmt_check.mk_pgms ~start_pos
-      |> ceval_many ~options
+      let pgms = Stmt_check.mk_pgms stmts_to_check ~start_pos in
+      let stripped_pgms = Stmt_check.mk_pgms stripped_to_check ~start_pos in
+      ceval_many ~options ~refinement_positions pgms stripped_pgms
+    end
   with
   | Lang.Parser.Parse_error (_exn, line, col, tok) ->
     Printf.printf "parse_error:%d:%d:%s\n%!" line col tok
