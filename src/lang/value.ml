@@ -28,7 +28,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VEmptyList : dat t
     | VListCons : { hd : any ; tl : dat t } -> dat t
     (* generated values *)
-    | VGenFun : { funtype : (typ t, fun_cod) Funtype.t ; dom_comp : comparator
+    | VGenFun : { funtype : (typ t, fun_cod) Funtype.t
                 ; table : table Utils.Cell.t } -> dat t
     | VGenPoly : { id : int ; nonce : int } -> dat t
     | VLazy : lazy_cell -> dat t (* lazily evaluated thing, so state must manage this *)
@@ -54,7 +54,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
   and 'a closure = { captured : 'a ; env : env }
 
-  and table = (any * any) list
+  and table = (comparator * any) list
 
   and env = any Env.t
 
@@ -84,23 +84,24 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
   and comparator =
     | CGiveUp
-    | CAtomic (* signals to just use structural comparison because not nested *)
-    (* | CPoly of { id : int } *) (* poly is atomic, right? *)
-    | CMu of comp_mu Utils.Cell.t
-    | CList of comparator
+    | CAtomic of any (* signals to just use structural comparison because not nested *)
+    | CLazy of comp_lazy Utils.Cell.t
+    | CEmptyList
+    | CListCons of comparator * comparator
     | CFun of { tfun : (typ t, fun_cod) Funtype.t
-              ; witnesses : witness list Utils.Cell.t }
+              ; mapping : comp_fun Utils.Cell.t }
     | CRecord of comparator Record.t
-    (* The comparator could be specialized to a certain module value, much like
-      the codomain of a function. This is a TODO. *)
-    (* | CModule of (Record.Label.t * Ast.t) list closure *)
-    | CVariant of comparator Variant.Label.Map.t
+    | CVariant of comparator Variant.t
     | CTuple of comparator * comparator
     | CSingle (* Same behavior as giving up! We know they must be equal already *)
 
-  and comp_mu =
-    | Unrolled of comparator
-    | Waiting of { var : Ident.t ; closure : Ast.t closure }
+  and comp_lazy =
+    | LWaiting of vlazy Utils.Cell.t * typ t
+    | LComp of comparator
+
+  and comp_fun =
+    | FWaiting of dat t
+    | FMapping of { arg : any ; dom_cmp : comparator ; og_fun : dat t }
 
   module Env = Env.Make (struct type t = any end)
 
@@ -205,16 +206,14 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | VWrapped { data ; tau } ->
       contains_mu data || contains_mu (VTypeFun tau)
     | VTypeFun { domain ; codomain = CodValue t }
-    | VGenFun { funtype = { domain ; codomain = CodValue t } ; table = _
-              ; dom_comp = _ } ->
+    | VGenFun { funtype = { domain ; codomain = CodValue t } ; table = _ } ->
       contains_mu domain || contains_mu t
     (* Closures cases: assume true, but may want to inspect closure *)
     | VFunClosure _
     | VFunFix _
     | VTypeModule _
     | VLazy _
-    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; table = _
-              ; dom_comp = _ }
+    | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; table = _ }
     | VTypeFun { domain = _ ; codomain = CodDependent _ } -> true
     (* Refinement types: closure does not escape, so just look at type *)
     | VTypeRefine { tau ; _ } -> contains_mu tau
@@ -264,7 +263,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
       "[]"
     | VListCons { hd ; tl } ->
       Printf.sprintf "(%s :: %s)" (any_to_string hd) (to_string tl)
-    | VGenFun { funtype ; table ; dom_comp = _ } ->
+    | VGenFun { funtype ; table } ->
       Printf.sprintf "G(%s, %d)" (to_string (VTypeFun funtype)) (Utils.Cell.id table)
     | VGenPoly { id ; nonce } ->
       Printf.sprintf "G(poly id : %d, nonce : %d)" id nonce

@@ -45,8 +45,7 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VTypeSingle Any v ->
     is_symbolic v
   | VTypeFun { domain ; codomain = CodValue t }
-  | VGenFun { funtype = { domain ; codomain = CodValue t } ; table = _
-            ; dom_comp = _ } ->
+  | VGenFun { funtype = { domain ; codomain = CodValue t } ; table = _ } ->
     is_symbolic domain || is_symbolic t
   | VWrapped { data ; tau = { domain ; codomain = CodValue t } } ->
     is_symbolic data || is_symbolic domain || is_symbolic t
@@ -57,8 +56,7 @@ let rec is_symbolic : type a. a t -> bool = fun v ->
   | VLazy _
   | VTypeMu _
   | VTypeRefine _
-  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; table = _
-            ; dom_comp = _ }
+  | VGenFun { funtype = { domain = _ ; codomain = CodDependent _ } ; table = _ }
   | VTypeFun { domain = _ ; codomain = CodDependent _ }
   | VWrapped { data = _ ; tau = { domain = _ ; codomain = CodDependent _ } } ->
     true
@@ -181,8 +179,8 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
   | Any VTuple (l1, r1), Any VTuple (l2, r2) ->
     let- () = intensional_equal l1 l2 in
     intensional_equal r1 r2
-  | Any VGenFun { funtype = _ ; table = t1 ; dom_comp = _ }
-  , Any VGenFun { funtype = _ ; table = t2 ; dom_comp = _ } ->
+  | Any VGenFun { funtype = _ ; table = t1 }
+  , Any VGenFun { funtype = _ ; table = t2 } ->
     make (Utils.Cell.equal t1 t2)
   | Any VTypeSingle v1, Any VTypeSingle v2 ->
     intensional_equal v1 v2

@@ -11,39 +11,6 @@ let[@inline] return_any v = return (Any v)
 let bad_input_env =
   InvariantException "Input environment is ill-formed"
 
-let rec make_comparator : 'env. Val.tval -> (Val.comparator, 'env) m = function
-  | VType
-  | VTypeUnit
-  | VTypeTop
-  | VTypeInt
-  | VTypeBool
-  | VTypePoly _
-  | VTypeModule _ -> return CAtomic
-  | VTypeSingle _ -> return CSingle
-  | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
-  | VTypeMu { var ; closure } ->
-    (* TODO: branch by possibly giving up *)
-    let* suspension = new_mu_cell var closure in
-    return (CMu suspension)
-  | VTypeList t ->
-    let* c = make_comparator t in
-    return (CList c)
-  | VTypeFun tfun ->
-    let* witnesses = new_cell [] in
-    return (CFun { tfun ; witnesses })
-  | VTypeRecord m ->
-    let* c_rec = Record.Label.Map.mapM (module Semantics) make_comparator m in
-    return (CRecord c_rec)
-  | VTypeVariant m ->
-    let* c_var = Variant.Label.Map.mapM (module Semantics) make_comparator m in
-    return (CVariant c_var)
-  | VTypeRefine { var = _ ; tau ; predicate = _ } ->
-    make_comparator tau
-  | VTypeTuple (t1, t2) ->
-    let* c1 = make_comparator t1 in
-    let* c2 = make_comparator t2 in
-    return (CTuple (c1, c2))
-
 open Grammar.Val.Error_messages
 
 (**
@@ -372,24 +339,25 @@ let eval
           Env.set fvar (Any self_fun) env
           |> Env.set param v_arg
         ) (eval captured)
-    | VGenFun { funtype = { domain = _ ; codomain } ; table ; dom_comp } ->
+    | VGenFun { funtype = { domain ; codomain } ; table } ->
       let* mappings = get_cell table in
-      let rec find_output n = function
+      let rec find_output = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
-          let* () = set_cell table ((v_arg, genned) :: mappings) in
+          let* cmp = make_comparator domain v_arg in
+          let* () = set_cell table (mappings @ [(cmp, genned)]) in
           return genned
-        | (input, output) :: tl ->
-          let* (b, s) = extensional_equal n dom_comp v_arg input in
+        | (cmp, output) :: tl ->
+          let* (b, s) = extensional_equal cmp v_arg in
           if b then
             let* () = push_formula_to_path s in
             return output
           else
             let* () = push_formula_to_path (Formula.not_ s) in
-            find_output (n + 1) tl
+            find_output tl
       in
-      find_output 0 (List.rev mappings)
+      find_output mappings
     | _ -> mismatch @@ apply_non_function (Any v_func)
 
   (*
@@ -802,8 +770,7 @@ let eval
       return_any (VBool (b, Stepkey.bool_symbol step))
     | VTypeFun funtype ->
       let* table = new_cell [] in
-      let* dom_comp = make_comparator funtype.domain in
-      return_any (VGenFun { funtype ; table ; dom_comp })
+      return_any (VGenFun { funtype ; table })
     | VType ->
       let* Step id = step in (* will use step for a fresh integer *)
       return_any (VTypePoly { id })
@@ -999,15 +966,13 @@ let eval
     | VTypeRecord t_body ->
       begin match v with
       | Any VRecord v_body ->
+        let wrap_one l t =
+          match Record.Label.Map.find_opt l v_body with
+          | Some v' -> wrap v' t
+          | None -> mismatch (missing_label v l)
+        in
         let* w_body =
-          Record.fold (fun k t acc_m ->
-            let* acc = acc_m in
-            match Record.Label.Map.find_opt k v_body with
-            | Some v' ->
-              let* w = wrap v' t in
-              return (Record.Label.Map.add k w acc)
-            | None -> return acc
-          ) (return Record.Label.Map.empty) t_body
+          Record.Label.Map.mapiM (module Semantics) wrap_one t_body
         in
         return_any (VRecord w_body)
       | _ ->
@@ -1219,135 +1184,212 @@ let eval
     --------------------
     EXTENSIONAL EQUALITY
     --------------------
-
-    The integer argument is which witness to use for comparison. It's known
-    that the first n entries of the table are equal on the first n-1 witnesses,
-    if we are comparing a value to the nth entry, it must be equal on the first
-    n-1 of them (because we scan through the table in an ordered way). Thus,
-    only use the nth entry.
   *)
   and extensional_equal
-    : 'env. int -> Val.comparator -> Val.any -> Val.any -> (bool Cdata.t, 'env) m
-    = fun n c a b ->
-    if a == b then return (true, Formula.const_bool true) else
-    let ( let- ) x f =
-      let* (b, e) = x in
-      match e with
-      | Smt.Formula.Const_bool false -> x
-      | _ ->
-        let* (b', e') = f () in
-        return (b && b', Smt.Formula.and_ [ e ; e' ])
-    in
-    let intensional_equal x y =
-      begin match Val.intensional_equal x y with
-      | Value (b, e) -> return (b, e)
-      | ShapeMismatch -> return Cdata.false_
-      end
-    in
-    match c with
-    | CSingle | CGiveUp -> return Cdata.true_
-    | CAtomic -> intensional_equal a b
-    | CFun { tfun = { domain ; codomain } ; witnesses } ->
-      let* original_wits = get_cell witnesses in
-      let* { witness ; cod } =
-        (* FIXME: if we do n >= length, then we are hiding a bug.
-            But n = length may fail. *)
-        if n >= List.length original_wits then
-          let* witness = gen domain in
-          let* cod_tval = eval_codomain codomain witness in
-          let* cod = make_comparator cod_tval in
-          let entry = { witness ; cod } in
-          let* () = set_cell witnesses (original_wits @ [ entry ]) in
-          return entry
-        else
-          return (List.nth original_wits n)
-      in
-      Val.handle_two a b (function
-        | `Data (a, b) ->
-          let* v_a = eval_appl (Val.discard_wrapper a) witness in
-          let* v_b = eval_appl (Val.discard_wrapper b) witness in
-          extensional_equal n cod v_a v_b
-        | `Types _ | `Mismatch _ -> return Cdata.false_
-      )
-    | CMu suspension ->
-      let* mu = get_cell suspension in
-      let* comp =
-        match mu with
-        | Waiting { var ; closure } ->
-          let* t_body = unroll_mu var closure in
-          let* comp = make_comparator t_body in
-          let* () = set_cell suspension (Unrolled comp) in
-          return comp
-        | Unrolled comp -> return comp
-      in
-      extensional_equal n comp a b
-    | CList c_body ->
-      let rec eq_lists x y =
-        match x, y with
-        | VListCons xs, VListCons ys ->
-          let- () = eq_lists xs.tl ys.tl in
-          extensional_equal n c_body xs.hd ys.hd
-        | VEmptyList, VEmptyList -> return Cdata.true_
-        | VLazy xc, VLazy yc ->
-          if xc.cell = yc.cell then return Cdata.true_ else
-          (* FIXME: we should handle lazy everywhere, not just here *)
-          let* lx = get_cell xc.cell in
-          let* ly = get_cell yc.cell in
-          begin match lx, ly with
-          | LValue a, LValue b -> extensional_equal n c a b
-          | _ -> return Cdata.false_ (* incomplete *)
+    : 'env. Val.comparator -> Val.any -> (bool Cdata.t, 'env) m
+    = fun c v ->
+    match v with
+    | Any VLazy { cell ; wrapping_types = _ } ->
+      let* vlazy = get_cell cell in
+      begin match vlazy with
+      | LValue any ->
+        (* The lazy value has been pulled on, so use known value *)
+        extensional_equal c any
+      | LLazy _ ->
+        (* The value is lazy. Do not pull on it. *)
+        begin match c with
+        | CLazy cmp_cell ->
+          (* The comparator is also lazy. See if it has been pulled on. *)
+          let* cmp_lazy = get_cell cmp_cell in
+          begin match cmp_lazy with
+          | LWaiting (cell', _) ->
+            (* The comparator refers to some value cell, so they are equal. *)
+            if cell = cell' then
+              return Cdata.true_
+            else
+              (* Incomplete: these values _could_ be equal, but they are not
+                the same cell, so we have to say false. *)
+              return Cdata.false_
+          | LComp cmp ->
+            (* The comparator has been pulled on. Continue with this one. *)
+            extensional_equal cmp v
           end
-        | _ -> return Cdata.false_
-      in
-      Val.handle_two a b (function
-        | `Data (a, b) -> eq_lists a b
-        | `Types _ | `Mismatch _ -> return Cdata.false_
-      )
-    | CRecord m ->
-      begin match a, b with
-      | Any VRecord x, Any VRecord y ->
-        Record.fold (fun l c_body acc ->
-          let- () = acc in
-          match Record.Label.Map.find_opt l x, Record.Label.Map.find_opt l y with
-          | Some u, Some v -> extensional_equal n c_body u v
-          | _ -> mismatch "missing record label"
-        ) (return Cdata.true_) m
-      | _ -> return Cdata.false_
-      end
-    (* | VTypeModule { captured ; env } ->
-      begin match a, b with
-      | Any VModule x, Any VModule y ->
-        let rec loop = function
-          | [] -> return Cdata.true_
-          | (l, tau) :: tl ->
-            let* t_body = eval_type tau in
-            match Record.Label.Map.find_opt l x, Record.Label.Map.find_opt l y with
-            | Some u, Some v ->
-              let- () = extensional_equal n t_body u v in
-              local (Env.set (Record.Label.to_ident l) (Any t_body)) (loop tl)
-            | _ -> mismatch "missing record label"
-        in
-        local' env (loop captured)
-      | _ -> return Cdata.false_
-      end *)
-    | CVariant m ->
-      begin match a, b with
-      | Any VVariant va, Any VVariant vb ->
-        if Variant.Label.equal va.label vb.label then
-          match Variant.Label.Map.find_opt va.label m with
-          | Some c_body -> extensional_equal n c_body va.payload vb.payload
-          | None -> mismatch "variant label not found"
-        else
+        | _ ->
+          (* Do not pull on values. Say false. *)
           return Cdata.false_
-      | _ -> return Cdata.false_
+        end
       end
-    | CTuple (c1, c2) ->
-      begin match a, b with
-      | Any VTuple (a1, a2), Any VTuple (b1, b2) ->
-        let- () = extensional_equal n c1 a1 b1 in
-        extensional_equal n c2 a2 b2
-      | _ -> return Cdata.false_
+    | _ ->
+      let ( let- ) x f =
+        let* (b, e) = x in
+        match e with
+        | Smt.Formula.Const_bool false -> x
+        | _ ->
+          let* (b', e') = f () in
+          return (b && b', Smt.Formula.and_ [ e ; e' ])
+      in
+      match c with
+      | CSingle | CGiveUp -> return Cdata.true_
+      | CAtomic v' ->
+        begin match Val.intensional_equal v v' with
+        | Value (b, e) -> return (b, e)
+        | ShapeMismatch -> return Cdata.false_
+        end
+      | CFun { tfun = { domain ; codomain } ; mapping } ->
+        let* comp_fun = get_cell mapping in
+        let* (input, output, og_fun) =
+          match comp_fun with
+          | FWaiting v_func ->
+            let* arg = gen domain in
+            let* result = eval_appl v_func arg in
+            let* cod_tval = eval_codomain codomain arg in
+            let* dom_cmp = make_comparator cod_tval result in
+            let* () = set_cell mapping
+              (FMapping { arg ; dom_cmp ; og_fun = v_func })
+            in
+            return (arg, dom_cmp, v_func)
+          | FMapping { arg ; dom_cmp ; og_fun } ->
+            return (arg, dom_cmp, og_fun)
+        in
+        Val.handle_any v ~dat:(fun f ->
+          (* It's a hack to keep the original function to try to short circuit
+            the call. *)
+          if og_fun == f then return Cdata.true_ else
+          let* res = eval_appl (Val.discard_wrapper f) input in
+          extensional_equal output res
+        ) ~typ:(fun _ -> return Cdata.false_)
+      | CLazy cell ->
+        let* cmp_lazy = get_cell cell in
+        begin match cmp_lazy with
+        | LComp cmp -> extensional_equal cmp v
+        | LWaiting (cmp_v_cell, t) ->
+          let* vlazy = get_cell cmp_v_cell in
+          begin match vlazy with
+          | LValue v_cmp ->
+            (* The value has been pulled on, so we have enough information now
+              to construct a comparator. Do so, update the cell, and use it. *)
+            let* cmp = make_comparator t v_cmp in
+            let* () = set_cell cell (LComp cmp) in
+            extensional_equal cmp v
+          | LLazy _ ->
+            return Cdata.false_ (* the v = lazy case is handled above *)
+          end
+        end
+      | CTuple (c1, c2) ->
+        begin match v with
+        | Any VTuple (v1, v2) ->
+          let- () = extensional_equal c1 v1 in
+          extensional_equal c2 v2
+        | _ -> return Cdata.false_
+        end
+      | CEmptyList ->
+        begin match v with
+        | Any VEmptyList -> return Cdata.true_
+        | _ -> return Cdata.false_
+        end
+      | CListCons (c_hd, c_tl) ->
+        begin match v with
+        | Any VListCons { hd ; tl } ->
+          let- () = extensional_equal c_hd hd in
+          extensional_equal c_tl (Any tl)
+        | _ -> return Cdata.false_
+        end
+      | CRecord m ->
+        begin match v with
+        | Any VRecord record_body ->
+          Record.fold (fun l cmp acc ->
+            let- () = acc in
+            match Record.Label.Map.find_opt l record_body with
+            | Some x -> extensional_equal cmp x
+            | _ -> mismatch "missing record label"
+          ) (return Cdata.true_) m
+        | _ -> return Cdata.false_
+        end
+      | CVariant { label = c_label ; payload = c_payload } ->
+        begin match v with
+        | Any VVariant { label ; payload } ->
+          if Variant.Label.equal c_label label then
+            extensional_equal c_payload payload
+          else
+            return Cdata.false_
+        | _ ->
+          return Cdata.false_
+        end
+
+  and make_comparator
+    : 'env. Val.tval -> Val.any -> (Val.comparator, 'env) m
+    = fun t v ->
+    match v with
+    | Any VLazy { cell ; wrapping_types = _ } ->
+      let* vlazy = get_cell cell in
+      begin match vlazy with
+      | LLazy _ ->
+        let* cmp_cell = new_cell (LWaiting (cell, t)) in
+        return (CLazy cmp_cell)
+      | LValue any -> make_comparator t any
       end
+    | _ ->
+      match t with
+      | VType
+      | VTypeUnit
+      | VTypeTop
+      | VTypeInt
+      | VTypeBool
+      | VTypePoly _
+      | VTypeModule _ -> return (CAtomic v)
+      | VTypeSingle _ -> return CSingle
+      | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
+      | VTypeMu { var ; closure } ->
+        let* t_body = unroll_mu var closure in
+        make_comparator t_body v
+      | VTypeList t_body ->
+        begin match v with
+        | Any VEmptyList -> return CEmptyList
+        | Any VListCons { hd ; tl } ->
+          let* c_hd = make_comparator t_body hd in
+          let* c_tl = make_comparator t (Any tl) in
+          return (CListCons (c_hd, c_tl))
+        | _ -> vanish
+        end
+      | VTypeFun tfun ->
+        handle_any v ~dat:(fun f ->
+          let* cell = new_fun_cell (Val.discard_wrapper f) in
+          return (CFun { tfun ; mapping = cell })
+        ) ~typ:(fun _ -> vanish)
+      | VTypeRecord m ->
+        begin match v with
+        | Any VRecord record_body ->
+          let mk l t =
+            match Record.Label.Map.find_opt l record_body with
+            | Some v_body -> make_comparator t v_body
+            | None -> vanish
+          in
+          let* c_rec = Record.Label.Map.mapiM (module Semantics) mk m in
+          return (CRecord c_rec)
+        | _ -> vanish
+        end
+      | VTypeVariant m ->
+        begin match v with
+        | Any VVariant { label ; payload } ->
+          begin match Variant.Label.Map.find_opt label m with
+          | Some t_body ->
+            let* cmp = make_comparator t_body payload in
+            return (CVariant { label ; payload = cmp })
+          | None -> vanish
+          end
+        | _ -> vanish
+        end
+      | VTypeRefine { var = _ ; tau ; predicate = _ } ->
+        make_comparator tau v
+      | VTypeTuple (t1, t2) ->
+        begin match v with
+        | Any VTuple (v1, v2) ->
+          let* c1 = make_comparator t1 v1 in
+          let* c2 = make_comparator t2 v2 in
+          return (CTuple (c1, c2))
+        | _ -> vanish
+        end
+
   in
 
   let result, state = run (eval_statement_list pgm) target in

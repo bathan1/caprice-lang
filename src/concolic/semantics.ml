@@ -233,10 +233,10 @@ let new_cell
   let* () = set_cell key a in
   return key
 
-let new_mu_cell
-  : 'env. Ident.t -> Ast.t Val.closure -> (Val.comp_mu Utils.Cell.t, 'env) m
-  = fun var closure ->
-  new_cell (Val.Waiting { var ; closure })
+let new_fun_cell
+  : 'env. Val.dval -> (Val.comp_fun Utils.Cell.t, 'env) m
+  = fun f ->
+  new_cell (Val.FWaiting f)
 
 let new_lazy_cell : 'env. Val.lgen -> (Val.dval, 'env) m = fun lgen ->
   let* cell = new_cell (Val.LLazy lgen) in
