@@ -374,7 +374,6 @@ let eval
         ) (eval captured)
     | VGenFun { funtype = { domain = _ ; codomain } ; table ; dom_comp } ->
       let* mappings = get_cell table in
-      (* HACK HACK HACK n is a hack to trim witnesses in this prototype *)
       let rec find_output n = function
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
@@ -388,9 +387,9 @@ let eval
             return output
           else
             let* () = push_formula_to_path (Formula.not_ s) in
-            find_output (n - 1) tl
+            find_output (n + 1) tl
       in
-      find_output (List.length mappings - 1) (List.rev mappings)
+      find_output 0 (List.rev mappings)
     | _ -> mismatch @@ apply_non_function (Any v_func)
 
   (*
@@ -1221,9 +1220,11 @@ let eval
     EXTENSIONAL EQUALITY
     --------------------
 
-    The integer argument is the number of witnesses to ignore for comparison.
-    If it is at least the number of existing witnesses, then a witness is
-    needed, so it is generated and added.
+    The integer argument is which witness to use for comparison. It's known
+    that the first n entries of the table are equal on the first n-1 witnesses,
+    if we are comparing a value to the nth entry, it must be equal on the first
+    n-1 of them (because we scan through the table in an ordered way). Thus,
+    only use the nth entry.
   *)
   and extensional_equal
     : 'env. int -> Val.comparator -> Val.any -> Val.any -> (bool Cdata.t, 'env) m
@@ -1248,28 +1249,24 @@ let eval
     | CAtomic -> intensional_equal a b
     | CFun { tfun = { domain ; codomain } ; witnesses } ->
       let* original_wits = get_cell witnesses in
-      assert (n >= 0 && n <= List.length original_wits);
-      let* witnesses =
-        if n = List.length original_wits then
-          (* We're supposed to drop the entire list of witnesses. This means there
-            are not enough witnesses for this comparison, so make another *)
+      let* { witness ; cod } =
+        (* FIXME: if we do n >= length, then we are hiding a bug.
+            But n = length may fail. *)
+        if n >= List.length original_wits then
           let* witness = gen domain in
           let* cod_tval = eval_codomain codomain witness in
           let* cod = make_comparator cod_tval in
-          let ls = { witness ; cod } :: original_wits in
-          let* () = set_cell witnesses ls in
-          return ls
+          let entry = { witness ; cod } in
+          let* () = set_cell witnesses (original_wits @ [ entry ]) in
+          return entry
         else
-          return original_wits
+          return (List.nth original_wits n)
       in
       Val.handle_two a b (function
         | `Data (a, b) ->
-          List.fold_left (fun acc { witness ; cod } ->
-            let- () = acc in
-            let* v_a = eval_appl (Val.discard_wrapper a) witness in
-            let* v_b = eval_appl (Val.discard_wrapper b) witness in
-            extensional_equal n cod v_a v_b
-          ) (return Cdata.true_) (List.drop n witnesses)
+          let* v_a = eval_appl (Val.discard_wrapper a) witness in
+          let* v_b = eval_appl (Val.discard_wrapper b) witness in
+          extensional_equal n cod v_a v_b
         | `Types _ | `Mismatch _ -> return Cdata.false_
       )
     | CMu suspension ->
@@ -1347,8 +1344,8 @@ let eval
     | CTuple (c1, c2) ->
       begin match a, b with
       | Any VTuple (a1, a2), Any VTuple (b1, b2) ->
-        let- () = extensional_equal n c1 a1 a2 in
-        extensional_equal n c2 b1 b2
+        let- () = extensional_equal n c1 a1 b1 in
+        extensional_equal n c2 a2 b2
       | _ -> return Cdata.false_
       end
   in
