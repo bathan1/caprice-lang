@@ -138,10 +138,22 @@ export class DiagnosticsManager {
         break;
       }
 
+      case 'refinement_warning': {
+        const key = rangeKey(msg.range);
+        this.byStmt.set(key + ':refinement', {
+          range: msg.range,
+          message: 'Splay-checking failed because of refinement types',
+          severity: DiagnosticSeverity.Warning,
+        });
+        this.flush(uri);
+        break;
+      }
+
       case 'ok': {
         const key = rangeKey(msg.range);
         this.invalidate(key, msg.range);
         this.byStmt.delete(key + ':splay');
+        this.byStmt.delete(key + ':refinement');
         this.flush(uri);
         break;
       }
