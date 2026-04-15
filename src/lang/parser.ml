@@ -48,3 +48,7 @@ module Positioned = Make (struct
   type result = Ast.statement_with_pos list
   let entry_point = Caprice_parser.prog_with_pos
 end)
+
+let set_strip_refinements b = Parser_state.strip_refinements := b
+let reset_refinement_positions () = Parser_state.refinement_positions := []
+let get_refinement_positions () = List.rev !(Parser_state.refinement_positions)

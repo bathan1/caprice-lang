@@ -162,7 +162,10 @@ typed_param_group:
   | name=l_ident COLON tau=expr
     { name, tau }
   | name=l_ident COLON tau=expr PIPE predicate=expr
-    { name, ETypeRefine { var = name ; tau ; predicate } }
+    { Parser_state.refinement_positions := { begins = $startpos ; ends = $endpos }
+        :: !Parser_state.refinement_positions;
+      name, if !Parser_state.strip_refinements then tau
+            else ETypeRefine { var = name ; tau ; predicate } }
   | name=l_ident COLON_EQUAL e=expr
     { name, ETypeSingle e }
 
@@ -329,7 +332,10 @@ op_expr:
     { ETypeRecord record }
   (* refinement type with binding for tau, which looks like a record type at first *)
   | OPEN_BRACE var=l_ident COLON tau=expr PIPE predicate=expr CLOSE_BRACE
-    { ETypeRefine { var ; tau ; predicate } }
+    { Parser_state.refinement_positions := { begins = $startpos ; ends = $endpos }
+        :: !Parser_state.refinement_positions;
+      if !Parser_state.strip_refinements then tau
+      else ETypeRefine { var ; tau ; predicate } }
   ;
 
 %inline record_type_item:
