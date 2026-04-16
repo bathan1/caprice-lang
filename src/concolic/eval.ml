@@ -1243,13 +1243,13 @@ let eval
             let* arg = gen domain in
             let* result = eval_appl v_func arg in
             let* cod_tval = eval_codomain codomain arg in
-            let* dom_cmp = make_comparable cod_tval result in
+            let* mapsto = make_comparable cod_tval result in
             let* () = set_cell mapping
-              (FMapping { arg ; dom_cmp ; og_fun = v_func })
+              (FMapping { arg ; mapsto ; og_fun = v_func })
             in
-            return (arg, dom_cmp, v_func)
-          | FMapping { arg ; dom_cmp ; og_fun } ->
-            return (arg, dom_cmp, og_fun)
+            return (arg, mapsto, v_func)
+          | FMapping { arg ; mapsto ; og_fun } ->
+            return (arg, mapsto, og_fun)
         in
         Val.handle_any v ~dat:(fun f ->
           (* It's a hack to keep the original function to try to short circuit

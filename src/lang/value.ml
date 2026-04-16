@@ -100,7 +100,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
   and cmp_fun =
     | FWaiting of dat t
-    | FMapping of { arg : any ; dom_cmp : comparable ; og_fun : dat t }
+    | FMapping of { arg : any ; mapsto : comparable ; og_fun : dat t }
 
   module Env = Env.Make (struct type t = any end)
 
