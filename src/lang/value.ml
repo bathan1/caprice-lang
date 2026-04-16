@@ -83,7 +83,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
   and witness = { witness : any ; cod : comparable }
 
   and comparable =
-    | CAtomic of any (* signals to just use structural comparison because not nested *)
+    | CIntensional of any
     | CLazy of cmp_lazy Utils.Cell.t
     | CEmptyList
     | CListCons of comparable * comparable
@@ -92,7 +92,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | CRecord of comparable Record.t
     | CVariant of comparable Variant.t
     | CTuple of comparable * comparable
-    | CSingle (* Same behavior as giving up! We know they must be equal already *)
+    | CSingle
 
   and cmp_lazy =
     | LWaiting of vlazy Utils.Cell.t * typ t
@@ -224,10 +224,9 @@ module Make (Atom_cell : Utils.Types.P1) = struct
           not (contains_mu payload)
         ) variant_t
     in
-    Variant.Label.Map.random_binding_opt
-      (if Variant.Label.Map.is_empty without_mu then variant_t else without_mu)
-    |> Option.get
-    |> fst
+    match Variant.Label.Map.random_binding_opt without_mu with
+    | Some (label, _) -> label
+    | None -> fst (Option.get (Variant.Label.Map.random_binding_opt variant_t))
 
   let rec to_string : type a. a t -> string = function
     | VUnit ->

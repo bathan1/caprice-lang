@@ -1230,7 +1230,7 @@ let eval
       in
       match c with
       | CSingle -> return Cdata.true_
-      | CAtomic v' ->
+      | CIntensional v' ->
         begin match Val.intensional_equal v v' with
         | Value (b, e) -> return (b, e)
         | ShapeMismatch -> return Cdata.false_
@@ -1336,7 +1336,7 @@ let eval
       | VTypeInt
       | VTypeBool
       | VTypePoly _
-      | VTypeModule _ -> return (CAtomic v)
+      | VTypeModule _ -> return (CIntensional v)
       | VTypeSingle _ -> return CSingle
       | VTypeBottom -> escape (Refutation (v, t))
       | VTypeMu { var ; closure } ->
