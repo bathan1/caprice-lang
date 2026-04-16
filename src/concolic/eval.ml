@@ -1199,11 +1199,11 @@ let eval
         (* The value is lazy. Do not pull on it. *)
         begin match c with
         | CLazy cmp_cell ->
-          (* The comparator is also lazy. See if it has been pulled on. *)
+          (* The comparable is also lazy. See if it has been pulled on. *)
           let* cmp_lazy = get_cell cmp_cell in
           begin match cmp_lazy with
           | LWaiting (cell', _) ->
-            (* The comparator refers to some value cell, so they are equal. *)
+            (* The comparable refers to some value cell, so they are equal. *)
             if cell = cell' then
               return Cdata.true_
             else
@@ -1211,7 +1211,7 @@ let eval
                 the same cell, so we have to say false. *)
               return Cdata.false_
           | LComp cmp ->
-            (* The comparator has been pulled on. Continue with this one. *)
+            (* The comparable has been pulled on. Continue with this one. *)
             extensional_equal cmp v
           end
         | _ ->
@@ -1253,8 +1253,8 @@ let eval
         in
         Val.handle_any v ~dat:(fun f ->
           (* It's a hack to keep the original function to try to short circuit
-            the call. *)
-          if og_fun == f then return Cdata.true_ else
+            the call via intensional equality. But it works to speed us up! *)
+          if Val.equal og_fun f then return Cdata.true_ else
           let* res = eval_appl (Val.discard_wrapper f) input in
           extensional_equal output res
         ) ~typ:(fun _ -> return Cdata.false_)
@@ -1267,7 +1267,7 @@ let eval
           begin match vlazy with
           | LValue v_cmp ->
             (* The value has been pulled on, so we have enough information now
-              to construct a comparator. Do so, update the cell, and use it. *)
+              to construct a comparable. Do so, update the cell, and use it. *)
             let* cmp = make_comparable t v_cmp in
             let* () = set_cell cell (LComp cmp) in
             extensional_equal cmp v
