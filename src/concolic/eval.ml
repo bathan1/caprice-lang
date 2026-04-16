@@ -345,7 +345,7 @@ let eval
         | [] ->
           let* cod_tval = eval_codomain codomain v_arg in
           let* genned = gen cod_tval in
-          let* cmp = make_comparator domain v_arg in
+          let* cmp = make_comparable domain v_arg in
           let* () = set_cell table (mappings @ [(cmp, genned)]) in
           return genned
         | (cmp, output) :: tl ->
@@ -1186,7 +1186,7 @@ let eval
     --------------------
   *)
   and extensional_equal
-    : 'env. Val.comparator -> Val.any -> (bool Cdata.t, 'env) m
+    : 'env. Val.comparable -> Val.any -> (bool Cdata.t, 'env) m
     = fun c v ->
     match v with
     | Any VLazy { cell ; wrapping_types = _ } ->
@@ -1229,7 +1229,7 @@ let eval
           return (b && b', Smt.Formula.and_ [ e ; e' ])
       in
       match c with
-      | CSingle | CGiveUp -> return Cdata.true_
+      | CSingle -> return Cdata.true_
       | CAtomic v' ->
         begin match Val.intensional_equal v v' with
         | Value (b, e) -> return (b, e)
@@ -1243,7 +1243,7 @@ let eval
             let* arg = gen domain in
             let* result = eval_appl v_func arg in
             let* cod_tval = eval_codomain codomain arg in
-            let* dom_cmp = make_comparator cod_tval result in
+            let* dom_cmp = make_comparable cod_tval result in
             let* () = set_cell mapping
               (FMapping { arg ; dom_cmp ; og_fun = v_func })
             in
@@ -1268,7 +1268,7 @@ let eval
           | LValue v_cmp ->
             (* The value has been pulled on, so we have enough information now
               to construct a comparator. Do so, update the cell, and use it. *)
-            let* cmp = make_comparator t v_cmp in
+            let* cmp = make_comparable t v_cmp in
             let* () = set_cell cell (LComp cmp) in
             extensional_equal cmp v
           | LLazy _ ->
@@ -1316,8 +1316,8 @@ let eval
           return Cdata.false_
         end
 
-  and make_comparator
-    : 'env. Val.tval -> Val.any -> (Val.comparator, 'env) m
+  and make_comparable
+    : 'env. Val.tval -> Val.any -> (Val.comparable, 'env) m
     = fun t v ->
     match v with
     | Any VLazy { cell ; wrapping_types = _ } ->
@@ -1326,7 +1326,7 @@ let eval
       | LLazy _ ->
         let* cmp_cell = new_cell (LWaiting (cell, t)) in
         return (CLazy cmp_cell)
-      | LValue any -> make_comparator t any
+      | LValue any -> make_comparable t any
       end
     | _ ->
       match t with
@@ -1338,16 +1338,16 @@ let eval
       | VTypePoly _
       | VTypeModule _ -> return (CAtomic v)
       | VTypeSingle _ -> return CSingle
-      | VTypeBottom -> return CGiveUp (* no need to compare values with type bottom *)
+      | VTypeBottom -> escape (Refutation (v, t))
       | VTypeMu { var ; closure } ->
         let* t_body = unroll_mu var closure in
-        make_comparator t_body v
+        make_comparable t_body v
       | VTypeList t_body ->
         begin match v with
         | Any VEmptyList -> return CEmptyList
         | Any VListCons { hd ; tl } ->
-          let* c_hd = make_comparator t_body hd in
-          let* c_tl = make_comparator t (Any tl) in
+          let* c_hd = make_comparable t_body hd in
+          let* c_tl = make_comparable t (Any tl) in
           return (CListCons (c_hd, c_tl))
         | _ -> vanish
         end
@@ -1361,7 +1361,7 @@ let eval
         | Any VRecord record_body ->
           let mk l t =
             match Record.Label.Map.find_opt l record_body with
-            | Some v_body -> make_comparator t v_body
+            | Some v_body -> make_comparable t v_body
             | None -> vanish
           in
           let* c_rec = Record.Label.Map.mapiM (module Semantics) mk m in
@@ -1373,19 +1373,19 @@ let eval
         | Any VVariant { label ; payload } ->
           begin match Variant.Label.Map.find_opt label m with
           | Some t_body ->
-            let* cmp = make_comparator t_body payload in
+            let* cmp = make_comparable t_body payload in
             return (CVariant { label ; payload = cmp })
           | None -> vanish
           end
         | _ -> vanish
         end
       | VTypeRefine { var = _ ; tau ; predicate = _ } ->
-        make_comparator tau v
+        make_comparable tau v
       | VTypeTuple (t1, t2) ->
         begin match v with
         | Any VTuple (v1, v2) ->
-          let* c1 = make_comparator t1 v1 in
-          let* c2 = make_comparator t2 v2 in
+          let* c1 = make_comparable t1 v1 in
+          let* c2 = make_comparable t2 v2 in
           return (CTuple (c1, c2))
         | _ -> vanish
         end

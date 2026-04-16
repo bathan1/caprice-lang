@@ -234,7 +234,7 @@ let new_cell
   return key
 
 let new_fun_cell
-  : 'env. Val.dval -> (Val.comp_fun Utils.Cell.t, 'env) m
+  : 'env. Val.dval -> (Val.cmp_fun Utils.Cell.t, 'env) m
   = fun f ->
   new_cell (Val.FWaiting f)
 

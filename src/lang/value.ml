@@ -54,7 +54,7 @@ module Make (Atom_cell : Utils.Types.P1) = struct
 
   and 'a closure = { captured : 'a ; env : env }
 
-  and table = (comparator * any) list
+  and table = (comparable * any) list
 
   and env = any Env.t
 
@@ -80,28 +80,27 @@ module Make (Atom_cell : Utils.Types.P1) = struct
     | LLazy of lgen
     | LValue of any
 
-  and witness = { witness : any ; cod : comparator }
+  and witness = { witness : any ; cod : comparable }
 
-  and comparator =
-    | CGiveUp
+  and comparable =
     | CAtomic of any (* signals to just use structural comparison because not nested *)
-    | CLazy of comp_lazy Utils.Cell.t
+    | CLazy of cmp_lazy Utils.Cell.t
     | CEmptyList
-    | CListCons of comparator * comparator
+    | CListCons of comparable * comparable
     | CFun of { tfun : (typ t, fun_cod) Funtype.t
-              ; mapping : comp_fun Utils.Cell.t }
-    | CRecord of comparator Record.t
-    | CVariant of comparator Variant.t
-    | CTuple of comparator * comparator
+              ; mapping : cmp_fun Utils.Cell.t }
+    | CRecord of comparable Record.t
+    | CVariant of comparable Variant.t
+    | CTuple of comparable * comparable
     | CSingle (* Same behavior as giving up! We know they must be equal already *)
 
-  and comp_lazy =
+  and cmp_lazy =
     | LWaiting of vlazy Utils.Cell.t * typ t
-    | LComp of comparator
+    | LComp of comparable
 
-  and comp_fun =
+  and cmp_fun =
     | FWaiting of dat t
-    | FMapping of { arg : any ; dom_cmp : comparator ; og_fun : dat t }
+    | FMapping of { arg : any ; dom_cmp : comparable ; og_fun : dat t }
 
   module Env = Env.Make (struct type t = any end)
 
