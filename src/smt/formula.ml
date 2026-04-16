@@ -301,3 +301,33 @@ module Set = struct
       and_ @@ collect formula_symbols [ formula ] all_with_symbols
   end
 end
+
+type 'k solver = (bool, 'k) t -> 'k Solution.t
+
+type 'k simplifier = 'k solver -> 'k solver
+
+let rec contains_binop :
+  type a k. _ Binop.t -> (a, k) t -> bool =
+  fun target -> function
+  | Binop (op, l, r) ->
+      Binop.poly_equal op target
+      || contains_binop target l
+      || contains_binop target r
+  | _ -> false
+
+let count (formula : ('a, 'k) t) : int =
+  let rec aux : type a k. (a, k) t -> int = function
+    | Not next -> 1 + aux next
+
+    | And ls ->
+        1 + List.fold_left (fun acc f -> acc + aux f) 0 ls
+
+    | Key _ -> 1
+
+    | Binop (_, l, r) ->
+        1 + aux l + aux r
+
+    | Const_int _
+    | Const_bool _ -> 1
+  in
+  aux formula

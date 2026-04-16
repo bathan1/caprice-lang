@@ -21,3 +21,48 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
     | _ -> None
   in
   { value ; domain = [ match s with (I uid | B uid) -> uid ] }
+
+(** [of_local domain ~lookup] (unsafely) casts DOMAIN and LOOKUP function into a [Model.t]
+
+    LOOKUP is passed in the [Uid.t] of a formula key and should return 
+    an [option] of whatever value LOCAL holds for the given uid.
+
+    {2 From an {!Int.Map} local solution}
+
+    Local solutions that use some kind of a {!Map} map nicely to
+    to the 'global' {!t}:
+
+    {[
+    module IntMap = Map.Make (Int)
+    let () =
+      let int_map = (
+        IntMap.empty
+        |> Map.add_exn ~key:(Char.to_int 'a') ~data:0
+        |> Map.add_exn ~key:(Char.to_int 'b') ~data:1
+      ) in
+        let pp_model = Model.to_string ~sep:("; ") ~pp_assignment:(
+          fun (I x) v -> sprintf " %c => %s" (Char.of_int_exn x) (
+            if v = 0 then "hello" else "world"
+          )
+        ) in
+        let model = Model.of_local int_map ~lookup:Map.find in
+        pp_model model [a; b;]
+        |> printf "From local: %s\n";
+    ]}
+
+    This prints:
+
+    {["From local: { a => hello; b => world }"]}
+*)
+let of_local (domain : Utils.Uid.t list) ~(lookup : Utils.Uid.t -> 'b option): 'k t =
+  {
+    domain;
+    value =
+      (fun (type a) (sym : (a,'k) Symbol.t) ->
+        match sym with
+        | B x
+        | I x -> 
+          let lookup_value = lookup x in
+          Option.map (fun v -> (Obj.magic v : a)) lookup_value
+      );
+  }

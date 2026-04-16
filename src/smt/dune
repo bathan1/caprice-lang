@@ -1,13 +1,17 @@
-
 (library
  (name smt)
  (public_name caprice.smt)
  (libraries
-  ; internal
   utils
-  ; external
   baby
-  )
+ )
+ (modules (:standard \ script))
  (synopsis "SMT module for Caprice")
  (instrumentation (backend landmarks --auto))
+)
+
+(executable
+ (name script)
+ (libraries smt)
+ (modules script)
 )
