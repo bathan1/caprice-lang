@@ -3,7 +3,7 @@
 *)
 
 (*
-  This ill-typed version of this program depended on nondeterminism, which
+  The ill-typed version of this program depended on nondeterminism, which
   has since been removed.
 *)
 

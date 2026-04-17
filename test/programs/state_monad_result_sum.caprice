@@ -4,19 +4,7 @@
 *)
 
 (* TODO: we would like this to be fast with wrap.
-    The problem is explained at the site.
- *)
-
-(*
-  This is well-typed because even though it looks like the
-  type function `m` is used as `m b` in two places, and those
-  are supposed to correspond, this type function `m` is NOT
-  GENERATED.
-
-  This is, this program is totally fine because no non-deterministic
-  type function is ever made, and instead the type checker uses the
-  provided `m`.
-*)
+    The problem is explained at the site. *)
 
 let T = { t : type }
 

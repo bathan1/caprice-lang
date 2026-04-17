@@ -2,50 +2,28 @@
   include exhaust;
 *)
 
-(* Various combinations of deterministic and nondeterministic functions. *)
+(* Various combinations and uses of higher order functions. *)
 
-(*
-  Any deterministic function can act nondeterministic
-*)
-let _ : (int -> int) -> int -> int =
-  fun f -> f
-
-(*
-  This is deterministically returns the same function and is fine
-*)
 let _ : (int -> int) -> int -> int =
   fun f -> f
 
 let _ : (int -> int -> int) -> int =
   fun f ->
-    let _ = f 0 in (* no problems here *)
-    0 (* but then there's nothing we can do to get a deterministic output *)
+    let _ = f 0 in
+    0
 
 let _ : (int -> int -> int) -> int =
   fun f ->
-    f 0 0 (* safe to apply *)
+    f 0 0
 
 let _ : (int -> int -> int) -> int -> int -> int =
   fun f a b ->
-    f a b (* safe to apply *)
+    f a b
 
 let _ : (int -> bool -> int) -> int -> bool -> int =
   fun f -> f
 
-let _ : (int -> int) -> int -> int =
-  fun f -> f
-
 let _ : ((int -> int) -> int) -> (int -> int) -> int =
-  fun f g ->
-    let _ = assert (f g == f g) in
-    f g
-
-let _ : ((int -> int) -> int) -> (int -> int) -> int =
-  fun f g ->
-    let _ = assert (f g == f g) in
-    f g
-
-let _ : ((int -> bool) -> int) -> (int -> bool) -> int =
   fun f g ->
     let _ = assert (f g == f g) in
     f g
@@ -60,5 +38,5 @@ let _ : ((int -> int) -> int) -> (int -> int) -> int =
 let _ : ((int -> int) -> int) -> unit =
   fun f ->
     let a = fun x -> x + 1 in
-    let b = fun x -> 1 + x in (* op eq to a *)
+    let b = fun x -> 1 + x in
     assert (f a == f b)

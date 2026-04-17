@@ -2,29 +2,17 @@
   include exhaust;
 *)
 
-(*
-  Any deterministic function can act nondeterministic
-*)
-let _ : (int -> int) -> int -> int =
-  fun f -> f
-
-(*
-  This is deterministically returns the same function and is fine
-*)
 let _ : (int -> int) -> int -> int =
   fun f -> f
 
 let _ : (int -> int -> int) -> int =
   fun f ->
-    let _ = f 0 in (* no problems here *)
-    0 (* but then there's nothing we can do to get a deterministic output *)
+    let _ = f 0 in
+    0
 
 let _ : (int -> int -> int) -> int =
   fun f ->
     f 0 0 (* safe to apply *)
-
-let _ : (int -> int) -> int -> int =
-  fun f -> f
 
 let _ : ((int -> int) -> int) -> (int -> int) -> int =
   fun f g ->

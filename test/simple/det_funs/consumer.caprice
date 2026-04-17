@@ -2,7 +2,7 @@
   include exhaust;
 *)
 
-let t = mu t. t -> int
+let t = mu t. int * t -> int
 
 let f (g : t -> int) (x : t) (y : t) : unit =
   let a = g y in

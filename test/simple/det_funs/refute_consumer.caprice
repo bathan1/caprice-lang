@@ -2,10 +2,10 @@
   include refute;
 *)
 
-let t = mu t. t -> int
+let t = mu t. int * t -> int
 
 let f (g : t) (x : t) (y : t) : unit =
   let _ = g x in
   let a = g x in
   let b = g y in
-  assert (a == b) (* ERROR: x <> y so a <> b *)
+  assert (a == b) (* ERROR: x <> y so a <> b is possible *)
