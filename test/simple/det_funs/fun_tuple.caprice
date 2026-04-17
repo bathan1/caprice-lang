@@ -1,3 +1,6 @@
+(* TEST
+  include exhaust;
+*)
 
 let t = int * (int -> int)
 
@@ -6,6 +9,10 @@ let t = int * (int -> int)
   we see that it's easy to be off by one.
   This test shows that the number of witnesses does not always align with
   the number of entries in the table.
+
+  It is obviously well typed. It is moreso checking the type checker
+  internals; it should be able to handle this without breaking on assumptions
+  about the number of witnesses.
 *)
 let f (g : t -> int) : unit =
   let i = g (0, fun a -> a) in
