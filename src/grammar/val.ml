@@ -97,38 +97,6 @@ let rec does_wrap_matter : typ t -> bool = function
   | VTypeRecord _ (* record and module wrappers can hide labels *)
   | VTypeModule _ -> true
 
-module X = struct
-  type 'a t =
-    | Value of 'a * bool Formula.t
-    | ShapeMismatch
-
-  let of_cdata (v, s) = Value (v, s)
-  let make b = Value (b, Smt.Formula.const_bool b)
-
-  (* Short circuit if the symbolic boolean is false. Think like "bind" *)
-  let ( let- ) x f =
-    match x with
-    | Value (_, Smt.Formula.Const_bool false) -> x
-    | Value (a, s) ->
-      begin match f () with
-      | Value (b, s') -> Value (a && b, Smt.Formula.and_ [ s' ; s ])
-      | ShapeMismatch -> ShapeMismatch
-      end
-    | ShapeMismatch -> ShapeMismatch
-
-  (* Short circuit if the concrete boolean is false. Think like "map" *)
-  let ( let= ) x f =
-    if x then f () else make false
-
-  let rec fold_lists (f : 'a -> 'a -> bool t) (x : 'a list) (y : 'a list) : bool t =
-    match x, y with
-    | [], [] -> make true
-    | [], _ | _, [] -> make false
-    | hdx :: xs, hdy :: ys ->
-      let- () = f hdx hdy in
-      fold_lists f xs ys
-end
-
 (**
   [intensional_equal x y] is [Some (b, s)] if [x] and [y] are of the same
     shape, and their components are of the same shape, where [b] is
@@ -143,8 +111,8 @@ end
       e.g. [intensional_equal () int] is a mismatch.
       e.g. [intensional_equal (0, 1) true] is a mismatch.
 *)
-let rec intensional_equal (x : any) (y : any) : bool X.t =
-  let open X in
+let rec intensional_equal (x : any) (y : any) : Comparator.t =
+  let open Comparator in
   if x == y then make true else
   match x, y with
   (* trivially equal *)
@@ -161,9 +129,9 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     make (id1 = id2)
   (* symbolic equality *)
   | Any VInt (i1, s1), Any VInt (i2, s2) ->
-    of_cdata (i1 = i2, Formula.binop Smt.Binop.Equal s1 s2)
+    (i1 = i2, Formula.binop Smt.Binop.Equal s1 s2)
   | Any VBool (b1, s1), Any VBool (b2, s2) ->
-    of_cdata (b1 = b2, Formula.binop Smt.Binop.Equal s1 s2)
+    (b1 = b2, Formula.binop Smt.Binop.Equal s1 s2)
   (* propagate equality *)
   | Any VVariant v1, Any VVariant v2 ->
     let= () = Variant.Label.equal v1.label v2.label in
@@ -172,10 +140,8 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     let- () = intensional_equal a1 a2 in
     iequal tl1 tl2
   | Any VGenPoly g1, Any VGenPoly g2 ->
-    if g1.id = g2.id then
-      make (g1.nonce = g2.nonce)
-    else
-      ShapeMismatch (* these are of different types *)
+    let= () = g1.id = g2.id in
+    make (g1.nonce = g2.nonce)
   | Any VTuple (l1, r1), Any VTuple (l2, r2) ->
     let- () = intensional_equal l1 l2 in
     intensional_equal r1 r2
@@ -242,32 +208,19 @@ let rec intensional_equal (x : any) (y : any) : bool X.t =
     (* TODO: eventually we want to handle these by asking for lazy environment *)
   | _, _ ->
     Utils.Assertions.assert_different x y;
-    (*
-      All data has been handled, and anything that is not
-      handled above is a shape mismatch.
-      Otherwise, the values are not equal, but they are all
-      types, so they are of the same shape and are simply
-      a constant false, but not error.
-    *)
-    handle_any x
-      ~dat:(fun _ -> ShapeMismatch)
-      ~typ:(fun _ ->
-        handle_any y
-          ~dat:(fun _ -> ShapeMismatch)
-          ~typ:(fun _ -> make false)
-        )
+    make false
 
-and iequal : type a. a t -> a t -> bool X.t = fun x y ->
+and iequal : type a. a t -> a t -> Comparator.t = fun x y ->
   intensional_equal (Any x) (Any y)
 
 and iequal_ftype (tf1 : (typ t, fun_cod) Funtype.t)
-  (tf2 : (typ t, fun_cod) Funtype.t) : bool X.t =
-  let open X in
+  (tf2 : (typ t, fun_cod) Funtype.t) : Comparator.t =
+  let open Comparator in
   let- () = iequal tf1.domain tf2.domain in
   iequal_cod tf1.codomain tf2.codomain
 
 and iequal_cod cod1 cod2 =
-  if cod1 == cod2 then X.make true else
+  if cod1 == cod2 then Comparator.make true else
   match cod1, cod2 with
   | CodValue t1, CodValue t2 ->
     intensional_equal (Any t1) (Any t2)
@@ -277,7 +230,7 @@ and iequal_cod cod1 cod2 =
     Utils.Assertions.assert_different cod1 cod2;
     (* Both are types, so not failure, but never equal because
       a dependent function is not a non-dependent function. *)
-    X.make false
+    Comparator.make false
 
 (**
   [iequal_closure bindings closure1 closure2] is intensional
@@ -301,7 +254,7 @@ and iequal_cod cod1 cod2 =
        end
 *)
 and iequal_closure bindings closure1 closure2 =
-  let open X in
+  let open Comparator in
   let rec iequal_expr bindings e1 e2 =
     if e1 == e2 && closure1.env == closure2.env then
       (* skip physically equal expressions as long as they are in the same environment *)
@@ -463,10 +416,7 @@ and iequal_closure bindings closure1 closure2 =
       begin match Env.find id1 closure1.env, Env.find id2 closure2.env with
       | Some v1, Some v2 ->
         (* Found the values. Now compare, and turn shape mismatches into false *)
-        begin match intensional_equal v1 v2 with
-        | ShapeMismatch -> make false
-        | res -> res
-        end
+        intensional_equal v1 v2
       | None, None ->
         (* Both are not bound. This is strange, but technically they can be equal *)
         make (Ident.equal id1 id2)
@@ -533,9 +483,7 @@ and iequal_closure bindings closure1 closure2 =
 (* This is slower than it could be, but I'm saving code and functor
   complexity by implementing it only in the heavy way, above. *)
 let equal_any x y =
-  match intensional_equal x y with
-  | Value (b, _) -> b
-  | ShapeMismatch -> false
+  let (b, _) = intensional_equal x y in b
 
 (**
   [equal v1 v2] is intensional equality of [v1] and [v2].
@@ -544,11 +492,7 @@ let equal (type a) (x : a t) (y : a t) : bool =
   equal_any (Any x) (Any y)
 
 let equal_fun_cod cod1 cod2 =
-  match iequal_cod cod1 cod2 with
-  | Value (b, _) -> b
-  | ShapeMismatch -> false
+  let (b, _) = iequal_cod cod1 cod2 in b
 
 let equal_closure c1 c2 =
-  match iequal_closure [] c1 c2 with
-  | Value (b, _) -> b
-  | _ -> assert false
+  let (b, _) = iequal_closure [] c1 c2 in b

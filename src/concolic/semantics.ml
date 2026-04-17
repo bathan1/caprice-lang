@@ -33,6 +33,11 @@ module Matches = Val.Make_match (struct
   include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
 end)
 
+module Comparator (T : sig type env end) = Comparator.Make (struct
+  type nonrec 'a m = ('a, T.env) m
+  include (Monad : Utils.Types.MONAD with type 'a m := 'a m)
+end)
+
 let[@inline] incr_step
   : 'env. max_step:Step.t -> (unit, 'env) m
   = fun ~max_step ->

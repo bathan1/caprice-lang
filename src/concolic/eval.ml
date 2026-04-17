@@ -688,14 +688,12 @@ let eval
             ~right:(tval <: tval')
         | _ ->
           (* For non-type equality, use intensional equality *)
-          match Val.intensional_equal v_single v with
-          | Value (true, s) ->
+          let (b, s) = Val.intensional_equal v_single v in
+          if b then
             let* () = push_formula_to_path s in
             confirm
-          | Value (false, s) ->
+          else
             let* () = push_formula_to_path ~allow_flip:false (Formula.not_ s) in
-            refute
-          | ShapeMismatch ->
             refute
       )
 
@@ -1186,8 +1184,9 @@ let eval
     --------------------
   *)
   and extensional_equal
-    : 'env. Val.comparable -> Val.any -> (bool Cdata.t, 'env) m
+    : type env. Val.comparable -> Val.any -> (bool Cdata.t, env) m
     = fun c v ->
+    let open Semantics.Comparator (struct type nonrec env = env end) in
     match v with
     | Any VLazy { cell ; wrapping_types = _ } ->
       let* vlazy = get_cell cell in
@@ -1203,38 +1202,24 @@ let eval
           let* cmp_lazy = get_cell cmp_cell in
           begin match cmp_lazy with
           | LWaiting (cell', _) ->
-            (* The comparable refers to some value cell, so they are equal. *)
-            if cell = cell' then
-              return Cdata.true_
-            else
-              (* Incomplete: these values _could_ be equal, but they are not
-                the same cell, so we have to say false. *)
-              return Cdata.false_
+            (* Incomplete: these values _could_ be equal, but we say they are
+              equal here only if they are the same cell. In most cases, they
+              are not equal. *)
+            make (cell = cell')
           | LComp cmp ->
             (* The comparable has been pulled on. Continue with this one. *)
             extensional_equal cmp v
           end
         | _ ->
           (* Do not pull on values. Say false. *)
-          return Cdata.false_
+          make false
         end
       end
     | _ ->
-      let ( let- ) x f =
-        let* (b, e) = x in
-        match e with
-        | Smt.Formula.Const_bool false -> x
-        | _ ->
-          let* (b', e') = f () in
-          return (b && b', Smt.Formula.and_ [ e ; e' ])
-      in
       match c with
       | CSingle -> return Cdata.true_
       | CIntensional v' ->
-        begin match Val.intensional_equal v v' with
-        | Value (b, e) -> return (b, e)
-        | ShapeMismatch -> return Cdata.false_
-        end
+        return (Val.intensional_equal v v')
       | CFun { tfun = { domain ; codomain } ; mapping } ->
         let* comp_fun = get_cell mapping in
         let* (input, output, og_fun) =
@@ -1272,7 +1257,7 @@ let eval
             let* () = set_cell cell (LComp cmp) in
             extensional_equal cmp v
           | LLazy _ ->
-            return Cdata.false_ (* the v = lazy case is handled above *)
+            make false (* the v = lazy case is handled above *)
           end
         end
       | CTuple (c1, c2) ->
@@ -1280,19 +1265,19 @@ let eval
         | Any VTuple (v1, v2) ->
           let- () = extensional_equal c1 v1 in
           extensional_equal c2 v2
-        | _ -> return Cdata.false_
+        | _ -> make false
         end
       | CEmptyList ->
         begin match v with
-        | Any VEmptyList -> return Cdata.true_
-        | _ -> return Cdata.false_
+        | Any VEmptyList -> make true
+        | _ -> make false
         end
       | CListCons (c_hd, c_tl) ->
         begin match v with
         | Any VListCons { hd ; tl } ->
           let- () = extensional_equal c_hd hd in
           extensional_equal c_tl (Any tl)
-        | _ -> return Cdata.false_
+        | _ -> make false
         end
       | CRecord m ->
         begin match v with
@@ -1302,16 +1287,14 @@ let eval
             match Record.Label.Map.find_opt l record_body with
             | Some x -> extensional_equal cmp x
             | _ -> mismatch "missing record label"
-          ) (return Cdata.true_) m
-        | _ -> return Cdata.false_
+          ) (make true) m
+        | _ -> make false
         end
       | CVariant { label = c_label ; payload = c_payload } ->
         begin match v with
         | Any VVariant { label ; payload } ->
-          if Variant.Label.equal c_label label then
-            extensional_equal c_payload payload
-          else
-            return Cdata.false_
+          let= () = Variant.Label.equal c_label label in
+          extensional_equal c_payload payload
         | _ ->
           return Cdata.false_
         end
