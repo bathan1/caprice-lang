@@ -1222,27 +1222,38 @@ let eval
         return (Val.intensional_equal v v')
       | CFun { tfun = { domain ; codomain } ; mapping } ->
         let* comp_fun = get_cell mapping in
-        let* (input, output, og_fun) =
-          match comp_fun with
-          | FWaiting v_func ->
+        let eq arg mapsto =
+          Val.handle_any v ~dat:(fun f ->
+            let* res = eval_appl (Val.discard_wrapper f) arg in
+            extensional_equal mapsto res
+          ) ~typ:(fun _ -> make false)
+        in
+        begin match comp_fun with
+        | FWaiting v_func ->
+          let* () = incr_step ~max_step in
+          let* tag = read_and_log_input KTag input_env ~default:(Left ChooseEmptyFun) in
+          begin match tag with
+          | Left ChooseEmptyFun ->
+            let* () = push_tag_to_path ~alternatives:[ Right ChooseEmptyFun ] tag in
+            let* () = set_cell mapping FEmpty in
+            make true
+          | Right ChooseEmptyFun ->
+            let* () = push_tag_to_path ~alternatives:[ Left ChooseEmptyFun ] tag in
             let* arg = gen domain in
             let* result = eval_appl v_func arg in
             let* cod_tval = eval_codomain codomain arg in
             let* mapsto = make_comparable cod_tval result in
-            let* () = set_cell mapping
-              (FMapping { arg ; mapsto ; og_fun = v_func })
-            in
-            return (arg, mapsto, v_func)
-          | FMapping { arg ; mapsto ; og_fun } ->
-            return (arg, mapsto, og_fun)
-        in
-        Val.handle_any v ~dat:(fun f ->
-          (* It's a hack to keep the original function to try to short circuit
-            the call via intensional equality. But it works to speed us up! *)
-          if Val.equal og_fun f then return Cdata.true_ else
-          let* res = eval_appl (Val.discard_wrapper f) input in
-          extensional_equal output res
-        ) ~typ:(fun _ -> return Cdata.false_)
+            let* () = set_cell mapping (FMapping { arg ; mapsto }) in
+            eq arg mapsto
+          | _ ->
+            raise bad_input_env
+          end
+        | FMapping { arg ; mapsto } ->
+          eq arg mapsto
+        | FEmpty ->
+          (* Everything equals the empty table *)
+          make true
+        end
       | CLazy cell ->
         let* cmp_lazy = get_cell cell in
         begin match cmp_lazy with
@@ -1296,7 +1307,7 @@ let eval
           let= () = Variant.Label.equal c_label label in
           extensional_equal c_payload payload
         | _ ->
-          return Cdata.false_
+          make false
         end
 
   and make_comparable

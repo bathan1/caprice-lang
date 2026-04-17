@@ -12,7 +12,7 @@
 let pgm (f : (int -> int) -> int) : int =
   let _ = f (fun x -> x) in
   let j = f (fun y -> y * 0) in
-  let k = f (fun y -> 0 * y) in
+  let k = f (fun z -> 0 * z) in
   if j == k
   then 1
   else assert false
@@ -23,7 +23,7 @@ let pgm (f : (int -> int) -> int) : int =
 let pgm (f : (int -> int) -> int) : int =
   let _ = f (fun x -> if x <= 100 then 0 else x) in
   let j = f (fun y -> y * 0) in
-  let k = f (fun y -> 0 * y) in
+  let k = f (fun z -> 0 * z) in
   if j == k
   then 1
   else assert false

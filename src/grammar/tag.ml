@@ -1,6 +1,9 @@
 
 type reason =
+  (* Concolic evaluator must NOT fork on these *)
   | GenList             (* generate empty or cons *)
+  | ChooseEmptyFun      (* choose to compare to empty or real function *)
+  (* Concolic evaluation MUST for on these *)
   | CheckList           (* check hd or tl *)
   | CheckTuple          (* check left or right side of tuple *)
   | CheckSingleton      (* check subset or superset or intensional equality *)
@@ -13,6 +16,7 @@ type reason =
 
 let reason_to_string = function
   | GenList             -> "Generate list"
+  | ChooseEmptyFun      -> "Chose empty function for comparison"
   | CheckList           -> "Check list"
   | CheckTuple          -> "Check tuple"
   | CheckSingleton      -> "Check singleton"
@@ -43,7 +47,9 @@ let priority = function
   | Label (_, Check) -> Path_priority.zero
   | (Left reason | Right reason) ->
     match reason with
-    | GenList -> Path_priority.one
+    (* Give priority because did not fork, and needs to make a longer path *)
+    | GenList | ChooseEmptyFun -> Path_priority.one
+    (* No priority for tags on which we fork *)
     | _ -> Path_priority.zero
 
 let to_string = function
