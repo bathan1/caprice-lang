@@ -381,7 +381,7 @@ let normalize (constraints : diff_constraint list) =
   let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
   vertices, edges, key_to_index
 
-let bellman_ford (vertices : int array) (edges : (int * int * int) array) (key_to_index : int UidMap.t) =
+let bellman_ford (vertices : int array) (edges : (int * int * int) array) =
   let n = Array.length vertices in
   let _, (distance, predecessor) =
     Array.fold_left
@@ -492,7 +492,7 @@ let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
   expr
   |> extract
   |> normalize
-  |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges key_to_index
+  |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges
   |> function
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->

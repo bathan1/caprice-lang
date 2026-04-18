@@ -77,11 +77,6 @@ let rec propagate_constants : 'k simplifier = fun solve expr ->
   | _ ->
     solve expr
 
-(** TODO: Port over `bellman_ford` + friends here. *)
-let integer_difference : 'k simplifier = 
-  fun solve expr ->
-    solve expr
-
 (*
   Right-associative simplifier composition.
   E.g. this simplifier
@@ -101,7 +96,6 @@ let (@>) : 'k simplifier -> 'k simplifier -> 'k simplifier =
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   let pipeline = Integer.simplify_int_bounds
   @> propagate_constants
-  @> integer_difference 
   in
   pipeline (direct_solve (module Oracle))
 
