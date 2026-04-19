@@ -67,3 +67,38 @@ let of_local (domain : Utils.Uid.t list) ~(lookup : Utils.Uid.t -> 'b option): '
       );
   }
 
+let to_string
+  (type a k)
+  (model : k t)
+  ~(uid : Utils.Uid.t -> (a, k) Symbol.t * string)
+  : string =
+  let indent = "  " in
+  let entry_to_string : type a. (a, k) Symbol.t -> string -> a -> string =
+    fun symbol text v ->
+      match symbol with
+      | Symbol.B _ ->
+        Printf.sprintf "%s\"%s\": %s"
+          indent
+          text
+          (if v then "true" else "false")
+      | Symbol.I _ ->
+        Printf.sprintf "%s\"%s\": %d"
+          indent
+          text
+          v
+  in
+  let entries =
+    model.domain
+    |> List.filter_map (fun key ->
+      let symbol, text = uid key in
+      match model.value symbol with
+      | None -> None
+      | Some v -> Some (entry_to_string symbol text v)
+    )
+  in
+  match entries with
+  | [] -> "{\n}"
+  | _ ->
+    "{\n"
+    ^ String.concat ",\n" entries
+    ^ "\n}"

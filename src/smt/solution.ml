@@ -9,3 +9,13 @@ let merge (x : 'k t) (y : 'k t) : 'k t =
   | Unsat, _ | _, Unsat -> Unsat
   | Unknown, _ | _, Unknown -> Unknown
   | Sat m1, Sat m2 -> Sat (Model.merge m1 m2)
+
+let to_string
+  (type a k)
+  (solution : k t)
+  ~(uid : Utils.Uid.t -> (a, k) Symbol.t * string)
+  : string =
+  match solution with
+  | Unknown -> "\"Unknown\""
+  | Unsat -> "\"Unsat\""
+  | Sat model -> Model.to_string model ~uid

@@ -27,7 +27,7 @@ let clauses = [
   Formula.not_ (Formula.symbol b)
 ]
 
-let to_string = Formula.to_string ~uid_to_string:(fun uid ->
+let to_string = Formula.to_string ~uid:(fun uid ->
   uid |> Uid.to_int |> Char.chr |> String.of_char
 )
 
@@ -54,4 +54,9 @@ let () =
   (*     | Some truth_value -> if truth_value then "true" else "false") *)
   (* ) *)
   let res = Boolean.dpll clauses in
-  Printf.printf "%b\n" res;
+  Printf.printf "%s\n" (
+    Solution.to_string res ~uid:(fun uid ->
+      AsciiSymbol.make_bool (Char.chr (Uid.to_int uid)),
+      uid |> Uid.to_int |> Char.chr |> String.of_char
+    )
+  )

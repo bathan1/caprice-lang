@@ -30,3 +30,7 @@ module Make (Key : KEY) = struct
   let make_bool (k : Key.t) : bool t =
     B (Key.uid k)
 end
+
+let to_uid (type a) (key : (a, 'k) t) = 
+  key
+  |> function | B uid -> uid | I uid -> uid

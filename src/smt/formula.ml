@@ -332,11 +332,11 @@ let count (formula : ('a, 'k) t) : int =
   in
   aux formula
 
-let to_string (type a) ~(uid_to_string : Utils.Uid.t -> string) (x : (a, 'k) t) : string =
+let to_string (type a) ~(uid : Utils.Uid.t -> string) (x : (a, 'k) t) : string =
   let rec to_string : type a. (a, 'k) t -> string = function
     | Const_int i -> string_of_int i
     | Const_bool b -> string_of_bool b
-    | Key I k | Key B k -> uid_to_string k
+    | Key I k | Key B k -> uid k
     | Not e -> Format.sprintf "(not %s)" (to_string e)
     | And e_ls -> e_ls |> List.fold_left (fun acc e ->
         if String.is_empty acc then to_string e else acc ^ " ^ " ^ to_string e
