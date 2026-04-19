@@ -1,4 +1,3 @@
-open Utils
 open Formula
 
 module type SOLVABLE = sig

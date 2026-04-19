@@ -1,29 +1,57 @@
+[@@@ocaml.warning "-26"]
+[@@@ocaml.warning "-27"]
+[@@@ocaml.warning "-32"]
+
 open Smt
-open Smt.Formula
+open Utils
 
 module AsciiSymbol = Symbol.Make (struct
   type t = char
   let uid t = t |> Char.code |> Utils.Uid.of_int
 end)
 
-let make_int x = 
-  function
-  | x -> x |> AsciiSymbol.make_int |> symbol
 let make_bool = 
   function
-  | x -> x |> AsciiSymbol.make_bool |> symbol
+  | x -> x |> AsciiSymbol.make_bool
 
-let p = make_bool 'p'
-let q = make_bool 'q'
-let r = make_bool 'r'
+let a = (make_bool 'a') 
+let b = make_bool 'b' 
+let c = make_bool 'c'
+let d = make_bool 'd'
 
-let ast = not_ (
-  and_ [
-    p;
-    binop Or q (not_ r)
-  ]
+let or_ l r = Formula.binop Binop.Or l r
+
+let clauses = [
+  or_ (Formula.symbol a) (Formula.symbol b);
+  or_ (Formula.symbol c) (Formula.symbol d);
+  Formula.not_ (Formula.symbol b)
+]
+
+let to_string = Formula.to_string ~uid_to_string:(fun uid ->
+  uid |> Uid.to_int |> Char.chr |> String.of_char
 )
 
-let size = count ast
-
-let () = Printf.printf "size is %d\n" size
+let () = 
+  (* let simplified, model = Boolean.unit_propagate clauses in *)
+  (* Printf.printf "%s\n" (to_string (Formula.and_ simplified)); *)
+  (* [ *)
+  (*   a; *)
+  (*   b; *)
+  (*   c; *)
+  (*   d; *)
+  (* ] *)
+  (* |> List.iter (fun s ->  *)
+  (*   Printf.printf "%c = %s\n" *)
+  (*   ( *)
+  (*     s *)
+  (*     |> function  *)
+  (*       | Symbol.B uid -> *)
+  (*         uid |> Uid.to_int |> Char.chr *)
+  (*   ) *)
+  (*   (s |> model.value |> *)
+  (*     function *)
+  (*     | None -> "NOT_ASSIGNED" *)
+  (*     | Some truth_value -> if truth_value then "true" else "false") *)
+  (* ) *)
+  let res = Boolean.dpll clauses in
+  Printf.printf "%b\n" res;

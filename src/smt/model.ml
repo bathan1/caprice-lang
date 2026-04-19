@@ -66,3 +66,4 @@ let of_local (domain : Utils.Uid.t list) ~(lookup : Utils.Uid.t -> 'b option): '
           Option.map (fun v -> (Obj.magic v : a)) lookup_value
       );
   }
+
