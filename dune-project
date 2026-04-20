@@ -24,5 +24,6 @@
   mtime
   (ocaml (>= 5.5.0))
   psq
+  yojson
   z3
   ))
