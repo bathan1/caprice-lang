@@ -10,9 +10,12 @@ module AsciiSymbol = Symbol.Make (struct
   let uid t = t |> Char.code |> Utils.Uid.of_int
 end)
 
-let make_bool = 
-  function
-  | x -> x |> AsciiSymbol.make_bool
+let make_bool = AsciiSymbol.make_bool
+
+let make_int = fun x ->
+  x
+  |> AsciiSymbol.make_int
+  |> Formula.symbol
 
 let a = (make_bool 'a') 
 let b = make_bool 'b' 
@@ -27,36 +30,28 @@ let clauses = [
   Formula.not_ (Formula.symbol b)
 ]
 
-let to_string = Formula.to_string ~uid:(fun uid ->
+let uid_to_string = (fun uid ->
   uid |> Uid.to_int |> Char.chr |> String.of_char
 )
 
-let () = 
-  (* let simplified, model = Boolean.unit_propagate clauses in *)
-  (* Printf.printf "%s\n" (to_string (Formula.and_ simplified)); *)
-  (* [ *)
-  (*   a; *)
-  (*   b; *)
-  (*   c; *)
-  (*   d; *)
-  (* ] *)
-  (* |> List.iter (fun s ->  *)
-  (*   Printf.printf "%c = %s\n" *)
-  (*   ( *)
-  (*     s *)
-  (*     |> function  *)
-  (*       | Symbol.B uid -> *)
-  (*         uid |> Uid.to_int |> Char.chr *)
-  (*   ) *)
-  (*   (s |> model.value |> *)
-  (*     function *)
-  (*     | None -> "NOT_ASSIGNED" *)
-  (*     | Some truth_value -> if truth_value then "true" else "false") *)
-  (* ) *)
-  let res = Boolean.dpll clauses in
-  Printf.printf "%s\n" (
-    Solution.to_string res ~uid:(fun uid ->
-      AsciiSymbol.make_bool (Char.chr (Uid.to_int uid)),
-      uid |> Uid.to_int |> Char.chr |> String.of_char
-    )
+let to_string = Formula.to_string ~uid:uid_to_string
+let idl_clauses = Formula.and_ [
+  Integer.greater_than_eq 
+    (make_int 'x')
+    (Formula.const_int 2);
+]
+;;
+
+let solution_text (solution : 'k Solution.t) : string = 
+  Solution.to_string solution ~uid:(fun uid ->
+    AsciiSymbol.make_int (uid |> Uid.to_int |> Char.chr),
+    uid |> Uid.to_int |> Char.chr |> String.of_char
   )
+
+open Printf
+
+let () =
+  let sol = Integer.solve_int_diff idl_clauses 
+  in
+  let text = solution_text sol 
+  in printf "IDL SOLUTION: %s\n" text;

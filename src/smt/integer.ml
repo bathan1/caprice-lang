@@ -366,7 +366,6 @@ let normalize (constraints : diff_constraint list) =
   (* [0; x; y; z0] *)
   in
   let get_index x = UidMap.find x key_to_index in
-  let vertices = Array.init n (fun i -> i) in
   let edges_constraints = constraints |> List.filter_map (fun {x; y; c;} -> (
     match x, y with
     | Symbol_key x, Symbol_key y -> Some (get_index x, get_index y, c)
@@ -379,79 +378,75 @@ let normalize (constraints : diff_constraint list) =
     List.init n (fun i -> (0, i, 0))
   in
   let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
-  vertices, edges, key_to_index
+  n, edges, key_to_index
 
-let bellman_ford (vertices : int array) (edges : (int * int * int) array) =
-  let n = Array.length vertices in
-  let _, (distance, predecessor) =
-    Array.fold_left
-      (fun (i, (distance, predecessor)) _ ->
-        if i = n - 1 then
-          (i + 1, (distance, predecessor))
-        else
-          let next_distance, next_predecessor =
-            Array.fold_left
-              (fun (distance, predecessor) (u, v, w) ->
-                match (distance.(u), distance.(v)) with
-                | du, _ when du = Int.max_int -> (distance, predecessor)
-                | min_dist_to_u, dv when dv = Int.max_int ->
-                  distance.(v) <- (min_dist_to_u + w);
-                  predecessor.(v) <- u;
-                  (distance, predecessor)
-                | min_dist_to_u, min_dist_to_v ->
-                  if min_dist_to_u + w < min_dist_to_v then
-                    distance.(v) <- (min_dist_to_u + w);
-                  predecessor.(v) <- u;
-                  (distance, predecessor))
-              (distance, predecessor)
-              edges
-          in
-          (i + 1, (next_distance, next_predecessor)))
-      (0, ([||], [||]))
-      vertices
-  in
-  (* detect negative cycle and print it *)
-  let cycle_start = 
-    edges |> Array.fold_left (fun acc (u, v, w) ->
-      match acc with
-      | Some _ -> acc
-      | None ->
-        match (predecessor.(v), predecessor.(u)) with
-        | _, _ ->
-          begin 
-            match distance.(u), distance.(v) with 
-            | du, dv when (du = Int.max_int || dv = Int.max_int) -> None
-            | du, dv ->
+exception Graph_disconnected of int
+
+let bellman_ford 
+  ~(src : int)
+  (n : int)
+  (edges : (int * int * int) array) =
+  let init = (
+    Array.init n (fun i -> if i = src then 0 else Int.max_int),
+    Array.init n (fun _ : int option -> None)
+  ) in
+  let vertices = Array.init n (fun i -> i) in
+  let distance, predecessor = Array.fold_left (fun (distance, predecessor) i -> 
+    if i = n - 1 
+      then distance, predecessor
+    else 
+      edges
+      |> Array.fold_left 
+        (fun (distance, predecessor) (u, v, w) ->
+          match distance.(u), distance.(v) with
+          | du, _ when du = Int.max_int -> (distance, predecessor)
+          | du, dv when dv = Int.max_int ->
+            let () =
+              distance.(v) <- du + w;
+              predecessor.(v) <- Some u;
+            in
+            (distance, predecessor)
+          | du, dv -> 
+            let () =
               if du + w < dv then
-                Some v
-              else
-                None
-            end
-    ) None
+                distance.(v) <- du + w;
+              predecessor.(v) <- Some u;
+            in
+            (distance, predecessor)
+        )
+        (distance, predecessor)
+  ) init vertices
   in
-  match cycle_start with
-  | None ->
-    `No_negative_cycle (
-      distance,
-      predecessor
-    )
-  | Some v ->
+  let rec find_cycle_start i =
+      if i >= Array.length edges then None
+      else
+        let (u, v, w) = edges.(i) in
+        match distance.(u), distance.(v) with
+        | du, _ when du = Int.max_int -> raise (Graph_disconnected u)
+        | _, dv when dv = Int.max_int -> raise (Graph_disconnected v)
+        | du, dv when du + w < dv -> Some v
+        | _ -> find_cycle_start (i + 1)
+  in
+  match find_cycle_start 0 with
+  | None -> `No_negative_cycle (distance, predecessor)
+  | Some vertex ->
     let rec move_back x i =
       if i = 0 then x
-      else move_back predecessor.(x) (i - 1)
+      else match predecessor.(x) with
+        | None -> x
+        | Some parent -> move_back parent (i - 1)
     in
-    let cycle_vertex = move_back v n in
-
+    let cycle_vertex = move_back vertex n in
     let rec collect_cycle curr acc =
-      if List.mem curr acc then
+      if List.mem curr acc then 
         curr :: acc
       else
-        let parent = predecessor.(curr) in
-        collect_cycle parent (curr :: acc)
+        match predecessor.(curr) with
+        | None -> curr :: acc
+        | Some parent -> collect_cycle parent (curr :: acc)
     in
-
-    let cycle = collect_cycle cycle_vertex [] in
-    `Negative_cycle cycle
+    `Negative_cycle (collect_cycle cycle_vertex [])
+;;
 
 let is_int_diff_solvable (expr : (bool, 'k) Formula.t) : bool =
   match expr with
@@ -492,7 +487,7 @@ let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
   expr
   |> extract
   |> normalize
-  |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges
+  |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges ~src:0
   |> function
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->

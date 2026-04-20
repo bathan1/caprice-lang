@@ -126,7 +126,12 @@ let dpll
           |> Uid.Set.to_seq
           |> Seq.map (fun key -> key, leftovers key)
         ) model_state in
-        Solution.Sat (Model.of_local (get_domain final_model) ~lookup:(fun uid -> Uid.Map.find_opt uid final_model))
+        Solution.Sat (
+          final_model 
+          |> get_domain 
+          |> Model.of_local 
+            ~lookup:(fun uid -> Uid.Map.find_opt uid final_model)
+        )
       else
         let reduced, model = (
           clauses
