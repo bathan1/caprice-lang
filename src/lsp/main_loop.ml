@@ -40,7 +40,7 @@ let round_robin (fs : work_item list) : unit =
 let splay_check ~options pgm =
   M.begin_ceval ~print_outcome:false ~options:{ options with splay = Splay_only } pgm
 
-let full_check ~options pgm =
+let normal_check ~options pgm =
   M.begin_ceval ~print_outcome:false ~options:{ options with splay = Never_splay } pgm
 
 let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm =
@@ -52,9 +52,9 @@ let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pg
     begin match splay_check ~options stripped_pgm with
     | Grammar.Answer.Found_error _ ->
       Print.print_splay_error span msg;
-      Done (full_check ~options pgm)
+      Done (normal_check ~options pgm)
     | _ ->
-      let answer = full_check ~options pgm in
+      let answer = normal_check ~options pgm in
       begin match answer with
       | Grammar.Answer.Found_error _ -> ()
       | _ -> List.iter Print.print_refinement_warning refinement_positions
