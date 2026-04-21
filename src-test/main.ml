@@ -1,13 +1,5 @@
 
-let find_test_dir () =
-  let candidates = [ "test/" ; "../test" ; "../../test/" ] in
-  match List.find_opt Sys.file_exists candidates with
-  | Some dir -> dir
-  | None ->
-    let cwd = Sys.getcwd () in
-    failwith ("Cannot find test directory. CWD: " ^ cwd)
-
-let root_dir = find_test_dir ()
+let root_dir = Sys.getenv "CTL_TESTDIR"
 
 let ls_dir dir =
   Sys.readdir dir
