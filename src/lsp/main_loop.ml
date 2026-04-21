@@ -1,41 +1,6 @@
+open Scheduler
 
-type _ eff += Pause : unit eff
-
-module Pause_effect = struct
-  let yield () =
-    Effect.perform Pause
-end
-
-module M = Concolic.Loop.Make (Pause_effect)
-
-type r =
-  | Done of Grammar.Answer.t
-  | Cont of (unit, r) Effect.Deep.continuation
-
-type work_item = { span : Lang.Ast.pos_span ; task : unit -> r }
-
-let round_robin (fs : work_item list) : unit =
-  let run_q = Queue.of_seq (List.to_seq fs) in
-  let enqueue span k =
-    let task () = Effect.Deep.continue k () in
-    Queue.push { span ; task } run_q
-  in
-  let rec dequeue () =
-    match Queue.take_opt run_q with
-    | None -> ()
-    | Some { span ; task } ->
-      let r =
-        try task () with
-        | effect Pause, k ->
-          Cont k
-      in
-      match r with
-      | Done a ->
-        Print.print_answer span a;
-        dequeue ()
-      | Cont k -> enqueue span k; dequeue ()
-  in
-  dequeue ()
+module M = Concolic.Loop.Make (Scheduler.Pause_effect)
 
 let splay_check ~options pgm =
   M.begin_ceval ~print_outcome:false ~options:{ options with splay = Splay_only } pgm
@@ -43,30 +8,26 @@ let splay_check ~options pgm =
 let normal_check ~options pgm =
   M.begin_ceval ~print_outcome:false ~options:{ options with splay = Never_splay } pgm
 
-let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm =
+let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm : r =
   let refinement_positions = List.filter
     (fun (p : Lang.Ast.pos_span) -> p.begins.pos_cnum <= span.ends.pos_cnum)
     refinement_positions in
   match splay_check ~options pgm with
   | Grammar.Answer.Found_error msg ->
-    begin match splay_check ~options stripped_pgm with
-    | Grammar.Answer.Found_error _ ->
-      Print.print_splay_error span msg;
-      Done (normal_check ~options pgm)
-    | _ ->
-      let answer = normal_check ~options pgm in
-      begin match answer with
-      | Grammar.Answer.Found_error _ -> ()
-      | _ -> List.iter Print.print_refinement_warning refinement_positions
-      end;
-      Done answer
-    end
+    Print.print_splay_error span msg ;
+    Spawn_fallback {
+      refinement_positions ;
+      stripped_splay_task = (fun () -> Done (splay_check ~options stripped_pgm)) ;
+      non_splay_task     = (fun () -> Done (normal_check ~options pgm)) ;
+    }
   | answer -> Done answer
 
 let ceval_many ~(options : Concolic.Options.t) ~refinement_positions pgms stripped_pgms =
   round_robin (
     List.map2 (fun (span, pgm) (_, stripped_pgm) ->
-      { span ; task = fun () ->
+      { role = Initial_splay
+      ; span
+      ; task = fun () ->
           Print.print_pending span;
           match options.splay with
           | Fallback -> handle_fallback ~options ~refinement_positions span pgm stripped_pgm
