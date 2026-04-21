@@ -131,7 +131,7 @@ export class DiagnosticsManager {
         const key = rangeKey(msg.range);
         this.byStmt.set(key + ':splay', {
           range: msg.range,
-          message: msg.msg,
+          message: `Splay-checking failed: ${msg.msg}`,
           severity: DiagnosticSeverity.Warning,
         });
         this.flush(uri);
