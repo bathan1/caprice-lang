@@ -90,22 +90,10 @@ let find_baseline_error ~options stmts_with_pos =
       | answer -> Some (span, answer))
   | _ -> None
 
-let parse_normal text =
-  Lang.Parser.reset_refinement_positions ();
-  Lang.Parser.set_strip_refinements false;
-  let stmts = Lang.Parser.Positioned.parse_string text in
-  stmts, Lang.Parser.get_refinement_positions ()
-
-let parse_stripped text =
-  Lang.Parser.set_strip_refinements true;
-  let stmts = Lang.Parser.Positioned.parse_string text in
-  Lang.Parser.set_strip_refinements false; (* defensive reset: strip_refinements is global state *)
-  stmts
-
 let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_packet) =
   try
-    let stmts_with_pos, refinement_positions = parse_normal packet.full_text in
-    let stripped_stmts = parse_stripped packet.full_text in
+    let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
+    let stripped_stmts, refinement_positions = Lang.Parser.parse_stripped packet.full_text in
     let stmts_to_check, stripped_to_check =
       match find_baseline_error ~options stmts_with_pos with
       | None -> stmts_with_pos, stripped_stmts
