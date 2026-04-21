@@ -47,7 +47,7 @@ let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pg
   let refinement_positions = List.filter
     (fun (p : Lang.Ast.pos_span) -> p.begins.pos_cnum <= span.ends.pos_cnum)
     refinement_positions in
-  begin match splay_check ~options pgm with
+  match splay_check ~options pgm with
   | Grammar.Answer.Found_error msg ->
     begin match splay_check ~options stripped_pgm with
     | Grammar.Answer.Found_error _ ->
@@ -62,7 +62,6 @@ let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pg
       Done answer
     end
   | answer -> Done answer
-  end
 
 let ceval_many ~(options : Concolic.Options.t) ~refinement_positions pgms stripped_pgms =
   round_robin (
