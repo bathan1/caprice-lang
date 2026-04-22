@@ -4,72 +4,7 @@
   open Binop
 %}
 
-%token <string> IDENTIFIER
-%token <int> INT
-%token <bool> BOOL
-%token EOF
-%token OPEN_BRACE
-%token CLOSE_BRACE
-%token OPEN_PAREN
-%token CLOSE_PAREN
-%token SEMICOLON
-%token COMMA
-%token BACKTICK
-%token EQUALS
-%token DOT
-%token COLON
-%token COLON_EQUAL
-%token UNDERSCORE
-%token PIPE
-%token DOUBLE_PIPE
-%token DOUBLE_AMPERSAND
-%token NOT
-%token FUNCTION
-%token WITH
-%token IF
-%token THEN
-%token ELSE
-%token LET
-%token IN
-%token ARROW
-%token MATCH
-%token END
-%token STRUCT
-// %token DEFER
-%token PLUS
-%token MINUS
-%token ASTERISK
-%token SLASH
-%token PERCENT
-%token EQUAL_EQUAL
-%token NOT_EQUAL
-%token LESS
-%token LESS_EQUAL
-%token GREATER
-%token GREATER_EQUAL
-%token BOOL_KEYWORD
-%token BOTTOM_KEYWORD
-%token INT_KEYWORD
-%token MU
-%token OF
-%token SIG
-%token SINGLETON
-%token TOP_KEYWORD
-%token TYPE
-%token UNIT_KEYWORD
-%token VAL
-%token OPEN_BRACKET
-%token CLOSE_BRACKET
-%token DOUBLE_COLON
-// %token AND
-%token ASSERT
-%token ASSUME
-%token DEPENDENT
-%token DEP
-%token LIST
-%token REC
-%token ABSTRACT
-%token AS
+%parameter<Param : Parser_param.PARAM>
 
 /*
  * Precedences and associativities.  Lower precedences come first.
@@ -162,13 +97,7 @@ typed_param_group:
   | name=l_ident COLON tau=expr
     { name, tau }
   | name=l_ident COLON tau=expr PIPE predicate=expr
-    { let t =
-        if !Parser_state.strip_refinements then
-          let () = Parser_state.push_refine_pos { begins = $startpos ; ends = $endpos } in
-          tau
-        else
-          ETypeRefine { var = name ; tau ; predicate }
-      in
+    { let t = Param.make_refinement name ~tau ~predicate { begins = $startpos ; ends = $endpos } in
       name, t }
   | name=l_ident COLON_EQUAL e=expr
     { name, ETypeSingle e }
@@ -336,11 +265,7 @@ op_expr:
     { ETypeRecord record }
   (* refinement type with binding for tau, which looks like a record type at first *)
   | OPEN_BRACE var=l_ident COLON tau=expr PIPE predicate=expr CLOSE_BRACE
-    { if !Parser_state.strip_refinements then
-        let () = Parser_state.push_refine_pos { begins = $startpos ; ends = $endpos } in
-        tau
-      else
-        ETypeRefine { var ; tau ; predicate } }
+    { Param.make_refinement var ~tau ~predicate { begins = $startpos ; ends = $endpos } }
   ;
 
 %inline record_type_item:

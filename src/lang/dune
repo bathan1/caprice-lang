@@ -2,7 +2,14 @@
 (ocamllex caprice_lexer)
 
 (menhir
- (modules caprice_parser))
+ (modules caprice_tokens)
+ (flags --only-tokens)
+ (explain false))
+
+(menhir
+ (modules caprice_tokens caprice_parser)
+ (merge_into caprice_parser)
+ (flags --external-tokens Caprice_tokens))
 
 (library
  (name lang)
