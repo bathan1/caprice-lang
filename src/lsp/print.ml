@@ -25,3 +25,6 @@ let print_answer span answer =
 
 let print_refinement_warning pos =
   Printf.printf "refinement_warning:%s\n%!" (format_span pos)
+
+let print_clear_refinement_warning pos =
+  Printf.printf "clear_refinement_warning:%s\n%!" (format_span pos)

@@ -1,5 +1,3 @@
-open Scheduler
-
 module M = Concolic.Loop.Make (Scheduler.Pause_effect)
 
 let splay_check ~options pgm =
@@ -8,30 +6,47 @@ let splay_check ~options pgm =
 let normal_check ~options pgm =
   M.begin_ceval ~print_outcome:false ~options:{ options with splay = Never_splay } pgm
 
-let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm : r =
+let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm : Scheduler.r =
   let refinement_positions = List.filter
     (fun (p : Lang.Ast.pos_span) -> p.begins.pos_cnum <= span.ends.pos_cnum)
-    refinement_positions in
-  match splay_check ~options pgm with
+    refinement_positions
+  in
+  begin match splay_check ~options pgm with
   | Grammar.Answer.Found_error msg ->
-    Print.print_splay_error span msg ;
-    Spawn_fallback {
-      refinement_positions ;
-      stripped_splay_task = (fun () -> Done (splay_check ~options stripped_pgm)) ;
-      non_splay_task     = (fun () -> Done (normal_check ~options pgm)) ;
-    }
-  | answer -> Done answer
+    Print.print_splay_error span msg;
+    Scheduler.Spawn [
+      { span ; task = fun () ->
+          begin match splay_check ~options stripped_pgm with
+          | Grammar.Answer.Found_error _ -> ()
+          | _ -> List.iter Print.print_refinement_warning refinement_positions
+          end;
+          Scheduler.Done } ;
+      { span ; task = fun () ->
+          let a = normal_check ~options pgm in
+          Print.print_answer span a;
+          begin match a with
+          | Grammar.Answer.Found_error _ ->
+            List.iter Print.print_clear_refinement_warning refinement_positions;
+            Scheduler.Cancel_peers span
+          | _ -> Scheduler.Done
+          end } ;
+    ]
+  | answer ->
+    Print.print_answer span answer;
+    Scheduler.Done
+  end
 
 let ceval_many ~(options : Concolic.Options.t) ~refinement_positions pgms stripped_pgms =
-  round_robin (
+  Scheduler.round_robin (
     List.map2 (fun (span, pgm) (_, stripped_pgm) ->
-      { role = Initial_splay
-      ; span
-      ; task = fun () ->
+      { Scheduler.span ; task = fun () ->
           Print.print_pending span;
           match options.splay with
           | Fallback -> handle_fallback ~options ~refinement_positions span pgm stripped_pgm
-          | _ -> Done (M.begin_ceval ~print_outcome:false ~options pgm) }
+          | _ ->
+            let a = M.begin_ceval ~print_outcome:false ~options pgm in
+            Print.print_answer span a;
+            Scheduler.Done }
     ) pgms stripped_pgms
   )
 
