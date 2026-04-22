@@ -332,7 +332,16 @@ let count (formula : ('a, 'k) t) : int =
   in
   aux formula
 
-let to_string (type a) ~(uid : Utils.Uid.t -> string) (x : (a, 'k) t) : string =
+let to_string 
+  (type a) 
+  ?(uid : Utils.Uid.t -> string =
+    fun uid ->
+      uid
+      |> Utils.Uid.to_int
+      |> Char.chr
+      |> String.of_char
+    ) 
+  (x : (a, 'k) t) : string =
   let rec to_string : type a. (a, 'k) t -> string = function
     | Const_int i -> string_of_int i
     | Const_bool b -> string_of_bool b
@@ -345,3 +354,4 @@ let to_string (type a) ~(uid : Utils.Uid.t -> string) (x : (a, 'k) t) : string =
       Format.sprintf "(%s %s %s)" (to_string @@ Obj.magic e1) (Binop.to_string bop) (to_string @@ Obj.magic e2)
   in
   to_string x
+

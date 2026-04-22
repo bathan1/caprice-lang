@@ -93,7 +93,7 @@ let (@>) : 'k simplifier -> 'k simplifier -> 'k simplifier =
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
-  let pipeline = Integer.simplify_int_bounds
+  let pipeline = Integer.simplify
   @> propagate_constants
   in
   pipeline (direct_solve (module Oracle))

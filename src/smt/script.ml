@@ -35,12 +35,10 @@ let uid_to_string = (fun uid ->
 )
 
 let to_string = Formula.to_string ~uid:uid_to_string
-let idl_clauses = Formula.and_ [
-  Integer.greater_than_eq 
-    (make_int 'x')
-    (Formula.const_int 2);
-]
-;;
+let a = Formula.symbol (AsciiSymbol.make_int 'a')
+let b = Formula.symbol (AsciiSymbol.make_int 'b')
+
+let ftext = "(a >= 123) ^ (b != 125)"
 
 let solution_text (solution : 'k Solution.t) : string = 
   Solution.to_string solution ~uid:(fun uid ->
@@ -51,7 +49,7 @@ let solution_text (solution : 'k Solution.t) : string =
 open Printf
 
 let () =
-  let sol = Integer.solve_int_diff idl_clauses 
+  let f = (Boolean.parse ftext) |> Integer.rewrite in
+  let result = Integer.to_propositional f ~to_symbol:(fun uid -> AsciiSymbol.make_bool (Char.chr (uid |> fun c -> c + 112)))
   in
-  let text = solution_text sol 
-  in printf "IDL SOLUTION: %s\n" text;
+  printf "%s\n" (Formula.to_string result);
