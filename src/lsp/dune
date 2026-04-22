@@ -1,7 +1,6 @@
 (library
  (name lsp)
  (public_name caprice.lsp)
- (modules protocol print positions range_check stmt_check scheduler main_loop)
  (libraries
   concolic
   grammar
