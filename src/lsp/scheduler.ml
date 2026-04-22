@@ -24,7 +24,7 @@ let round_robin (fs : work_item list) : unit =
     Queue.push { span ; task } run_q
   in
   let rec dequeue () =
-    match Queue.take_opt run_q with
+    begin match Queue.take_opt run_q with
     | None -> ()
     | Some { span ; task = _ } when is_cancelled span -> dequeue ()
     | Some { span ; task } ->
@@ -42,5 +42,6 @@ let round_robin (fs : work_item list) : unit =
         Hashtbl.replace cancelled s ();
         dequeue ()
       end
+    end
   in
   dequeue ()
