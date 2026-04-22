@@ -91,20 +91,38 @@ let is_falsified_clause (model_state : bool Uid.Map.t) (vars : (Uid.Set.t)) : bo
     | None -> false
     | Some v -> not v
   )
+  |> fun r ->
+    r
 
 let dpll 
-  ?(leftovers : Uid.t -> bool = fun _ -> Random.self_init (); Random.bool ())
+  ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
   (clauses : (bool, 'k) Formula.t list) 
+  ~(decode : Uid.t -> (bool, 'k) Formula.t)
+  ~(solve : 'k Formula.solver)
   : 'k Solution.t =
-  let all_keys = clauses |> Formula.and_ |> Formula.symbols in
+  let rebuild_logical model = Formula.and_ (
+    model
+    |> Uid.Map.to_list
+    |> List.map (fun (uid, tv) ->
+      let formula = decode uid in
+      if tv then
+        formula
+      else
+        Formula.not_ formula
+    )
+  ) in
   let rec dpll clauses model_state =
     let symbols = clauses |> List.map Formula.symbols in
     if
-    symbols
-      |> List.exists (is_falsified_clause model_state)
-    then Solution.Unsat
+      List.is_empty symbols || List.exists (is_falsified_clause model_state) symbols
+    then 
+      if List.is_empty symbols then
+        Solution.Unsat
+      else
+        Solution.Unsat
     else
-      let is_sat = (
+      let is_trivial_true = match clauses with | [Const_bool true] -> true | _ -> false in
+      let is_sat = is_trivial_true || (
         symbols
         |> List.for_all (fun uids ->
           uids
@@ -116,22 +134,13 @@ let dpll
         )
       ) in
       if is_sat then 
-        let diffed = 
+        let final_model = Uid.Map.add_seq (
           model_state
           |> Uid.Map.domain
-          |> Uid.Set.diff all_keys 
-        in
-        let final_model = Uid.Map.add_seq (
-          diffed
           |> Uid.Set.to_seq
           |> Seq.map (fun key -> key, leftovers key)
         ) model_state in
-        Solution.Sat (
-          final_model 
-          |> get_domain 
-          |> Model.of_local 
-            ~lookup:(fun uid -> Uid.Map.find_opt uid final_model)
-        )
+          solve (rebuild_logical final_model)
       else
         let reduced, model = (
           clauses
@@ -160,18 +169,29 @@ let dpll
               ~lookup:(fun uid -> Uid.Map.find_opt uid model)
           in
           Solution.Sat solution_model
-        | ls when List.exists (function Formula.Const_bool false -> true | _ -> false) ls -> Solution.Unsat
+        | ls when List.exists (function Formula.Const_bool false -> true | _ -> false) ls -> 
+          Solution.Unsat
         | next ->
           let branch_key = choose_literal next in
           let uid = Symbol.to_uid branch_key in 
           let left_model = (Uid.Map.add uid true model) in
-          match dpll next left_model with
-          | Solution.Sat left_model -> 
-            Solution.Sat left_model
-          | Solution.Unsat ->
-            let right_model = (Uid.Map.add uid false model) in
-            dpll next right_model
-          | Solution.Unknown -> raise (Should_not_happen "unknown solution")
+          let next = 
+            Formula.and_ next
+            |> Formula.subst true branch_key
+            |> fun f -> 
+              Formula.clauses_of f
+          in
+          match next with
+          | [Const_bool true] ->
+              solve (rebuild_logical left_model)
+          | next ->
+            match dpll next left_model with
+            | Solution.Sat left_model -> 
+              Solution.Sat left_model
+            | Solution.Unsat ->
+              let right_model = (Uid.Map.add uid false model) in
+              dpll next right_model
+            | Solution.Unknown -> raise (Should_not_happen "unknown solution")
   in
   dpll clauses Uid.Map.empty
 ;;

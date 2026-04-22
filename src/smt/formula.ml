@@ -355,3 +355,7 @@ let to_string
   in
   to_string x
 
+let clauses_of (f : (bool, 'k) t) =
+  match f with
+  | And ls -> ls
+  | f -> [f]

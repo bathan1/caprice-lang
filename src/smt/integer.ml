@@ -74,7 +74,8 @@ let to_propositional
       |> Formula.and_
     | expr -> expr
   in
-  aux f
+  let bool_f = aux f in
+  bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq
 
 let drop_redundant : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   fun clauses ->
@@ -251,17 +252,6 @@ let rewrite : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
   normalize_unit (Formula.and_ f')
 ;;
 
-(** [simplify solve expr] drops redundant inequalities from EXPR before SOLVE calls it 
-*)
-let simplify : 'k Formula.simplifier = fun solve expr ->
-  expr
-  |> rewrite
-  |> fun rewritten -> 
-    let () = 
-      Printf.printf "%s\n" (Formula.to_string rewritten)
-    in
-    rewritten
-  |> solve
 
 type var =
   | Symbol_key of Uid.t
@@ -520,7 +510,7 @@ let is_int_diff_solvable (expr : (bool, 'k) Formula.t) : bool =
           printf "UNSAT\n"
     ]
 *)
-let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
+let solve (expr : (bool, 'k) Formula.t) : 'k Solution.t =
   expr
   |> extract
   |> normalize
@@ -545,3 +535,14 @@ let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
       )
     in
     Solution.Sat model
+;;
+
+(** [simplify solve expr] drops redundant inequalities from EXPR before SOLVE calls it 
+*)
+let simplify : 'k Formula.simplifier = fun next expr ->
+  expr
+  |> rewrite
+  |> solve
+  |> function
+    | Solution.Unknown -> next expr
+    | solution -> solution

@@ -1,7 +1,9 @@
 
 type 'k t =
-  { value : 'a. ('a, 'k) Symbol.t -> 'a option
-  ; domain : Utils.Uid.t list }
+  { 
+    value : 'a. ('a, 'k) Symbol.t -> 'a option;
+    domain : Utils.Uid.t list; 
+  }
 
 let merge (s1 : 'k t) (s2 : 'k t) : 'k t =
   let value (type a) (sym : (a, 'k) Symbol.t) : a option =
