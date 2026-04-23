@@ -245,7 +245,7 @@ let rewrite : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
       f
   in
   f
-  |> Formula.clauses_of
+  |> Formula.clauses_from
   |> List.map linearize
   |> prune
   |> List.map normalize_unit
@@ -392,7 +392,7 @@ let partition_idl (formula : (bool, 'k) Formula.t)
         else
           aux (index + 1) solvable (index :: unsolvable) rest
   in
-  aux 0 [] [] (Formula.clauses_of formula)
+  aux 0 [] [] (Formula.clauses_from formula)
 ;;
 
 let normalize (constraints : diff_constraint list) =

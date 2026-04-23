@@ -1,6 +1,8 @@
 open Utils
 exception Should_not_happen of string
 
+module IntSet = Formula.IntSet
+
 let find_first_unit_literal (ls : (bool, 'k) Formula.t list) : ((bool, 'k) Symbol.t * bool) option =
   let open Formula in
   ls
@@ -67,29 +69,42 @@ let is_falsified_clause (model_state : bool Uid.Map.t) (vars : (Uid.Set.t)) : bo
   |> fun r ->
     r
 
+let is_solvable_by
+  (logics : 'k Formula.logic list) 
+  (f : (bool, 'k) Formula.t) 
+  : bool =
+  let clauses = Formula.clause_indices_from f in
+  logics
+  |> List.fold_left (
+    fun acc (_solve, partition) -> (
+      let solvable, _unsolvable = partition f in
+      solvable
+      |> IntSet.of_list
+      |> IntSet.union acc
+    )
+  ) IntSet.empty
+  |> IntSet.diff clauses
+  |> IntSet.is_empty
+;;
+
 let check
   (logics : 'k Formula.logic list)
   (f : (bool, 'k) Formula.t)
   (keyset : Uid.Set.t)
   : 'k Solution.t =
-  let clauses = (
-    f
-    |> Formula.clauses_of
-    |> List.mapi (fun i _ -> i)
-    |> Integer.Set.of_list
-  ) in
+  let clauses = Formula.clause_indices_from f in
   let solutions, solved_clauses = List.fold_left (fun (acc_sols, acc_solved) (solve, partition) -> (
     let solvable, _unsolvable = partition f in
-    let solvable_f = Formula.of_partition solvable f  in
+    let solvable_f = Formula.from_partition solvable f in
       solve solvable_f :: acc_sols, 
       (
         solvable
-        |> Integer.Set.of_list
-        |> Integer.Set.union acc_solved
+        |> IntSet.of_list
+        |> IntSet.union acc_solved
       )
-  )) ([], Integer.Set.empty) logics in
-  let clause_diff = Integer.Set.diff clauses solved_clauses in
-  let were_all_clauses_solved = Integer.Set.is_empty clause_diff in
+  )) ([], IntSet.empty) logics in
+  let clause_diff = IntSet.diff clauses solved_clauses in
+  let were_all_clauses_solved = IntSet.is_empty clause_diff in
   if List.is_empty solutions || not were_all_clauses_solved then
     if List.is_empty solutions then
       Solution.Unsat

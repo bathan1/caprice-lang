@@ -1,3 +1,4 @@
+module IntSet = Set.Make (Int)
 
 module type S = sig
   type ('a, 'k) t
@@ -318,14 +319,28 @@ type 'k partitioner =
 *)
 type 'k logic = 'k solver * 'k partitioner
 
-let clauses_of (f : (bool, 'k) t) =
+(** 
+  [clauses_from f] unwraps the [And] list from F if F is a conjunction or [[F]] if F is anything else
+*)
+let clauses_from (f : (bool, 'k) t) =
   match f with
   | And ls -> ls
   | f -> [f]
+;;
 
-let of_partition (partition : int list) (f : (bool, 'k) t) : (bool, 'k) t =
+(** 
+  [clause_indices_from f] unwraps the [And] list from F and maps each element to its array index (0 indexed)
+*)
+let clause_indices_from (f : (bool, 'k) t) =
+  f
+  |> clauses_from
+  |> List.mapi (fun i _ -> i)
+  |> IntSet.of_list
+;;
+
+let from_partition (partition : int list) (f : (bool, 'k) t) : (bool, 'k) t =
     f
-    |> clauses_of
+    |> clauses_from
     |> Array.of_list
     |> fun clauses -> List.map (fun index -> clauses.(index)) partition
     |> and_

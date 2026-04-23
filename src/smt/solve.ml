@@ -102,30 +102,15 @@ let dpll
   f
   |> Integer.rewrite
   |> fun rewritten ->
-    let check_for_unsolvable op = Formula.contains_binop op rewritten in
-    if 
-      check_for_unsolvable Times ||
-      check_for_unsolvable Modulus ||
-      check_for_unsolvable Divide
-    then
+    if not (Boolean.is_solvable_by logics f) then
       solve_next f
     else
       rewritten
   |> Integer.to_propositional ~to_symbol
   |> fun (props, map) ->
-  let rec check : (bool, 'k) Formula.t -> bool =
-    function
-    | Formula.Key _ -> true
-    | Binop (Or, left, right) -> check left && check right
-    | _ -> false
-  in
-  let mapped_ok = List.for_all check (Formula.clauses_of props) in
-  if not mapped_ok then
-    solve_next f
-  else
   let keyset = Formula.symbols f in
   let decode = fun uid -> Uid.Map.find uid map in
-  let clauses = Formula.clauses_of props in
+  let clauses = Formula.clauses_from props in
   let rebuild_logical model = Formula.and_ (
     model
     |> Uid.Map.to_list
@@ -203,7 +188,7 @@ let dpll
             Formula.and_ next
             |> Formula.subst true branch_key
             |> fun f -> 
-              Formula.clauses_of f
+              Formula.clauses_from f
           in
           begin match next with
           | [Const_bool true] ->

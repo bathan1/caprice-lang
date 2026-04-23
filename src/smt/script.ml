@@ -53,7 +53,7 @@ open Overlays
 
 let main_solve = Solve.main_solve (module Typed_z3.Default)
 
-let () =
+let sanity_check () =
   let fs = Boolean.from_stdin () in
   let iter = fun i f_text -> 
     let f = Boolean.parse f_text in
@@ -104,3 +104,69 @@ let () =
   else
     Printf.printf "Invalid formulas:";
     List.iter (fun res -> printf "%d, " res) bad_results;
+
+open Unix
+
+let sql_escape (s : string) =
+  s
+  |> String.split_on_char '\''
+  |> String.concat "''"
+
+let time_us_float f =
+  let t1 = gettimeofday () in
+  let _ = f () in
+  let t2 = gettimeofday () in
+  (t2 -. t1) *. 1_000_000.0
+
+let benchmark num_trials =
+  let solve_z3_only = Solve.direct_solve (module Typed_z3.Default) in
+  let fs = Boolean.from_stdin () in
+
+  Printf.printf
+    "CREATE TABLE IF NOT EXISTS benchmark_results (\n\
+    \  trial_num INTEGER NOT NULL,\n\
+    \  formula_id INTEGER NOT NULL,\n\
+    \  formula TEXT NOT NULL,\n\
+    \  time_us_blue3 FLOAT NOT NULL,\n\
+    \  time_us_z3 FLOAT NOT NULL\n\
+     );\n\n";
+
+  let rec aux trial_num =
+    if trial_num = num_trials then
+      ()
+    else begin
+      fs
+      |> List.iteri (fun formula_id ftext ->
+           let formula_sql = sql_escape ftext in
+
+           let time_us_blue3 =
+             time_us_float (fun () ->
+               let f = Boolean.parse ftext in
+               ignore (
+                  main_solve f
+               ))
+           in
+
+           let time_us_z3 =
+             time_us_float (fun () ->
+               let f = Boolean.parse ftext in
+               ignore (solve_z3_only f))
+           in
+
+           Printf.printf
+             "INSERT INTO benchmark_results \
+              (trial_num, formula_id, formula, time_us_blue3, time_us_z3) \
+              VALUES (%d, %d, '%s', %.6f, %.6f);\n"
+             trial_num
+             formula_id
+             formula_sql
+             time_us_blue3
+             time_us_z3);
+
+      aux (trial_num + 1)
+    end
+  in
+  aux 0
+
+let () =
+  benchmark 5;
