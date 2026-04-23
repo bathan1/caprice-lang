@@ -244,11 +244,8 @@ let fold_or = function
 
 let binop_of_cmp = function
   | "="  -> Binop.Equal
-  | "!=" -> Binop.Not_equal
   | "<"  -> Binop.Less_than
   | "<=" -> Binop.Less_than_eq
-  | ">"  -> Binop.Greater_than
-  | ">=" -> Binop.Greater_than_eq
   | s ->
       raise (Failure ("unknown comparison operator: " ^ s))
 
@@ -317,11 +314,8 @@ and parse_compare (p : parser) : (bool, 'k) Formula.t =
       let op =
         match t.kind with
         | CMP "="  -> Binop.Equal
-        | CMP "!=" -> Binop.Not_equal
         | CMP "<"  -> Binop.Less_than
         | CMP "<=" -> Binop.Less_than_eq
-        | CMP ">"  -> Binop.Greater_than
-        | CMP ">=" -> Binop.Greater_than_eq
         | _ -> assert false
       in
       let right = parse_add p in

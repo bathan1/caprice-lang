@@ -34,6 +34,10 @@ let uid_to_string = (fun uid ->
   uid |> Uid.to_int |> Char.chr |> String.of_char
 )
 
+let uid_to_symbol_string = fun uid ->
+  AsciiSymbol.make_int (uid |> Uid.to_int |> Char.chr),
+  uid |> Uid.to_int |> Char.chr |> String.of_char
+
 let to_string = Formula.to_string ~uid:uid_to_string
 let a = Formula.symbol (AsciiSymbol.make_int 'a')
 let b = Formula.symbol (AsciiSymbol.make_int 'b')
@@ -50,7 +54,7 @@ open Overlays
 let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let () =
-  let fs = Boolean.from_stdin () in
+  let fs = ["(0 <= a) ^ (0 < b) ^ ((a + b) < 0)"] in
   let iter = fun i f_text -> 
     let f = Boolean.parse f_text in
     let res = main_solve f in
@@ -73,6 +77,19 @@ let () =
         | None -> acc && false
         | Some _ -> acc && true
       ) true
+      |> fun is_full_assigment -> 
+        if not is_full_assigment then false
+        else
+        let eval_result = Formula.default_eval model f
+        in
+        let () = 
+          if not eval_result then
+            Printf.printf "(%d : %s) Inconsistent model:\n%s\n"
+            (i + 1)
+            f_text
+            (Model.to_string model ~uid:uid_to_symbol_string)
+        in
+        eval_result
     )
   in
   let results = List.mapi iter fs in

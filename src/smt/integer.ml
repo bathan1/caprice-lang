@@ -7,11 +7,49 @@ module Set = Set.Make (Int)
 
 let linearize f = 
   match f with
-  | Formula.Binop ((Less_than_eq | Less_than | Greater_than_eq | Greater_than) as binop, (Binop (Plus, Key I x, Key I y)), Key I z) when x = z -> (
+  | Formula.Binop ((Less_than_eq | Less_than) as binop, (Binop (Plus, Key I x, Key I y)), Key I z) when x = z -> (
     Formula.binop binop (symbol y) (Formula.const_int 0)
   )
-  | f -> 
-    f
+  | Formula.Binop (
+      (Less_than_eq | Less_than) as binop,
+      (Binop (
+        Plus,
+        Key I x,
+        Const_int a
+      )),
+      Const_int b
+    ) -> Formula.binop binop (symbol x) (Formula.const_int (b - a))
+
+  | Formula.Binop (
+      (Less_than_eq | Less_than | Equal) as binop,
+      Const_int c,
+      (Binop (
+        (Plus | Minus) as op,
+        Key I a,
+        Key I b
+      ))
+    )
+  | Formula.Binop (
+      (Less_than_eq | Less_than | Equal) as binop,
+      (Binop (
+        (Plus | Minus) as op,
+        Key I a,
+        Key I b
+      )),
+      Const_int c
+    ) -> (
+      match op with
+      | Plus -> 
+        Formula.binop binop 
+          (symbol a)
+          (Formula.binop Minus (Formula.const_int c) (symbol b))
+      | Minus -> 
+        Formula.binop binop 
+          (symbol a)
+          (Formula.binop Plus (Formula.const_int c) (symbol b))
+      | _ -> failwith "unreachable"
+    )
+  | f -> f
 
 let to_propositional 
     ?(to_symbol : int -> (bool, 'k) Symbol.t =
@@ -26,8 +64,13 @@ let to_propositional
   let hash = Hashtbl.create n in
   let rec aux f = 
     match f with
-    | Formula.Binop(
-        (Less_than_eq | Less_than | Greater_than_eq | Greater_than | Equal | Not_equal),
+    | Formula.Not Binop (
+        Equal,
+        _,
+        _
+      )
+    | Formula.Binop (
+        (Less_than_eq | Less_than | Equal),
         _, _
       ) as atomic ->
         let count = !counter in
@@ -66,9 +109,7 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       match clause with
       (* neq case *)
       | Formula.Not (Binop (Equal, Const_int c, Key I key))
-        | Not (Binop (Equal, Key I key, Const_int c))
-        | Binop (Not_equal, Key I key, Const_int c)
-        | Binop (Not_equal, Const_int c, Key I key) -> (
+        | Not (Binop (Equal, Key I key, Const_int c)) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next_neq_set = Set.add c neq in
           let next = Uid.Map.add key (lower, upper, next_neq_set, eq) acc
@@ -87,27 +128,24 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
 
       (* lower bounds *)
       | Binop (Less_than_eq, Const_int c, Key I key)
-        | Binop (Greater_than_eq, Key I key, Const_int c) -> (
+        -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (max lower c, upper, neq, eq) acc in
           next, other
         )
-      | Binop (Less_than, Const_int c, Key I key)
-        | Binop (Greater_than, Key I key, Const_int c) -> (
+      | Binop (Less_than, Const_int c, Key I key) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (max lower (c + 1), upper, neq, eq) acc in
           next, other
         )
 
       (* upper bounds *)
-      | Binop (Less_than_eq, Key I key, Const_int c)
-        | Binop (Greater_than_eq, Const_int c, Key I key) -> (
+      | Binop (Less_than_eq, Key I key, Const_int c) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (lower, min upper c, neq, eq) acc in
           next, other
         )
-      | Binop (Less_than, Key I key, Const_int c)
-        | Binop (Greater_than, Const_int c, Key I key) -> (
+      | Binop (Less_than, Key I key, Const_int c) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (lower, min upper (c - 1), neq, eq) acc in
           next, other
@@ -194,24 +232,14 @@ let rewrite : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
       |> List.map (fun clause -> normalize_unit clause)
       |> and_
     (* neqs into disjunctions that bellman ford can solve *)
-    | Binop (Not_equal, Key I left, Key I right) -> (
-      handle_neq (int_symbol left) (int_symbol right)
-    )
-    (* x != C *)
-    | Binop (Not_equal, Key I key, Const_int c) ->
-      handle_neq (int_symbol key) (const_int c)
-    | Not Binop (Equal, Key I key, Const_int c) ->
-      handle_neq (int_symbol key) (const_int c)
-
-    (* C != x *)
-    | Binop (Not_equal, Const_int c, Key I key) -> 
-      handle_neq (int_symbol key) (const_int c)
-    | Not Binop (Equal, Const_int c, Key I key) ->
-      handle_neq (int_symbol key) (const_int c)
-
-    (* x != y *)
     | Not Binop (Equal, Key I left, Key I right) ->
       handle_neq (int_symbol left) (int_symbol right)
+    (* x != C *)
+    | Not Binop (Equal, Key I key, Const_int c) ->
+      handle_neq (int_symbol key) (const_int c)
+    (* C != x *)
+    | Not Binop (Equal, Const_int c, Key I key) -> 
+      handle_neq (int_symbol key) (const_int c)
 
     | f -> 
       f
@@ -245,29 +273,21 @@ let rec extract (formula : (bool, 'k) Formula.t) : diff_constraint list =
   let const_int = Formula.const_int in
   formula
   |> function
-  | Not Binop (Greater_than, Key I x, Key I y)
     | Not Binop (Less_than, Key I y, Key I x) ->
     extract (binop Less_than_eq (symbol x) (symbol y))
-
-  | Not Binop (Greater_than_eq, Key I x, Key I y) ->
-    extract (binop Less_than (symbol x) (symbol y))
 
   | Not Binop (Less_than_eq, Key I x, Key I y) ->
     extract (binop Greater_than (symbol x) (symbol y))
 
-  | Not Binop (Less_than_eq, Const_int c, Key I x)
-    | Not Binop (Greater_than_eq, Key I x, Const_int c) ->
+  | Not Binop (Less_than_eq, Const_int c, Key I x) ->
     extract (binop Less_than (symbol x) (const_int c))
 
-  | Not Binop (Greater_than, Const_int c, Key I x)
     | Not Binop (Less_than, Key I x, Const_int c) ->
     extract (binop Greater_than (symbol x) (const_int c))
 
-  | Not Binop (Less_than, Const_int c, Key I x)
-    | Not Binop (Greater_than, Key I x, Const_int c) ->
+  | Not Binop (Less_than, Const_int c, Key I x) ->
     extract (binop Greater_than (symbol x) (const_int c))
 
-  | Not Binop (Greater_than_eq, Const_int c, Key I x)
     | Not Binop (Less_than_eq, Key I x, Const_int c) ->
     extract (binop Greater_than (symbol x) (const_int c))
 
@@ -285,36 +305,30 @@ let rec extract (formula : (bool, 'k) Formula.t) : diff_constraint list =
   (* x <= y -> (x - y <= 0)
         y >= x -> (x - y <= 0)
         not (x > y) -> x <= y -> (x - y) <= 0 *)
-  | Binop (Less_than_eq, Key I x, Key I y)
-    | Binop (Greater_than_eq, Key I y, Key I x) ->
+  | Binop (Less_than_eq, Key I x, Key I y) ->
     [{ x = Symbol_key x; y = Symbol_key y; c = 0 }]
 
   (* x <= c -> (x - 0) <= c
         c >= x -> (x - 0) <= c
         not (x > c) -> x <= c -> (x - 0) <= c *)
-  | Binop (Less_than_eq, Key I x, Const_int c)
-    | Binop (Greater_than_eq, Const_int c, Key I x) ->
+  | Binop (Less_than_eq, Key I x, Const_int c) ->
     [{ x = Symbol_key x; y = Z0; c }]
 
   (* x < c -> x - 0 <= c - 1 *)
-  | Binop (Less_than, Key I x, Const_int c)
-    | Binop (Greater_than, Const_int c, Key I x) ->
+  | Binop (Less_than, Key I x, Const_int c) ->
     [{ x = Symbol_key x; y = Z0; c = c - 1 }]
 
   (* x >= c -> 0 - x <= -c
        not (x < c) -> x >= c -> (0 - x) <= -c *)
-  | Binop (Greater_than_eq, Key I x, Const_int c)
-    | Binop (Less_than_eq, Const_int c, Key I x) ->
+  | Binop (Less_than_eq, Const_int c, Key I x) ->
     [ {x = Z0; y = Symbol_key x; c = -c}  ]
 
   (* x > c -> (0 - x) <= -(c + 1) *)
-  | Binop (Greater_than, Key I x, Const_int c)
-    | Binop (Less_than, Const_int c, Key I x) ->
+  | Binop (Less_than, Const_int c, Key I x) ->
     [{ x = Z0; y = Symbol_key x; c = -(c + 1) }]
 
   (* x > y -> (y - x) <= -1 (difference is at least 1) *)
-  | Binop (Greater_than, Key I x, Key I y)
-    | Binop (Less_than,    Key I y, Key I x) ->
+  | Binop (Less_than,    Key I y, Key I x) ->
     [{ x = Symbol_key y; y = Symbol_key x; c = -1 }]
 
   (* x + c <= y  ->  x - y <= -c *)

@@ -101,6 +101,16 @@ let dpll
   : 'k Solution.t =
   f
   |> Integer.rewrite
+  |> fun rewritten ->
+    let check_for_unsolvable op = Formula.contains_binop op rewritten in
+    if 
+      check_for_unsolvable Times ||
+      check_for_unsolvable Modulus ||
+      check_for_unsolvable Divide
+    then
+      solve_next f
+    else
+      rewritten
   |> Integer.to_propositional ~to_symbol
   |> fun (props, map) ->
   let rec check : (bool, 'k) Formula.t -> bool =
