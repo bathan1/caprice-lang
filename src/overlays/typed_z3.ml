@@ -38,7 +38,7 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
 
   let list_curry f x y = f [ x ; y ]
 
-  let rec binop : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t = function
+  let rec binop : type a b c. (a * a * b, c) Binop.c -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t = function
     | Plus            -> list_curry @@ Z3.Arithmetic.mk_add ctx
     | Minus           -> list_curry @@ Z3.Arithmetic.mk_sub ctx
     | Times           -> list_curry @@ Z3.Arithmetic.mk_mul ctx
