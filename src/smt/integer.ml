@@ -5,13 +5,21 @@ let symbol (uid : Uid.t) = Formula.symbol (I uid)
 
 module Set = Set.Make (Int)
 
+let linearize f = 
+  match f with
+  | Formula.Binop ((Less_than_eq | Less_than | Greater_than_eq | Greater_than) as binop, (Binop (Plus, Key I x, Key I y)), Key I z) when x = z -> (
+    Formula.binop binop (symbol y) (Formula.const_int 0)
+  )
+  | f -> 
+    f
+
 let to_propositional 
-  ?(to_symbol : int -> (bool, 'k) Symbol.t =
+    ?(to_symbol : int -> (bool, 'k) Symbol.t =
     fun uid -> 
     uid 
     |> Uid.of_int
     |> fun uid -> Symbol.B uid
-  )
+    )
   (f : (bool, 'k) Formula.t) =
   let counter = ref 0 in
   let n = Formula.count f in
@@ -22,7 +30,7 @@ let to_propositional
       (Less_than_eq | Less_than | Greater_than_eq | Greater_than) as op,
       Key I l,
       Key I r
-    ) -> 
+      ) -> 
       let count = !counter in
       let prop_sym = to_symbol count in
       (* Let caller control the final uid and read it *)
@@ -38,7 +46,7 @@ let to_propositional
       (Less_than_eq | Less_than | Greater_than_eq | Greater_than) as op,
       Key I key,
       Const_int c
-    ) ->
+      ) ->
       let count = !counter in
       let prop_sym = to_symbol count in
       let resolved_uid = Symbol.to_uid prop_sym in
@@ -53,7 +61,7 @@ let to_propositional
       (Less_than_eq | Less_than | Greater_than_eq | Greater_than) as op,
       Const_int c,
       Key I key
-    ) -> 
+      ) -> 
       let count = !counter in
       let prop_sym = to_symbol count in
       let resolved_uid = Symbol.to_uid prop_sym in
@@ -77,7 +85,7 @@ let to_propositional
   let bool_f = aux f in
   bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq
 
-let drop_redundant : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
+let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   fun clauses ->
   let find_or_default key map = 
     match Uid.Map.find_opt key map with
@@ -92,10 +100,10 @@ let drop_redundant : type k. (bool, k) Formula.t list -> (bool, k) Formula.t lis
   clauses
   |> List.fold_left (
     fun (acc, other) clause ->
-      let aux clause =
-        match clause with
-        (* neq case *)
-        | Formula.Not (Binop (Equal, Const_int c, Key I key))
+    let aux clause =
+      match clause with
+      (* neq case *)
+      | Formula.Not (Binop (Equal, Const_int c, Key I key))
         | Not (Binop (Equal, Key I key, Const_int c))
         | Binop (Not_equal, Key I key, Const_int c)
         | Binop (Not_equal, Const_int c, Key I key) -> (
@@ -105,91 +113,91 @@ let drop_redundant : type k. (bool, k) Formula.t list -> (bool, k) Formula.t lis
           in
           next, other
         )
-        
-        (* eq case *)
-        | Formula.Binop (Equal, Const_int c, Key I key)
-        | Formula.Binop (Equal, Key I key, Const_int c) ->
-          let lower, upper, neq, eq = find_or_default key acc in
-          let next_eq_set = Set.add c eq in
-          let next = Uid.Map.add key (lower, upper, neq, next_eq_set) acc
-          in
-          next, other
 
-        (* lower bounds *)
-        | Binop (Less_than_eq, Const_int c, Key I key)
+      (* eq case *)
+      | Formula.Binop (Equal, Const_int c, Key I key)
+        | Formula.Binop (Equal, Key I key, Const_int c) ->
+        let lower, upper, neq, eq = find_or_default key acc in
+        let next_eq_set = Set.add c eq in
+        let next = Uid.Map.add key (lower, upper, neq, next_eq_set) acc
+        in
+        next, other
+
+      (* lower bounds *)
+      | Binop (Less_than_eq, Const_int c, Key I key)
         | Binop (Greater_than_eq, Key I key, Const_int c) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (max lower c, upper, neq, eq) acc in
           next, other
         )
-        | Binop (Less_than, Const_int c, Key I key)
+      | Binop (Less_than, Const_int c, Key I key)
         | Binop (Greater_than, Key I key, Const_int c) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (max lower (c + 1), upper, neq, eq) acc in
           next, other
         )
 
-        (* upper bounds *)
-        | Binop (Less_than_eq, Key I key, Const_int c)
+      (* upper bounds *)
+      | Binop (Less_than_eq, Key I key, Const_int c)
         | Binop (Greater_than_eq, Const_int c, Key I key) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (lower, min upper c, neq, eq) acc in
           next, other
         )
-        | Binop (Less_than, Key I key, Const_int c)
+      | Binop (Less_than, Key I key, Const_int c)
         | Binop (Greater_than, Const_int c, Key I key) -> (
           let lower, upper, neq, eq = find_or_default key acc in
           let next = Uid.Map.add key (lower, min upper (c - 1), neq, eq) acc in
           next, other
         )
-        | f -> acc, f :: other
-      in
-      aux clause
+      | f -> acc, f :: other
+    in
+    aux clause
   ) (Uid.Map.empty, [])
-  |> fun (bounds_map, other_clauses) ->
-    bounds_map
-    |> Uid.Map.to_list
-    |> List.concat_map (fun (uid, (lower, upper, neq, eq)) ->
-      let is_impossible_bound = lower > upper in
-      let num_eq = Set.cardinal eq in
-      let is_eqs_impossible =
-        (num_eq > 1) ||
-        (Set.cardinal (Set.inter eq neq) > 0) ||
-        Set.exists (fun veq -> lower > veq || veq > upper) eq
+  |> fun (bounds_map, other_clauses) -> 
+  bounds_map
+  |> Uid.Map.to_list
+  |> List.concat_map (fun (uid, (lower, upper, neq, eq)) ->
+    let is_impossible_bound = lower > upper in
+    let num_eq = Set.cardinal eq in
+    let is_eqs_impossible =
+      (num_eq > 1) ||
+      (Set.cardinal (Set.inter eq neq) > 0) ||
+      Set.exists (fun veq -> lower > veq || veq > upper) eq
+    in
+    if is_impossible_bound || is_eqs_impossible then
+      [Formula.const_bool false]
+    else
+      let variable = Formula.symbol (I uid) in
+      let nontrivial_neqs = Set.filter (fun v -> lower < v && v < upper) neq
       in
-      if is_impossible_bound || is_eqs_impossible then
-        [Formula.const_bool false]
-      else
-        let variable = Formula.symbol (I uid) in
-        let nontrivial_neqs = Set.filter (fun v -> lower < v && v < upper) neq
-        in
-        let neq_formulas = (
-          nontrivial_neqs
-          |> Set.to_list
-          |> List.map (fun v -> 
-            Formula.not_ (
-              Formula.binop Equal variable (Formula.const_int v)
-            )
+      let neq_formulas = (
+        nontrivial_neqs
+        |> Set.to_list
+        |> List.map (fun v -> 
+          Formula.not_ (
+            Formula.binop Equal variable (Formula.const_int v)
           )
-        ) in
-        if num_eq == 1 then
-          let value_eq = Set.find_first (fun _ -> true) eq in
-          (Formula.binop Equal variable (Formula.const_int value_eq))
-          :: neq_formulas
-        else
+        )
+      ) in
+      if num_eq == 1 then
+        let value_eq = Set.find_first (fun _ -> true) eq in
+        (Formula.binop Equal variable (Formula.const_int value_eq))
+        :: neq_formulas
+      else
         let lower_neq = Set.find_opt lower neq 
         in
         let upper_neq = Set.find_opt upper neq
         in
         let resolved_lower, resolved_upper = match lower_neq, upper_neq with
-        | None, None -> 
-          lower, upper
+          | None, None -> 
+            lower, upper
           (* drop neq and increment lower bound *)
-        | Some lower_bound_neq, None -> 
-          lower_bound_neq + 1, upper 
+          | Some lower_bound_neq, None -> 
+            lower_bound_neq + 1, upper 
           (* drop neq and decrement upper bound *)
-        | None, Some upper_bound_neq -> lower, upper_bound_neq - 1
-        | Some lower_bound_eq, Some upper_bound_eq -> lower_bound_eq + 1, upper_bound_eq - 1
+          | None, Some upper_bound_neq -> lower, upper_bound_neq - 1
+          | Some lower_bound_eq, Some upper_bound_eq -> lower_bound_eq + 1, upper_bound_eq - 1
         in
         match resolved_lower, resolved_upper with
         | lb, rb when lb = Int.min_int && rb = Int.max_int -> neq_formulas
@@ -201,8 +209,9 @@ let drop_redundant : type k. (bool, k) Formula.t list -> (bool, k) Formula.t lis
           (Formula.binop Less_than_eq (Formula.const_int lb) variable) ::
           (Formula.binop Less_than_eq variable (Formula.const_int rb)) ::
           neq_formulas
-      |> fun rewritten -> rewritten @ other_clauses
-    )
+  )
+  |> fun rewritten ->
+  rewritten @ other_clauses
 ;;
 
 let rewrite : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
@@ -226,30 +235,31 @@ let rewrite : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
     | Binop (Not_equal, Key I left, Key I right) -> (
       handle_neq (int_symbol left) (int_symbol right)
     )
-      (* x != C *)
+    (* x != C *)
     | Binop (Not_equal, Key I key, Const_int c) ->
       handle_neq (int_symbol key) (const_int c)
     | Not Binop (Equal, Key I key, Const_int c) ->
       handle_neq (int_symbol key) (const_int c)
 
-      (* C != x *)
+    (* C != x *)
     | Binop (Not_equal, Const_int c, Key I key) -> 
       handle_neq (int_symbol key) (const_int c)
     | Not Binop (Equal, Const_int c, Key I key) ->
       handle_neq (int_symbol key) (const_int c)
 
-      (* x != y *)
+    (* x != y *)
     | Not Binop (Equal, Key I left, Key I right) ->
       handle_neq (int_symbol left) (int_symbol right)
+
     | f -> 
       f
   in
-  let clauses = match f with
-  | And ls -> ls
-  | e -> [e]
-  in
-  let f' = drop_redundant clauses in
-  normalize_unit (Formula.and_ f')
+  f
+  |> Formula.clauses_of
+  |> List.map linearize
+  |> prune 
+  |> List.map normalize_unit
+  |> Formula.and_
 ;;
 
 
@@ -510,31 +520,37 @@ let is_int_diff_solvable (expr : (bool, 'k) Formula.t) : bool =
           printf "UNSAT\n"
     ]
 *)
-let solve (expr : (bool, 'k) Formula.t) : 'k Solution.t =
-  expr
-  |> extract
-  |> normalize
-  |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges ~src:0
-  |> function
-  | `Negative_cycle _ -> Solution.Unsat
-  | `No_negative_cycle (distances, _) ->
-    let n = Array.length distances in 
-    let offset = distances.(n - 1) in
-    let keys = (
-      key_to_index
-      |> Uid.Map.to_list
-      |> List.map (fun (key, _) -> key)
-    ) in
-    let model = Model.of_local
-      keys
-      ~lookup:(fun symbol_key ->
-        match Uid.Map.find_opt symbol_key key_to_index with
-        | None -> None
-        | Some i ->
-          Some (-1 * (distances.(i) - offset))
-      )
-    in
-    Solution.Sat model
+let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
+  let contains_unhandleable_binop = 
+    (Formula.contains_binop Divide expr) ||
+    (Formula.contains_binop Modulus expr)
+  in
+  if contains_unhandleable_binop then Solution.Unknown
+  else
+    expr
+    |> extract
+    |> normalize
+    |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges ~src:0
+    |> function
+    | `Negative_cycle _ -> Solution.Unsat
+    | `No_negative_cycle (distances, _) ->
+      let n = Array.length distances in 
+      let offset = distances.(n - 1) in
+      let keys = (
+        key_to_index
+        |> Uid.Map.to_list
+        |> List.map (fun (key, _) -> key)
+      ) in
+      let model = Model.of_local
+        keys
+        ~lookup:(fun symbol_key ->
+          match Uid.Map.find_opt symbol_key key_to_index with
+          | None -> None
+          | Some i ->
+            Some (-1 * (distances.(i) - offset))
+        )
+      in
+      Solution.Sat model
 ;;
 
 (** [simplify solve expr] drops redundant inequalities from EXPR before SOLVE calls it 
@@ -542,7 +558,7 @@ let solve (expr : (bool, 'k) Formula.t) : 'k Solution.t =
 let simplify : 'k Formula.simplifier = fun next expr ->
   expr
   |> rewrite
-  |> solve
+  |> solve_int_diff
   |> function
-    | Solution.Unknown -> next expr
-    | solution -> solution
+  | Solution.Unknown -> next expr
+  | solution -> solution

@@ -44,8 +44,8 @@ let find_first_unit_literal (ls : (bool, 'k) Formula.t list) : ((bool, 'k) Symbo
     match v with
     | Key key -> key, true
     | Not (Key key) -> key, false
-    | _ ->
-      raise (Should_not_happen "lol")
+    | f ->
+      raise (Should_not_happen (Printf.sprintf "%s" (Formula.to_string f)))
   )
 
 let unit_propagate 
@@ -70,9 +70,10 @@ let unit_propagate
 let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t =
   function
   | [] -> 
-    raise (Should_not_happen "lol")
+    raise (Should_not_happen (Printf.sprintf "[]"))
   | hd :: tl ->
     match hd with
+    | Formula.Key key -> key
     | Formula.Binop (Binop.Or, Formula.Key key, _) -> key
     | Formula.Binop (Binop.Or, _, Formula.Key key ) -> key
     | _ -> choose_literal tl
@@ -94,12 +95,75 @@ let is_falsified_clause (model_state : bool Uid.Map.t) (vars : (Uid.Set.t)) : bo
   |> fun r ->
     r
 
+let try_solvers
+  (solvers : 'k Formula.solver list)
+  (f : (bool, 'k) Formula.t)
+  (keyset : Uid.Set.t)
+  : 'k Solution.t =
+  let results = List.map (fun solve -> solve f) solvers in
+  if List.exists (function Solution.Unsat -> true | _ -> false) results then
+    Solution.Unsat
+  else
+    let sat_models =
+      results
+      |> List.filter_map (function
+        | Solution.Sat m -> Some m
+        | Solution.Unknown -> None
+        | Solution.Unsat -> None)
+    in
+
+    let domains =
+      sat_models
+      |> List.map (fun m -> m.Model.domain |> Uid.Set.of_list)
+    in
+
+    let rec is_pairwise_disjoint = function
+      | [] -> true
+      | d :: rest ->
+        List.for_all
+          (fun d' -> Uid.Set.is_empty (Uid.Set.inter d d'))
+          rest
+        && is_pairwise_disjoint rest
+    in
+
+    let covered =
+      domains
+      |> List.fold_left Uid.Set.union Uid.Set.empty
+    in
+
+    if is_pairwise_disjoint domains && Uid.Set.equal covered keyset then
+      let merged_lookup uid =
+        sat_models
+        |> List.find_map (fun m -> m.Model.value (I uid))
+      in
+      let merged_model =
+        Model.of_local 
+          (covered |> Uid.Set.to_list) 
+          ~lookup:merged_lookup
+      in
+      Solution.Sat merged_model
+    else
+      Solution.Unknown
+
 let dpll 
   ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
-  (clauses : (bool, 'k) Formula.t list) 
-  ~(decode : Uid.t -> (bool, 'k) Formula.t)
-  ~(solve : 'k Formula.solver)
+  ?(to_symbol : int -> (bool, 'k) Symbol.t
+    = fun i ->
+      i
+      |> Uid.of_int
+      |> fun uid -> Symbol.B uid
+    )
+  ~(solvers : 'k Formula.solver list)
+  (solve_next : 'k Formula.solver)
+  (f : (bool, 'k) Formula.t)
   : 'k Solution.t =
+  f
+  |> Integer.rewrite
+  |> Integer.to_propositional ~to_symbol
+  |> fun (props, map) ->
+  let keyset = Formula.symbols f in
+  let decode = fun uid -> Uid.Map.find uid map in
+  let clauses = Formula.clauses_of props in
   let rebuild_logical model = Formula.and_ (
     model
     |> Uid.Map.to_list
@@ -112,18 +176,21 @@ let dpll
     )
   ) in
   let rec dpll clauses model_state =
-    let symbols = clauses |> List.map Formula.symbols in
+    let curr_keyset = 
+      clauses 
+      |> List.map Formula.symbols 
+    in
     if
-      List.is_empty symbols || List.exists (is_falsified_clause model_state) symbols
+      List.is_empty curr_keyset || List.exists (is_falsified_clause model_state) curr_keyset
     then 
-      if List.is_empty symbols then
+      if List.is_empty curr_keyset then
         Solution.Unsat
       else
         Solution.Unsat
     else
       let is_trivial_true = match clauses with | [Const_bool true] -> true | _ -> false in
       let is_sat = is_trivial_true || (
-        symbols
+        curr_keyset
         |> List.for_all (fun uids ->
           uids
           |> Uid.Set.exists (fun uid -> 
@@ -140,7 +207,7 @@ let dpll
           |> Uid.Set.to_seq
           |> Seq.map (fun key -> key, leftovers key)
         ) model_state in
-          solve (rebuild_logical final_model)
+          try_solvers solvers (rebuild_logical final_model) keyset
       else
         let reduced, model = (
           clauses
@@ -149,7 +216,8 @@ let dpll
           e, 
           model_state 
           |> Uid.Map.union (fun _ _ new_v -> Some new_v) partial
-        ) in
+        )
+        in
         match reduced with
         | [] -> Solution.Sat (
           Model.of_local (get_domain model) ~lookup:(fun uid -> Uid.Map.find_opt uid model)
@@ -181,19 +249,21 @@ let dpll
             |> fun f -> 
               Formula.clauses_of f
           in
-          match next with
+          begin match next with
           | [Const_bool true] ->
-              solve (rebuild_logical left_model)
+              try_solvers solvers (rebuild_logical left_model) keyset
           | next ->
             match dpll next left_model with
-            | Solution.Sat left_model -> 
-              Solution.Sat left_model
             | Solution.Unsat ->
               let right_model = (Uid.Map.add uid false model) in
               dpll next right_model
-            | Solution.Unknown -> raise (Should_not_happen "unknown solution")
+            | s -> s
+          end
   in
   dpll clauses Uid.Map.empty
+  |> function
+    | Solution.Unknown -> solve_next f
+    | s -> s
 ;;
 
 let stringify x = x |> Char.chr |> String.of_char

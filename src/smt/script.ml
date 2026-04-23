@@ -38,8 +38,6 @@ let to_string = Formula.to_string ~uid:uid_to_string
 let a = Formula.symbol (AsciiSymbol.make_int 'a')
 let b = Formula.symbol (AsciiSymbol.make_int 'b')
 
-let ftext = "(48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a = 97)) ^ (not (a = 61)) ^ (not (a = 45)) ^ (not (a = 43)) ^ (not (a = 42)) ^ (not (a = 41)) ^ (not (a = 40)) ^ (not (a = 32)) ^ (65 <= a)"
-
 let solution_text (solution : 'k Solution.t) : string = 
   Solution.to_string solution ~uid:(fun uid ->
     AsciiSymbol.make_int (uid |> Uid.to_int |> Char.chr),
@@ -48,23 +46,21 @@ let solution_text (solution : 'k Solution.t) : string =
 
 open Printf
 
-let () =
-  let f = (Boolean.parse ftext) in
-  f
-  |> Integer.rewrite
-  |> fun rewritten -> 
-  Printf.printf "rewritten %s\n" (Formula.to_string rewritten);
-  rewritten
-  |> Integer.to_propositional ~to_symbol:(
-    fun uid ->
-      uid
-      |> fun c -> c + (Char.code 'p')
-      |> Char.chr
+let main_solve = Boolean.dpll
+  ~to_symbol:(fun uid -> 
+    uid
+    |> fun c -> c + (Char.code 'p')
+    |> Char.chr
       |> AsciiSymbol.make_bool
   )
-  |> fun (prop, map) -> (
-  let clauses = match prop with | And ls -> ls | f -> [f] in
-    clauses
-    |> Boolean.dpll ~decode:(fun uid -> Uid.Map.find uid map) ~solve:Integer.solve
-    |> fun s -> printf "%s\n" (solution_text s)
-  )
+  ~solvers:[Integer.solve_int_diff]
+  (fun _ -> raise (Invalid_argument "lol"))
+
+let () =
+  let fs = Boolean.from_stdin () 
+  in
+  let iter = fun f -> 
+    let res = main_solve (Boolean.parse f) in
+    printf "%s\n" (solution_text res);
+  in
+  List.iter iter fs;
