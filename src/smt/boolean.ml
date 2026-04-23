@@ -184,6 +184,9 @@ let dpll
       List.is_empty curr_keyset || List.exists (is_falsified_clause model_state) curr_keyset
     then 
       if List.is_empty curr_keyset then
+        (* 
+           TODO: This means sat at the bool level, so try model_state solution...
+        *)
         Solution.Unsat
       else
         Solution.Unsat
@@ -219,7 +222,8 @@ let dpll
         )
         in
         match reduced with
-        | [] -> Solution.Sat (
+        | [] -> 
+          Solution.Sat (
           Model.of_local (get_domain model) ~lookup:(fun uid -> Uid.Map.find_opt uid model)
         )
         | clauses when 
@@ -229,14 +233,7 @@ let dpll
             | Formula.Const_bool true -> true 
             | _ -> false
           ) -> 
-          let solution_model =
-            model
-            |> get_domain
-            |> fun domain -> Model.of_local 
-              domain 
-              ~lookup:(fun uid -> Uid.Map.find_opt uid model)
-          in
-          Solution.Sat solution_model
+          try_solvers solvers (rebuild_logical model) keyset
         | ls when List.exists (function Formula.Const_bool false -> true | _ -> false) ls -> 
           Solution.Unsat
         | next ->

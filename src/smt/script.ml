@@ -51,15 +51,15 @@ let main_solve = Boolean.dpll
     uid
     |> fun c -> c + (Char.code 'p')
     |> Char.chr
-      |> AsciiSymbol.make_bool
+    |> AsciiSymbol.make_bool
   )
   ~solvers:[Integer.solve_int_diff]
   (fun _ -> raise (Invalid_argument "lol"))
 
 let () =
-  let fs = Boolean.from_stdin () 
-  in
+  let fs = Boolean.from_stdin () in
   let iter = fun f -> 
+    let () = Printf.printf "Solution %s: " f in
     let res = main_solve (Boolean.parse f) in
     printf "%s\n" (solution_text res);
   in

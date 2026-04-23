@@ -26,56 +26,17 @@ let to_propositional
   let hash = Hashtbl.create n in
   let rec aux f = 
     match f with
-    | Formula.Binop (
-      (Less_than_eq | Less_than | Greater_than_eq | Greater_than) as op,
-      Key I l,
-      Key I r
-      ) -> 
-      let count = !counter in
-      let prop_sym = to_symbol count in
-      (* Let caller control the final uid and read it *)
-      let resolved_uid = Symbol.to_uid prop_sym in
-      let prop_formula = Formula.symbol prop_sym in
-      let copy = Formula.binop op (symbol l) (symbol r) in
-      let () = 
+    | Formula.Binop(
+        (Less_than_eq | Less_than | Greater_than_eq | Greater_than | Equal),
+        _, _
+      ) as atomic ->
+        let count = !counter in
+        let prop_sym = to_symbol count in
+        let resolved_uid = Symbol.to_uid prop_sym in
+        let prop_formula = Formula.symbol prop_sym in
         counter := count + 1;
-        Hashtbl.add hash resolved_uid copy;
-      in
-      prop_formula
-    | Formula.Binop (
-      (Less_than_eq | Less_than | Greater_than_eq | Greater_than) as op,
-      Key I key,
-      Const_int c
-      ) ->
-      let count = !counter in
-      let prop_sym = to_symbol count in
-      let resolved_uid = Symbol.to_uid prop_sym in
-      let prop_formula = Formula.symbol prop_sym in
-      let copy = Formula.binop op (symbol key) (Formula.const_int c) in
-      let () = 
-        counter := count + 1;
-        Hashtbl.add hash resolved_uid copy;
-      in
-      prop_formula
-    | Formula.Binop (
-      (Less_than_eq | Less_than | Greater_than_eq | Greater_than) as op,
-      Const_int c,
-      Key I key
-      ) -> 
-      let count = !counter in
-      let prop_sym = to_symbol count in
-      let resolved_uid = Symbol.to_uid prop_sym in
-      let prop_formula = Formula.symbol prop_sym in
-      let copy = Formula.binop op (Formula.const_int c) (symbol key) in
-      let () = 
-        counter := count + 1;
-        Hashtbl.add hash resolved_uid copy;
-      in
-      prop_formula
-    | Binop (Or, left, right) ->
-      let left = aux left in
-      let right = aux right in
-      Formula.binop Or left right
+        Hashtbl.add hash resolved_uid atomic;
+        prop_formula
     | And ls ->
       ls
       |> List.map aux
@@ -84,6 +45,7 @@ let to_propositional
   in
   let bool_f = aux f in
   bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq
+;;
 
 let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   fun clauses ->
