@@ -218,7 +218,8 @@ let dpll
   in
   dpll clauses Uid.Map.empty
   |> function
-    | Solution.Unknown -> solve_next f
+    | Solution.Unknown -> 
+        solve_next f
     | s -> s
 ;;
 
@@ -240,8 +241,8 @@ let dpll_simplify : 'k simplifier =
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
-  let pipeline = Integer.simplify
-  @> propagate_constants
+  let pipeline = 
+  propagate_constants
   @> dpll_simplify
   in
   pipeline (direct_solve (module Oracle))

@@ -84,7 +84,7 @@ let () =
         in
         let () = 
           if not eval_result then
-            Printf.printf "(%d : %s) Inconsistent model:\n%s\n"
+            printf "(%d : %s) Inconsistent model:\n%s\n"
             (i + 1)
             f_text
             (Model.to_string model ~uid:uid_to_symbol_string)
