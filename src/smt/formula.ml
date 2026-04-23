@@ -11,7 +11,7 @@ module type S = sig
 
   val not_ : (bool, 'k) t -> (bool, 'k) t
 
-  val binop : ('a * 'a * 'b) Binop.t -> ('a, 'k) t -> ('a, 'k) t -> ('b, 'k) t
+  val binop : ('a * 'a * 'b, 'c) Binop.c -> ('a, 'k) t -> ('a, 'k) t -> ('b, 'k) t
 
   val is_const : ('a, 'k) t -> bool
 
@@ -67,7 +67,7 @@ end = struct
     | Key _ | Not _ | And _ | Binop _ -> false
 
   let rec binop
-    : type a b. (a * a * b) Binop.t -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
+    : type a b c. (a * a * b, c) Binop.c -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
     = fun op x y ->
     match op with
     | Or ->

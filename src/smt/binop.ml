@@ -3,19 +3,26 @@ type iii = int * int * int
 type iib = int * int * bool
 type bbb = bool * bool * bool
 
-type _ t =
-  | Plus : iii t
-  | Minus : iii t
-  | Times : iii t
-  | Divide : iii t
-  | Modulus : iii t
-  | Less_than : iib t
-  | Less_than_eq : iib t
-  | Greater_than : iib t
-  | Greater_than_eq : iib t
-  | Equal : ('a * 'a * bool) t
-  | Not_equal : ('a * 'a * bool) t
-  | Or : bbb t
+type occurs = private Occurs (* occurs in formulas *)
+type constr = private Constr (* only used to construct formulas *)
+
+type (_, _) c =
+  (* occurs in formulas *)
+  | Plus : (iii, occurs) c
+  | Minus : (iii, occurs) c
+  | Times : (iii, occurs) c
+  | Divide : (iii, occurs) c
+  | Modulus : (iii, occurs) c
+  | Less_than : (iib, occurs) c
+  | Less_than_eq : (iib, occurs) c
+  | Equal : ('a * 'a * bool, occurs) c
+  | Or : (bbb, occurs) c
+  (* construct only *)
+  | Greater_than : (iib, constr) c
+  | Greater_than_eq : (iib, constr) c
+  | Not_equal : ('a * 'a * bool, constr) c
+
+type 'a t = ('a, occurs) c
 
 let poly_equal (type a b) (x : a t) (y : b t) : bool =
   match x, y with
@@ -26,11 +33,7 @@ let poly_equal (type a b) (x : a t) (y : b t) : bool =
   | Modulus, Modulus
   | Less_than, Less_than
   | Less_than_eq, Less_than_eq
-  | Greater_than, Greater_than
-  | Greater_than_eq, Greater_than_eq
-  | Equal, Equal
-  | Not_equal, Not_equal
-  | Or, Or -> true
+  | Equal, Equal -> true
   | _ -> false
 
 let to_arithmetic (type a b) (binop : (a * a * b) t) : a -> a -> b =
@@ -42,10 +45,7 @@ let to_arithmetic (type a b) (binop : (a * a * b) t) : a -> a -> b =
   | Modulus -> ( mod )
   | Less_than -> ( < )
   | Less_than_eq -> ( <= )
-  | Greater_than -> ( > )
-  | Greater_than_eq -> ( >= )
   | Equal -> ( = ) (* polymorphic equality *)
-  | Not_equal -> ( <> ) (* polymorphic inequality *)
   | Or -> ( || )
 
 let to_string (type a b) (binop : (a * a * b) t) : string =
@@ -57,9 +57,5 @@ let to_string (type a b) (binop : (a * a * b) t) : string =
   | Modulus -> "%"
   | Less_than -> "<"
   | Less_than_eq -> "<="
-  | Greater_than -> ">"
-  | Greater_than_eq -> ">="
   | Equal -> "="
-  | Not_equal -> "<>"
   | Or -> "||"
-

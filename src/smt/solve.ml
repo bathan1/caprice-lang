@@ -15,11 +15,6 @@ let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   This simply special-cases on some common formulas. It also extracts out
   constant assignments (variable = constant).
 
-  Since the `binop` function in Formula turns greater-thans into less-thans, we
-  don't handle any greater-than in the cases below--it will never happen since
-  the user can only construct formulas with the smart constructors.
-  Similarly, we will not get "not" of an inequality operator.
-
   As more simplifiers are added, we could instead name this after implied
   concretization.
 *)
