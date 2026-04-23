@@ -34,3 +34,8 @@ end
 let to_uid (type a) (key : (a, 'k) t) = 
   key
   |> function | B uid -> uid | I uid -> uid
+
+module AsciiSymbol = Make (struct
+  type t = char
+  let uid t = t |> Char.code |> Utils.Uid.of_int
+end)

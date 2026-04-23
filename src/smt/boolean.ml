@@ -1,34 +1,6 @@
 open Utils
 exception Should_not_happen of string
 
-module AsciiSymbol = Symbol.Make (struct
-  type t = char
-  let uid t = t |> Char.code |> Utils.Uid.of_int
-end)
-
-let get_domain map =
-  map
-  |> Uid.Map.to_list
-  |> List.map (fun (uid, _) -> uid)
-
-let uid_to_string uid =
-  uid |> Uid.to_int |> Char.chr |> String.make 1
-
-let model_to_string uid_map_to_string =
-  uid_map_to_string
-  |> Uid.Map.bindings
-  |> List.map (fun (uid, v) ->
-    Printf.sprintf "%s=%b" (uid_to_string uid) v
-  )
-  |> String.concat ", "
-  |> fun s -> "{ " ^ s ^ " }"
-
-let clauses_to_string clauses =
-  clauses
-  |> List.map (Formula.to_string ~uid:uid_to_string)
-  |> String.concat " ∧ "
-
-
 let find_first_unit_literal (ls : (bool, 'k) Formula.t list) : ((bool, 'k) Symbol.t * bool) option =
   let open Formula in
   ls
@@ -144,134 +116,6 @@ let try_solvers
       Solution.Sat merged_model
     else
       Solution.Unknown
-
-let dpll 
-  ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
-  ?(to_symbol : int -> (bool, 'k) Symbol.t
-    = fun i ->
-      i
-      |> Uid.of_int
-      |> fun uid -> Symbol.B uid
-    )
-  ~(solvers : 'k Formula.solver list)
-  (solve_next : 'k Formula.solver)
-  (f : (bool, 'k) Formula.t)
-  : 'k Solution.t =
-  f
-  |> Integer.rewrite
-  |> Integer.to_propositional ~to_symbol
-  |> fun (props, map) ->
-  let rec check : (bool, 'k) Formula.t -> bool =
-    function
-    | Formula.Key _ -> true
-    | Binop (Or, left, right) -> check left && check right
-    | _ -> false
-  in
-  let mapped_ok = List.for_all check (Formula.clauses_of props) in
-  if not mapped_ok then
-    solve_next f
-  else
-  let keyset = Formula.symbols f in
-  let decode = fun uid -> Uid.Map.find uid map in
-  let clauses = Formula.clauses_of props in
-  let rebuild_logical model = Formula.and_ (
-    model
-    |> Uid.Map.to_list
-    |> List.map (fun (uid, tv) ->
-      let formula = decode uid in
-      if tv then
-        formula
-      else
-        Formula.not_ formula
-    )
-  ) in
-  let rec dpll clauses model_state =
-    let curr_keyset = 
-      clauses 
-      |> List.map Formula.symbols 
-    in
-    if
-      List.is_empty curr_keyset || List.exists (is_falsified_clause model_state) curr_keyset
-    then 
-      if List.is_empty curr_keyset then
-        (* 
-           TODO: This means sat at the bool level, so try model_state solution...
-        *)
-        Solution.Unsat
-      else
-        Solution.Unsat
-    else
-      let is_trivial_true = match clauses with | [Const_bool true] -> true | _ -> false in
-      let is_sat = is_trivial_true || (
-        curr_keyset
-        |> List.for_all (fun uids ->
-          uids
-          |> Uid.Set.exists (fun uid -> 
-            match Uid.Map.find_opt uid model_state with
-            | None -> false
-            | Some v -> v
-          )
-        )
-      ) in
-      if is_sat then 
-        let final_model = Uid.Map.add_seq (
-          model_state
-          |> Uid.Map.domain
-          |> Uid.Set.to_seq
-          |> Seq.map (fun key -> key, leftovers key)
-        ) model_state in
-          try_solvers solvers (rebuild_logical final_model) keyset
-      else
-        let reduced, model = (
-          clauses
-          |> unit_propagate
-          |> fun (e, partial) -> 
-          e, 
-          model_state 
-          |> Uid.Map.union (fun _ _ new_v -> Some new_v) partial
-        )
-        in
-        match reduced with
-        | [] -> 
-          Solution.Sat (
-          Model.of_local (get_domain model) ~lookup:(fun uid -> Uid.Map.find_opt uid model)
-        )
-        | clauses when 
-          clauses 
-          |> List.for_all (
-            function 
-            | Formula.Const_bool true -> true 
-            | _ -> false
-          ) -> 
-          try_solvers solvers (rebuild_logical model) keyset
-        | ls when List.exists (function Formula.Const_bool false -> true | _ -> false) ls -> 
-          Solution.Unsat
-        | next ->
-          let branch_key = choose_literal next in
-          let uid = Symbol.to_uid branch_key in 
-          let left_model = (Uid.Map.add uid true model) in
-          let next = 
-            Formula.and_ next
-            |> Formula.subst true branch_key
-            |> fun f -> 
-              Formula.clauses_of f
-          in
-          begin match next with
-          | [Const_bool true] ->
-              try_solvers solvers (rebuild_logical left_model) keyset
-          | next ->
-            match dpll next left_model with
-            | Solution.Unsat ->
-              let right_model = (Uid.Map.add uid false model) in
-              dpll next right_model
-            | s -> s
-          end
-  in
-  dpll clauses Uid.Map.empty
-  |> function
-    | Solution.Unknown -> solve_next f
-    | s -> s
-;;
 
 let stringify x = x |> Char.chr |> String.of_char
 
@@ -577,7 +421,7 @@ and parse_bool_primary (p : parser) : (bool, 'k) Formula.t =
         | _ ->
             advance p;
             let ch, _ = Option.value ~default:('@', Seq.empty) (Seq.uncons (String.to_seq s)) in
-            let sym = AsciiSymbol.make_bool ch in
+            let sym = Symbol.AsciiSymbol.make_bool ch in
             Formula.symbol sym
       end
 
@@ -598,7 +442,7 @@ and parse_primary p =
   | ID s ->
       advance p;
       let ch, _ = Option.value ~default:('@', Seq.empty) (Seq.uncons (String.to_seq s)) in
-      let sym = AsciiSymbol.make_int ch in
+      let sym = Symbol.AsciiSymbol.make_int ch in
       Formula.symbol sym
   | INT n ->
       advance p;
