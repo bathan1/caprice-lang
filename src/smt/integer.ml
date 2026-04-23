@@ -268,28 +268,28 @@ type diff_constraint = {
   c : int;
 }
 
-let rec extract (formula : (bool, 'k) Formula.t) : diff_constraint list =
+let rec extract_idl (formula : (bool, 'k) Formula.t) : diff_constraint list =
   let binop = Formula.binop in
   let const_int = Formula.const_int in
   formula
   |> function
     | Not Binop (Less_than, Key I y, Key I x) ->
-    extract (binop Less_than_eq (symbol x) (symbol y))
+    extract_idl (binop Less_than_eq (symbol x) (symbol y))
 
   | Not Binop (Less_than_eq, Key I x, Key I y) ->
-    extract (binop Greater_than (symbol x) (symbol y))
+    extract_idl (binop Greater_than (symbol x) (symbol y))
 
   | Not Binop (Less_than_eq, Const_int c, Key I x) ->
-    extract (binop Less_than (symbol x) (const_int c))
+    extract_idl (binop Less_than (symbol x) (const_int c))
 
     | Not Binop (Less_than, Key I x, Const_int c) ->
-    extract (binop Greater_than (symbol x) (const_int c))
+    extract_idl (binop Greater_than (symbol x) (const_int c))
 
   | Not Binop (Less_than, Const_int c, Key I x) ->
-    extract (binop Greater_than (symbol x) (const_int c))
+    extract_idl (binop Greater_than (symbol x) (const_int c))
 
     | Not Binop (Less_than_eq, Key I x, Const_int c) ->
-    extract (binop Greater_than (symbol x) (const_int c))
+    extract_idl (binop Greater_than (symbol x) (const_int c))
 
   (* x = c -> (x - 0 <= c) and (0 - y) <= -c *)
   | Binop (Equal, Key I x, Const_int c)
@@ -352,11 +352,47 @@ let rec extract (formula : (bool, 'k) Formula.t) : diff_constraint list =
   | And exprs ->
     exprs
     |> List.fold_left (fun a_acc expr ->
-      let a = extract expr in
+      let a = extract_idl expr in
       List.rev_append a a_acc
     ) []
     |> fun a -> List.rev a
   | _ -> []
+;;
+
+let is_idl_clause : type k. (bool, k) Formula.t -> bool = function
+  | Formula.Binop (Less_than, Key (I _), Key (I _))
+  | Formula.Binop (Less_than_eq, Key (I _), Key (I _))
+  | Formula.Binop (Less_than, Const_int _, Key (I _))
+  | Formula.Binop (Less_than_eq, Const_int _, Key (I _))
+  | Formula.Binop (Less_than, Key (I _), Const_int _)
+  | Formula.Binop (Less_than_eq, Key (I _), Const_int _)
+  | Formula.Not (Formula.Binop (Less_than, Key (I _), Key (I _)))
+  | Formula.Not (Formula.Binop (Less_than_eq, Key (I _), Key (I _)))
+  | Formula.Not (Formula.Binop (Less_than, Const_int _, Key (I _)))
+  | Formula.Not (Formula.Binop (Less_than_eq, Const_int _, Key (I _)))
+  | Formula.Not (Formula.Binop (Less_than, Key (I _), Const_int _))
+  | Formula.Not (Formula.Binop (Less_than_eq, Key (I _), Const_int _)) ->
+      true
+  | _ ->
+      false
+
+(** 
+  [partition formula] partitions FORMULA into formulas 
+  [SOLVABLE, UNSOLVABLE], where UNSOLVABLE is [None] if everything
+  can be solved by IDL
+*)
+let partition_idl (formula : (bool, 'k) Formula.t) 
+  : int list * int list =
+  let rec aux index solvable unsolvable = function
+    | [] ->
+        (List.rev solvable, List.rev unsolvable)
+    | clause :: rest ->
+        if is_idl_clause clause then
+          aux (index + 1) (index :: solvable) unsolvable rest
+        else
+          aux (index + 1) solvable (index :: unsolvable) rest
+  in
+  aux 0 [] [] (Formula.clauses_of formula)
 ;;
 
 let normalize (constraints : diff_constraint list) =
@@ -496,37 +532,31 @@ let is_int_diff_solvable (expr : (bool, 'k) Formula.t) : bool =
           printf "UNSAT\n"
     ]
 *)
-let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
-  let contains_unhandleable_binop = 
-    (Formula.contains_binop Divide expr) ||
-    (Formula.contains_binop Modulus expr)
-  in
-  if contains_unhandleable_binop then Solution.Unknown
-  else
-    expr
-    |> extract
-    |> normalize
-    |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges ~src:0
-    |> function
-    | `Negative_cycle _ -> Solution.Unsat
-    | `No_negative_cycle (distances, _) ->
-      let n = Array.length distances in 
-      let offset = distances.(n - 1) in
-      let keys = (
-        key_to_index
-        |> Uid.Map.to_list
-        |> List.map (fun (key, _) -> key)
-      ) in
-      let model = Model.of_local
-        keys
-        ~lookup:(fun symbol_key ->
-          match Uid.Map.find_opt symbol_key key_to_index with
-          | None -> None
-          | Some i ->
-            Some (-1 * (distances.(i) - offset))
-        )
-      in
-      Solution.Sat model
+let solve_int_diff (f : (bool, 'k) Formula.t) : 'k Solution.t =
+  f
+  |> extract_idl
+  |> normalize
+  |> fun (vertices, edges, key_to_index) -> bellman_ford vertices edges ~src:0
+  |> function
+  | `Negative_cycle _ -> Solution.Unsat
+  | `No_negative_cycle (distances, _) ->
+    let n = Array.length distances in 
+    let offset = distances.(n - 1) in
+    let keys = (
+      key_to_index
+      |> Uid.Map.to_list
+      |> List.map (fun (key, _) -> key)
+    ) in
+    let model = Model.of_local
+      keys
+      ~lookup:(fun symbol_key ->
+        match Uid.Map.find_opt symbol_key key_to_index with
+        | None -> None
+        | Some i ->
+          Some (-1 * (distances.(i) - offset))
+      )
+    in
+    Solution.Sat model
 ;;
 
 (** [simplify solve expr] drops redundant inequalities from EXPR before SOLVE calls it 

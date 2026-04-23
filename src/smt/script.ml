@@ -54,7 +54,7 @@ open Overlays
 let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let () =
-  let fs = ["(0 <= a) ^ (0 < b) ^ ((a + b) < 0)"] in
+  let fs = Boolean.from_stdin () in
   let iter = fun i f_text -> 
     let f = Boolean.parse f_text in
     let res = main_solve f in

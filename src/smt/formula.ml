@@ -303,8 +303,33 @@ module Set = struct
 end
 
 type 'k solver = (bool, 'k) t -> 'k Solution.t
-
 type 'k simplifier = 'k solver -> 'k solver
+
+(** 
+  A partitioner is a function [partition f] that partitions
+  ORDERED clauses F into a [(SOLVABLE_INDICES, UNSOLVABLE_INDICES)] formula tuple
+*)
+type 'k partitioner = 
+  (bool, 'k) t ->
+    int list * int list
+
+(**
+  A 2 tuple of [SOLVER] and its corresponding [PARTITIONER] is a [LOGIC]
+*)
+type 'k logic = 'k solver * 'k partitioner
+
+let clauses_of (f : (bool, 'k) t) =
+  match f with
+  | And ls -> ls
+  | f -> [f]
+
+let of_partition (partition : int list) (f : (bool, 'k) t) : (bool, 'k) t =
+    f
+    |> clauses_of
+    |> Array.of_list
+    |> fun clauses -> List.map (fun index -> clauses.(index)) partition
+    |> and_
+;;
 
 let rec contains_binop :
   type a k. _ Binop.t -> (a, k) t -> bool =
@@ -354,8 +379,3 @@ let to_string
       Format.sprintf "(%s %s %s)" (to_string @@ Obj.magic e1) (Binop.to_string bop) (to_string @@ Obj.magic e2)
   in
   to_string x
-
-let clauses_of (f : (bool, 'k) t) =
-  match f with
-  | And ls -> ls
-  | f -> [f]

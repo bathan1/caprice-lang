@@ -67,17 +67,37 @@ let is_falsified_clause (model_state : bool Uid.Map.t) (vars : (Uid.Set.t)) : bo
   |> fun r ->
     r
 
-let try_solvers
-  (solvers : 'k Formula.solver list)
+let check
+  (logics : 'k Formula.logic list)
   (f : (bool, 'k) Formula.t)
   (keyset : Uid.Set.t)
   : 'k Solution.t =
-  let results = List.map (fun solve -> solve f) solvers in
-  if List.exists (function Solution.Unsat -> true | _ -> false) results then
-    Solution.Unsat
+  let clauses = (
+    f
+    |> Formula.clauses_of
+    |> List.mapi (fun i _ -> i)
+    |> Integer.Set.of_list
+  ) in
+  let solutions, solved_clauses = List.fold_left (fun (acc_sols, acc_solved) (solve, partition) -> (
+    let solvable, _unsolvable = partition f in
+    let solvable_f = Formula.of_partition solvable f  in
+      solve solvable_f :: acc_sols, 
+      (
+        solvable
+        |> Integer.Set.of_list
+        |> Integer.Set.union acc_solved
+      )
+  )) ([], Integer.Set.empty) logics in
+  let clause_diff = Integer.Set.diff clauses solved_clauses in
+  let were_all_clauses_solved = Integer.Set.is_empty clause_diff in
+  if List.is_empty solutions || not were_all_clauses_solved then
+    if List.is_empty solutions then
+      Solution.Unsat
+    else
+      Solution.Unknown
   else
     let sat_models =
-      results
+      solutions
       |> List.filter_map (function
         | Solution.Sat m -> Some m
         | Solution.Unknown -> None
@@ -116,6 +136,7 @@ let try_solvers
       Solution.Sat merged_model
     else
       Solution.Unknown
+;;
 
 let stringify x = x |> Char.chr |> String.of_char
 

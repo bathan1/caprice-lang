@@ -95,7 +95,7 @@ let dpll
       |> Uid.of_int
       |> fun uid -> Symbol.B uid
     )
-  ~(solvers : 'k Formula.solver list)
+  ~(logics : 'k Formula.logic list)
   (solve_next : 'k Formula.solver)
   (f : (bool, 'k) Formula.t)
   : 'k Solution.t =
@@ -172,7 +172,7 @@ let dpll
           |> Uid.Set.to_seq
           |> Seq.map (fun key -> key, leftovers key)
         ) model_state in
-          Boolean.try_solvers solvers (rebuild_logical final_model) keyset
+          Boolean.check logics (rebuild_logical final_model) keyset
       else
         let reduced, model = (
           clauses
@@ -192,7 +192,7 @@ let dpll
             | Formula.Const_bool true -> true 
             | _ -> false
           ) -> 
-          Boolean.try_solvers solvers (rebuild_logical model) keyset
+          Boolean.check logics (rebuild_logical model) keyset
         | ls when List.exists (function Formula.Const_bool false -> true | _ -> false) ls -> 
           Solution.Unsat
         | next ->
@@ -207,7 +207,7 @@ let dpll
           in
           begin match next with
           | [Const_bool true] ->
-              Boolean.try_solvers solvers (rebuild_logical left_model) keyset
+              Boolean.check logics (rebuild_logical left_model) keyset
           | next ->
             match dpll next left_model with
             | Solution.Unsat ->
@@ -230,7 +230,12 @@ let dpll_simplify : 'k simplifier =
     |> Utils.Uid.of_int
     |> fun uid -> Symbol.B uid
   )
-  ~solvers:[Integer.solve_int_diff]
+  ~logics:[
+      (
+        Integer.solve_int_diff,
+        Integer.partition_idl
+      )
+    ]
 ;;
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
