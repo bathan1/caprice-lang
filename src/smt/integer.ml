@@ -27,7 +27,7 @@ let to_propositional
   let rec aux f = 
     match f with
     | Formula.Binop(
-        (Less_than_eq | Less_than | Greater_than_eq | Greater_than | Equal),
+        (Less_than_eq | Less_than | Greater_than_eq | Greater_than | Equal | Not_equal),
         _, _
       ) as atomic ->
         let count = !counter in
@@ -219,7 +219,7 @@ let rewrite : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
   f
   |> Formula.clauses_of
   |> List.map linearize
-  |> prune 
+  |> prune
   |> List.map normalize_unit
   |> Formula.and_
 ;;
@@ -520,7 +520,4 @@ let solve_int_diff (expr : (bool, 'k) Formula.t) : 'k Solution.t =
 let simplify : 'k Formula.simplifier = fun next expr ->
   expr
   |> rewrite
-  |> solve_int_diff
-  |> function
-  | Solution.Unknown -> next expr
-  | solution -> solution
+  |> next

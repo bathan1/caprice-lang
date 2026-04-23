@@ -91,10 +91,21 @@ let (@>) : 'k simplifier -> 'k simplifier -> 'k simplifier =
     fun solve ->
       g (f solve)
 
+[@@@ocaml.warning "-48"]
+let dpll_simplify : 'k simplifier = 
+  Boolean.dpll
+  ~to_symbol:(fun off ->
+    off + (Char.code 'p')
+    |> Utils.Uid.of_int
+    |> fun uid -> Symbol.B uid
+  )
+  ~solvers:[Integer.solve_int_diff]
+
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   let pipeline = Integer.simplify
   @> propagate_constants
+  @> dpll_simplify
   in
   pipeline (direct_solve (module Oracle))
 

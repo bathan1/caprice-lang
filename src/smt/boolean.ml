@@ -161,6 +161,16 @@ let dpll
   |> Integer.rewrite
   |> Integer.to_propositional ~to_symbol
   |> fun (props, map) ->
+  let rec check : (bool, 'k) Formula.t -> bool =
+    function
+    | Formula.Key _ -> true
+    | Binop (Or, left, right) -> check left && check right
+    | _ -> false
+  in
+  let mapped_ok = List.for_all check (Formula.clauses_of props) in
+  if not mapped_ok then
+    solve_next f
+  else
   let keyset = Formula.symbols f in
   let decode = fun uid -> Uid.Map.find uid map in
   let clauses = Formula.clauses_of props in

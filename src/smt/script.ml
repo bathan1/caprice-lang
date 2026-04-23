@@ -45,22 +45,45 @@ let solution_text (solution : 'k Solution.t) : string =
   )
 
 open Printf
+open Overlays
 
-let main_solve = Boolean.dpll
-  ~to_symbol:(fun uid -> 
-    uid
-    |> fun c -> c + (Char.code 'p')
-    |> Char.chr
-    |> AsciiSymbol.make_bool
-  )
-  ~solvers:[Integer.solve_int_diff]
-  (fun _ -> raise (Invalid_argument "lol"))
+let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let () =
   let fs = Boolean.from_stdin () in
-  let iter = fun f -> 
-    let () = Printf.printf "Solution %s: " f in
-    let res = main_solve (Boolean.parse f) in
-    printf "%s\n" (solution_text res);
+  let iter = fun i f_text -> 
+    let f = Boolean.parse f_text in
+    let res = main_solve f in
+    match res with
+    | Solution.Unknown -> failwith "never should happen"
+    | Solution.Unsat -> (
+      let z3_result = Solve.direct_solve (module Typed_z3.Default) f in
+      match z3_result with
+      | Unsat -> true
+      | Unknown -> failwith "never should happen"
+      | Sat _ -> false
+    )
+    | Solution.Sat model -> (
+      f
+      |> Formula.symbols
+      |> Uid.Set.to_list
+      |> List.fold_left (fun acc uid ->
+        let binding = model.value (I uid) in
+        match binding with
+        | None -> acc && false
+        | Some _ -> acc && true
+      ) true
+    )
   in
-  List.iter iter fs;
+  let results = List.mapi iter fs in
+  let bad_results = List.filter_mapi (fun i res -> 
+    if not res then
+      Some (i + 1)
+    else
+      None
+  ) results in
+  if List.is_empty bad_results then
+    Printf.printf "checks out!\n"
+  else
+    Printf.printf "Invalid formulas:";
+    List.iter (fun res -> printf "%d, " res) bad_results;

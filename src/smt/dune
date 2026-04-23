@@ -12,6 +12,9 @@
 
 (executable
  (name script)
- (libraries smt)
+ (libraries 
+   smt
+   overlays
+ )
  (modules script)
 )
