@@ -242,8 +242,8 @@ let dpll_simplify : 'k simplifier =
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   let pipeline = 
-  propagate_constants
-  @> dpll_simplify
+    propagate_constants 
+    @> dpll_simplify
   in
   pipeline (direct_solve (module Oracle))
 
