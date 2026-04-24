@@ -410,15 +410,15 @@ let is_idl_clause : type k. (bool, k) Formula.t -> bool = function
 (** [partition formula] partitions FORMULA into formulas [SOLVABLE, UNSOLVABLE],
     where UNSOLVABLE is an empty list if everything can be solved by IDL
 *)
-let partition_idl (formula : (bool, 'k) Formula.t) : int list * int list =
-  let rec aux index solvable unsolvable = function
+let partition_idl (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t list * (bool, 'k) Formula.t list =
+  let rec aux solvable unsolvable = function
     | [] -> (List.rev solvable, List.rev unsolvable)
     | clause :: rest ->
         if is_idl_clause clause then
-          aux (index + 1) (index :: solvable) unsolvable rest
-        else aux (index + 1) solvable (index :: unsolvable) rest
+          aux (clause :: solvable) unsolvable rest
+        else aux solvable (clause :: unsolvable) rest
   in
-  aux 0 [] [] (Formula.clauses_from formula)
+  aux [] [] (Formula.clauses_from formula)
 
 exception Graph_disconnected of int
 

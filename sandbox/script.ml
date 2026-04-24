@@ -5,11 +5,12 @@
 open Smt
 open Utils
 
-module AsciiSymbol = Symbol.Make (struct
+module AsciiKey = struct
   type t = char
 
   let uid t = t |> Char.code |> Utils.Uid.of_int
-end)
+end
+module AsciiSymbol = Symbol.Make (AsciiKey)
 
 let make_bool = AsciiSymbol.make_bool
 let make_int = fun x -> x |> AsciiSymbol.make_int |> Formula.symbol
@@ -45,7 +46,7 @@ let solution_text (solution : 'k Solution.t) : string =
 open Printf
 open Overlays
 
-let main_solve = Solve.main_solve (module Typed_z3.Default)
+let main_solve = Solve.main_solve (module Typed_z3.Default) (module AsciiKey)
 
 let sanity_check () =
   let fs = [ "(a <= 0) ^ (0 <= (b + a)) ^ (b < 0)" ] in
@@ -142,4 +143,5 @@ let benchmark num_trials =
   in
   aux 0
 
-let () = benchmark 5
+let () =
+  benchmark 5

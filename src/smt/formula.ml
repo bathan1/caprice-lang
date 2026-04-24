@@ -290,17 +290,6 @@ end
     [[F]] if F is anything else *)
 let clauses_from (f : (bool, 'k) t) = match f with And ls -> ls | f -> [ f ]
 
-(** [clause_indices_from f] unwraps the [And] list from F and maps each element
-    to its array index (0 indexed) *)
-let clause_indices_from (f : (bool, 'k) t) =
-  f |> clauses_from |> List.mapi (fun i _ -> i) |> IntSet.of_list
-
-(** [from_partition partition f] rebuilds the conjunction by mapping each index in
-    PARTITION to its clause from F. *)
-let from_partition (partition : int list) (f : (bool, 'k) t) : (bool, 'k) t =
-  f |> clauses_from |> Array.of_list |> fun clauses ->
-  List.map (fun index -> clauses.(index)) partition |> and_
-
 let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
  fun target -> function
   | Binop (op, l, r) ->
@@ -326,3 +315,4 @@ let to_string : type a. ?uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
           (to_string e2)
   in
   to_string x
+

@@ -1,5 +1,4 @@
 open Utils
-module IntSet = Set.Make (Int)
 
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
 (** A [k solver] accepts a FORMULA with K [Symbol.t] and returns a K [Solution.t] *)
@@ -8,7 +7,7 @@ type 'k simplifier = 'k solver -> 'k solver
 (** A [k simplifier] accepts a SOLVER that operates on formulas using 
     K [Symbol.t] symbols and returns another K SOLVER *)
 
-type 'k partitioner = (bool, 'k) Formula.t -> int list * int list
+type 'k partitioner = (bool, 'k) Formula.t -> (bool, 'k) Formula.t list * (bool, 'k) Formula.t list
 (** A partitioner is a function [partition f] that partitions ORDERED clauses F
     into a [(SOLVABLE_INDICES, UNSOLVABLE_INDICES)] formula tuple *)
 
@@ -155,32 +154,44 @@ let is_falsified_clause (model_state : bool Uid.Map.t) (vars : Uid.Set.t) : bool
       | None -> false
       | Some v -> not v)
 
-let is_solvable_by (logics : 'k logic list) (f : (bool, 'k) Formula.t) : bool =
+let is_solvable_by
+    (type k)
+    (module Symbol : Symbol.KEY with type t = k)
+    (logics : k logic list)
+    (f : (bool, k) Formula.t)
+    : bool =
+  let module FormulaSet = Formula.Set.Make (Symbol) in
   let rec loop unsolved = function
-    | [] -> IntSet.is_empty unsolved
+    | [] -> FormulaSet.is_empty unsolved
     | (_solve, partition) :: rest ->
         let solvable, _unsolvable = partition f in
-        let solvable = IntSet.of_list solvable in
-        let unsolved = IntSet.diff unsolved solvable in
-        if IntSet.is_empty unsolved then true
+        let solvable = FormulaSet.of_list solvable in
+        let unsolved = FormulaSet.diff unsolved solvable in
+        if FormulaSet.is_empty unsolved then true
         else loop unsolved rest
   in
-  loop (Formula.clause_indices_from f) logics
+  loop (FormulaSet.of_list (Formula.clauses_from f)) logics
 
-let check (logics : 'k logic list) (f : (bool, 'k) Formula.t)
-    (keyset : Uid.Set.t) : 'k Solution.t =
-  let clauses = Formula.clause_indices_from f in
+let check 
+  (type k)
+  (module Symbol : Symbol.KEY with type t = k)
+  (logics : k logic list)
+  (f : (bool, k) Formula.t)
+  (keyset : Uid.Set.t) 
+  : k Solution.t =
+  let module FormulaSet = Formula.Set.Make (Symbol) in
+  let clauses = FormulaSet.of_list (Formula.clauses_from f) in
   let solutions, solved_clauses =
     List.fold_left
       (fun (acc_sols, acc_solved) (solve, partition) ->
         let solvable, _unsolvable = partition f in
-        let solvable_f = Formula.from_partition solvable f in
+        let solvable_f = Formula.and_ solvable in
         ( solve solvable_f :: acc_sols,
-          solvable |> IntSet.of_list |> IntSet.union acc_solved ))
-      ([], IntSet.empty) logics
+          solvable |> FormulaSet.of_list |> FormulaSet.union acc_solved ))
+      ([], FormulaSet.empty) logics
   in
-  let clause_diff = IntSet.diff clauses solved_clauses in
-  let were_all_clauses_solved = IntSet.is_empty clause_diff in
+  let clause_diff = FormulaSet.diff clauses solved_clauses in
+  let were_all_clauses_solved = FormulaSet.is_empty clause_diff in
   if List.is_empty solutions || not were_all_clauses_solved then
     if List.is_empty solutions then Solution.Unsat else Solution.Unknown
   else
@@ -225,12 +236,16 @@ let check (logics : 'k logic list) (f : (bool, 'k) Formula.t)
 let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
  fun f g -> fun solve -> g (f solve)
 
-let dpll ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
-    ?(to_symbol : int -> (bool, 'k) Symbol.t =
-      fun i -> i |> Uid.of_int |> fun uid -> Symbol.B uid)
-    ~(logics : 'k logic list) (solve_next : 'k solver)
-    (f : (bool, 'k) Formula.t) : 'k Solution.t =
-  if not (is_solvable_by logics f) then solve_next f
+let dpll
+  (type k)
+  ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
+  ?(to_symbol : int -> (bool, k) Symbol.t =
+    fun i -> i |> Uid.of_int |> fun uid -> Symbol.B uid)
+  (module FormulaSymbol : Symbol.KEY with type t = k)
+  ~(logics : k logic list) (solve_next : k solver)
+  (f : (bool, k) Formula.t)
+  : k Solution.t =
+  if not (is_solvable_by (module FormulaSymbol) logics f) then solve_next f
   else
     f |> Integer.to_propositional ~to_symbol |> fun (props, map) ->
     let keyset = Formula.symbols f in
@@ -276,7 +291,7 @@ let dpll ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
               |> Seq.map (fun key -> (key, leftovers key)))
               model_state
           in
-          check logics (rebuild_logical final_model) keyset
+          check (module FormulaSymbol) logics (rebuild_logical final_model) keyset
         else
           let propped, model =
             clauses |> unit_propagate |> fun (e, partial) ->
@@ -284,8 +299,9 @@ let dpll ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
               model_state |> Uid.Map.union (fun _ _ new_v -> Some new_v) partial
             )
           in
+          let check_model model = check (module FormulaSymbol) logics (rebuild_logical model) keyset in
           match propped with
-          | [] -> check logics (rebuild_logical model) keyset
+          | [] -> check_model model
           | ls when contains_const_false ls -> Solution.Unsat
           | propped ->
               let next_f = Formula.and_ propped in
@@ -297,7 +313,7 @@ let dpll ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
               ) in
               match true_clauses with
               | [ Const_bool true ] ->
-                  check logics (rebuild_logical true_model) keyset
+                  check_model true_model
               | true_clauses -> (
                   match dpll true_clauses true_model with
                   | Solution.Unsat ->
@@ -314,19 +330,24 @@ let dpll ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
 
 [@@@ocaml.warning "-48"]
 
-let dpll_simplify : 'k simplifier =
+let dpll_simplify (type k) (module FormulaSymbol : Symbol.KEY with type t = k) : k simplifier =
   dpll
     ~to_symbol:(fun off ->
       off + Char.code 'p' |> Utils.Uid.of_int |> fun uid -> Symbol.B uid)
     ~logics:[ 
       (Integer.solve_diff, Integer.partition_idl)
     ]
+    (module FormulaSymbol)
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
-let main_solve (module Oracle : SOLVABLE) : 'k solver =
+let main_solve 
+  (type k)
+  (module Oracle : SOLVABLE)
+  (module FormulaSymbol : Symbol.KEY with type t = k) 
+  : k solver =
   let pipeline = 
     propagate_constants 
     @> (fun next expr -> next (Integer.rewrite_bounds expr))
-    @> dpll_simplify 
+    @> dpll_simplify (module FormulaSymbol)
   in
   pipeline (direct_solve (module Oracle))
