@@ -142,4 +142,4 @@ let benchmark num_trials =
   in
   aux 0
 
-let () = sanity_check ()
+let () = benchmark 5

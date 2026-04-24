@@ -206,11 +206,8 @@ let check (logics : 'k logic list) (f : (bool, 'k) Formula.t)
     let covered = domains |> List.fold_left Uid.Set.union Uid.Set.empty in
 
     if is_pairwise_disjoint domains && Uid.Set.equal covered keyset then
-      let merged_lookup uid =
-        sat_models |> List.find_map (fun m -> m.Model.value (I uid))
-      in
       let merged_model =
-        Model.of_local (covered |> Uid.Set.to_list) ~lookup:merged_lookup
+        List.fold_left Model.merge Model.empty sat_models
       in
       Solution.Sat merged_model
     else Solution.Unknown

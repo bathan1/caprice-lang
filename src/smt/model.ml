@@ -57,29 +57,29 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
 
     {["From local: { a => hello; b => world }"]}
 *)
-let of_local (domain : Uid.t list) ~(lookup : Uid.t -> 'b option): 'k t =
-  {
-    domain;
-    value =
-      (fun (type a) (sym : (a,'k) Symbol.t) ->
-        match sym with
-        | B x
-        | I x -> 
-          let lookup_value = lookup x in
-          Option.map (fun v -> (Obj.magic v : a)) lookup_value
-      );
-  }
 
-let from_int_map (assignments : int Uid.Map.t) =
-  let bindings = Uid.Map.to_list assignments in
+type value =
+  | Bool of bool
+  | Int of int
+
+let from_value_map (map : value Uid.Map.t) =
+  let bindings = Uid.Map.to_list map in
   let domain = List.map (fun (key, _) -> key) bindings in
   {
     domain;
     value =
       (fun (type a) (sym : (a, 'k) Symbol.t) : a option ->
         match sym with
-        | B _ -> None
-        | I key -> Uid.Map.find_opt key assignments
+        | B key ->
+            begin match Uid.Map.find_opt key map with
+            | Some (Bool b) -> Some b
+            | _ -> None
+            end
+        | I key ->
+            begin match Uid.Map.find_opt key map with
+            | Some (Int i) -> Some i
+            | _ -> None
+            end
       );
   }
 

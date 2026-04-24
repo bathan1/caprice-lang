@@ -517,7 +517,7 @@ let solve_diff (formula : (bool, 'k) Formula.t) : 'k Solution.t =
     let n = Array.length distances in
     let offset = distances.(n - 1) in
     let local_model = Uid.Map.map (fun index ->
-      offset - distances.(index)
+      Model.Int (offset - distances.(index))
     ) key_to_index in
-    let model = Model.from_int_map local_model in
+    let model = Model.from_value_map local_model in
     Solution.Sat model
