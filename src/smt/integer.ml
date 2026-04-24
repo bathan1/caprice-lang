@@ -1,13 +1,15 @@
 open Utils
 
-(** [symbol uid] is an int symbol with UID wrapped over a [Formula.Key] *)
+(** [symbol uid] is an int symbol with UID wrapped over a [Formula.Key]
+*)
 let symbol (uid : Uid.t) = Formula.symbol (I uid)
 
 module Set = Set.Make (Int)
 
-(** *)
-let linearize f =
-  match f with
+(** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula.
+*)
+let linearize formula =
+  match formula with
   | Formula.Binop
       ( ((Less_than_eq | Less_than) as binop),
         Binop (Plus, Key (I x), Key (I y)),
@@ -60,10 +62,13 @@ let linearize f =
       | _ -> failwith "unreachable")
   | f -> f
 
+(** [to_propositional to_symbol formula] returns the boolean propositional formula form of FORMULA
+    in the first element and the [Uid.t] to corresponding [Formula.t] atom map.
+*)
 let to_propositional
     ?(to_symbol : int -> (bool, 'k) Symbol.t =
       fun uid -> uid |> Uid.of_int |> fun uid -> Symbol.B uid)
-    (f : (bool, 'k) Formula.t) =
+    (formula : (bool, 'k) Formula.t) =
   let counter = ref 0 in
   let hash = Hashtbl.create 32 in
   let rec aux f =
@@ -80,9 +85,31 @@ let to_propositional
     | And ls -> ls |> List.map aux |> Formula.and_
     | expr -> expr
   in
-  let bool_f = aux f in
+  let bool_f = aux formula in
   (bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq)
 
+(** [prune clauses] drops redundant inequalities and neqs from CLAUSES
+     
+    For example, (a >= 2) ^ (a != 1) would turn into (a >= 2)
+    because (a != 1) is implied by (a >= 2).
+    {[
+    open Smt
+
+    module AsciiSymbol = Symbol.AsciiSymbol
+
+    let () =
+      let key c = Formula.symbol (AsciiSymbol.make_int c) in
+      in
+      let formula = Formula.and_ [
+        Formula.binop Greater_than_eq (key 'a') (Formula.const_int 2);
+        Formula.binop Not_equal (key 'a') (Formula.const_int 1);
+      ] 
+      in
+      let pruned_formula = Integer.prune formula in
+      Printf.printf "%s\n" (Formula.to_string pruned_formula)
+      (* "(a >= 2)" *)
+    ]}
+*)
 let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   let type int_constraint = {
     lower : int;
@@ -240,8 +267,12 @@ let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
         handle_neq (int_symbol key) (const_int c)
     | f -> f
   in
-  f |> Formula.clauses_from |> List.map linearize |> prune
-  |> List.map normalize_unit |> Formula.and_
+  f 
+  |> Formula.clauses_from
+  |> List.map linearize
+  |> prune
+  |> List.map normalize_unit
+  |> Formula.and_
 
 type var = Symbol_key of Uid.t | Z0
 
@@ -251,27 +282,31 @@ type diff_constraint = {
   c : int;  (** Intepreted as an int {i literal} *)
 }
 
-let rec extract_idl (formula : (bool, 'k) Formula.t) : diff_constraint list =
-  let binop = Formula.binop in
+(** [to_diff_constraints formula] returns the list of integer difference 
+    constraints in FORMULA.
+*)
+let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
+  : diff_constraint list =
+  let binop = Formula.binop in 
   let const_int = Formula.const_int in
   match formula with
-  | Not (Binop (Less_than, Key (I y), Key (I x))) ->
-      extract_idl (binop Less_than_eq (symbol x) (symbol y))
+  | Formula.Not (Binop (Less_than, Key (I y), Key (I x))) ->
+      to_diff_constraints (binop Less_than_eq (symbol x) (symbol y))
   | Not (Binop (Less_than_eq, Key (I x), Key (I y))) ->
-      extract_idl (binop Greater_than (symbol x) (symbol y))
+      to_diff_constraints (binop Greater_than (symbol x) (symbol y))
   | Not (Binop (Less_than_eq, Const_int c, Key (I x))) ->
-      extract_idl (binop Less_than (symbol x) (const_int c))
+      to_diff_constraints (binop Less_than (symbol x) (const_int c))
   | Not (Binop (Less_than, Key (I x), Const_int c)) ->
-      extract_idl (binop Greater_than (symbol x) (const_int c))
+      to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   | Not (Binop (Less_than, Const_int c, Key (I x))) ->
-      extract_idl (binop Greater_than (symbol x) (const_int c))
+      to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   | Not (Binop (Less_than_eq, Key (I x), Const_int c)) ->
-      extract_idl (binop Greater_than (symbol x) (const_int c))
+      to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   (* x = c -> (x - 0 <= c) and (0 - y) <= -c *)
   | Binop (Equal, Key (I x), Const_int c) | Binop (Equal, Const_int c, Key (I x))
     ->
       [ { x = Symbol_key x; y = Z0; c }; { x = Z0; y = Symbol_key x; c = -c } ]
-  (* x = y -> (x - y) <= 0 and (y - x) <= 0*)
+  (* x = y -> (x - y) <= 0 and (y - x) <= 0 *)
   | Binop (Equal, Key (I x), Key (I y)) ->
       [
         { x = Symbol_key x; y = Symbol_key y; c = 0 };
@@ -314,21 +349,67 @@ let rec extract_idl (formula : (bool, 'k) Formula.t) : diff_constraint list =
   (* y <= x - c  ->  y - x <= -c *)
   | Binop (Less_than_eq, Key (I y), Binop (Minus, Key (I x), Const_int c)) ->
       [ { x = Symbol_key y; y = Symbol_key x; c = -c } ]
-  | And exprs -> List.concat_map extract_idl exprs
+  | And exprs -> List.concat_map to_diff_constraints exprs
   | _ -> []
 
+(** [to_constraint_graph formula] returns the 3-tuple graph representation
+    (NODES, EDGES, UID_TO_INDEX) of FORMULA, where:
+    - NODES is number of unique variables in FORMULA + 2
+    - EDGES is a 3-tuple (SRC, DST, WEIGHT)
+    - UID_TO_INDEX maps UIDs from FORMULA to their node id (index)
+
+    Index [0] is reserved for a dummy root node and index [NODES - 1]
+    is reserved for the special "zero constant" node.
+*)
+let to_constraint_graph (formula : (bool, 'k) Formula.t)
+  : nodes:int * edges:(int * int * int) array * int Uid.Map.t =
+  formula
+  |> to_diff_constraints
+  |> fun constraints -> List.concat_map (fun {x; y; _} ->
+    match (x, y) with
+    | Symbol_key x, Symbol_key y -> [ x; y ]
+    | Symbol_key key, Z0 | Z0, Symbol_key key -> [ key ]
+    | _ -> []
+  ) constraints
+  |> List.sort_uniq Uid.compare
+  |> List.mapi (fun i uid -> (uid, i + 1)) (* Reserve index 0 for super-root node *)
+  |> Uid.Map.of_list
+  |> fun key_to_index -> (
+    let nodes =
+      1 + Uid.Map.cardinal key_to_index + 1
+      (* [0; x; y; z0] *)
+    in
+    let get_index x = Uid.Map.find x key_to_index in
+    let edges_constraints =
+      constraints
+      |> List.filter_map (fun { x; y; c } ->
+          match (x, y) with
+          | Symbol_key x, Symbol_key y -> Some (get_index x, get_index y, c)
+          | Symbol_key x, Z0 -> Some (get_index x, nodes - 1, c)
+          | Z0, Symbol_key y -> Some (nodes - 1, get_index y, c)
+          | _ -> None)
+    in
+    let dummy_root_edges = List.init nodes (fun i -> (0, i, 0)) in
+    let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
+    (~nodes, ~edges, key_to_index)
+  )
+
+(** [is_idl_clause formula] returns true if FORMULA 
+    can be meaningfully decoded by the formula to bellman-ford graph
+    decoder [graph_constraints].
+*)
 let is_idl_clause : type k. (bool, k) Formula.t -> bool = function
   | Formula.Binop (Less_than, Key (I _), Key (I _))
   | Formula.Binop (Less_than_eq, Key (I _), Key (I _))
   | Formula.Binop (Less_than, Const_int _, Key (I _))
   | Formula.Binop (Less_than_eq, Const_int _, Key (I _))
   | Formula.Binop (Less_than, Key (I _), Const_int _)
-  | Formula.Binop (Less_than_eq, Key (I _), Const_int _) ->
-      true
+  | Formula.Binop (Less_than_eq, Key (I _), Const_int _) -> true
   | _ -> false
 
 (** [partition formula] partitions FORMULA into formulas [SOLVABLE, UNSOLVABLE],
-    where UNSOLVABLE is an empty list if everything can be solved by IDL *)
+    where UNSOLVABLE is an empty list if everything can be solved by IDL
+*)
 let partition_idl (formula : (bool, 'k) Formula.t) : int list * int list =
   let rec aux index solvable unsolvable = function
     | [] -> (List.rev solvable, List.rev unsolvable)
@@ -339,45 +420,17 @@ let partition_idl (formula : (bool, 'k) Formula.t) : int list * int list =
   in
   aux 0 [] [] (Formula.clauses_from formula)
 
-let normalize (constraints : diff_constraint list) =
-  let vars =
-    constraints
-    |> List.concat_map (fun a ->
-        match (a.x, a.y) with
-        | Symbol_key x, Symbol_key y -> [ x; y ]
-        | Symbol_key key, Z0 | Z0, Symbol_key key -> [ key ]
-        | _ -> [])
-    |> List.sort_uniq Uid.compare
-  in
-  let key_to_index =
-    vars |> List.mapi (fun i v -> (v, i + 1)) |> Uid.Map.of_list
-  in
-  let n =
-    1 + Uid.Map.cardinal key_to_index + 1
-    (* [0; x; y; z0] *)
-  in
-  let get_index x = Uid.Map.find x key_to_index in
-  let edges_constraints =
-    constraints
-    |> List.filter_map (fun { x; y; c } ->
-        match (x, y) with
-        | Symbol_key x, Symbol_key y -> Some (get_index x, get_index y, c)
-        | Symbol_key x, Z0 -> Some (get_index x, n - 1, c)
-        | Z0, Symbol_key y -> Some (n - 1, get_index y, c)
-        | _ -> None)
-  in
-  let dummy_root_edges = List.init n (fun i -> (0, i, 0)) in
-  let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
-  (n, edges, key_to_index)
-
 exception Graph_disconnected of int
 
-let bellman_ford ~(src : int) (n : int) (edges : (int * int * int) array) =
+(** [bellman_ford src nodes edges] returns the shortest paths to each node from SRC    if there is no negative cycle. Otherwise, it catches that and returns the 
+    cycle as a list.
+*)
+let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
   let init =
-    ( Array.init n (fun i -> if i = src then 0 else Int.max_int),
-      Array.init n (fun _ : int option -> None) )
+    ( Array.init nodes (fun i -> if i = src then 0 else Int.max_int),
+      Array.init nodes (fun _ : int option -> None) )
   in
-  let vertices = Array.init n (fun i -> i) in
+  let vertices = Array.init nodes (fun i -> i) in
   let relax_distances =
    fun (distance, predecessor) (u, v, w) ->
     match (distance.(u), distance.(v)) with
@@ -398,7 +451,7 @@ let bellman_ford ~(src : int) (n : int) (edges : (int * int * int) array) =
   let distance, predecessor =
     Array.fold_left
       (fun (distance, predecessor) i ->
-        if i = n - 1 then (distance, predecessor)
+        if i = nodes - 1 then (distance, predecessor)
         else Array.fold_left relax_distances (distance, predecessor) edges)
       init vertices
   in
@@ -422,7 +475,7 @@ let bellman_ford ~(src : int) (n : int) (edges : (int * int * int) array) =
           | None -> x
           | Some parent -> move_back parent (i - 1)
       in
-      let cycle_vertex = move_back vertex n in
+      let cycle_vertex = move_back vertex nodes in
       let rec collect_cycle curr acc =
         if List.mem curr acc then curr :: acc
         else
@@ -432,45 +485,33 @@ let bellman_ford ~(src : int) (n : int) (edges : (int * int * int) array) =
       in
       `Negative_cycle (collect_cycle cycle_vertex [])
 
-let is_int_diff_solvable (expr : (bool, 'k) Formula.t) : bool =
-  match expr with
-  | e
-    when Formula.contains_binop Binop.Modulus e
-         || Formula.contains_binop Binop.Divide e
-         || Formula.contains_binop Binop.Times e
-         || Formula.contains_binop Binop.Or e ->
-      false
-  | _ -> true
+(** [solve_diff formula] finds the tightest upper bounds of each integer variable in FORMULA
 
-(** 
-    [solve_int_diff expr] finds the tightest upper bounds of each integer variable in EXPR
-
-    {3 Example}
     {[
-    open Smt.Integer
-    open Smt.Binop
-    open Smt.Symbol
+    open Smt
+
+    module AsciiSymbol = Symbol.AsciiSymbol
 
     let () =
-      let key c = Key (AsciiSymbol.make_int c) in
+      let key c = Formula.symbol (AsciiSymbol.make_int c) in
       in
-      let formula = And [
-        Binop (Less_than_eq, key 'a', Const_int 2);
-        Binop (Greater, key 'b', key 'a');
+      let formula = Formula.and_ [
+        Formula.binop Less_than_eq (key 'a') (Formula.const_int 2);
+        Formula.binop Greater_than (key 'b') (key 'a');
       ] 
       in
-      match solve_int_diff formula with
-      | Sat model ->
+      match Integer.solve_diff formula with
+      | Solution.Sat model ->
           (* Access a (tight) upper bound: model.value (I 0) -> int option *)
           printf "SAT: upper bound on x = %d\n"
             (Option.value_exn (model.value (I 0)))
       | Unsat ->
           printf "UNSAT\n"
-    ]
+    ]}
 *)
-let solve_int_diff (f : (bool, 'k) Formula.t) : 'k Solution.t =
-  f |> extract_idl |> normalize |> fun (vertices, edges, key_to_index) ->
-  bellman_ford vertices edges ~src:0 |> function
+let solve_diff (formula : (bool, 'k) Formula.t) : 'k Solution.t =
+  formula |> to_constraint_graph |> fun (~nodes, ~edges, key_to_index) ->
+  bellman_ford nodes edges ~src:0 |> function
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->
       let n = Array.length distances in
@@ -485,9 +526,3 @@ let solve_int_diff (f : (bool, 'k) Formula.t) : 'k Solution.t =
             | Some i -> Some (-1 * (distances.(i) - offset)))
       in
       Solution.Sat model
-
-(** [simplify solve expr] drops redundant inequalities from EXPR before SOLVE
-    calls it *)
-let simplify (next : (bool, 'k) Formula.t -> 'k Solution.t)
-    (expr : (bool, 'k) Formula.t) =
-  expr |> rewrite_bounds |> next

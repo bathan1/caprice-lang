@@ -2,7 +2,11 @@ open Utils
 module IntSet = Set.Make (Int)
 
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
+(** A [k solver] accepts a FORMULA with K [Symbol.t] and returns a K [Solution.t] *)
+
 type 'k simplifier = 'k solver -> 'k solver
+(** A [k simplifier] accepts a SOLVER that operates on formulas using 
+    K [Symbol.t] symbols and returns another K SOLVER *)
 
 type 'k partitioner = (bool, 'k) Formula.t -> int list * int list
 (** A partitioner is a function [partition f] that partitions ORDERED clauses F
@@ -18,7 +22,25 @@ module type SOLVABLE = sig
 end
 
 let direct_solve (module X : SOLVABLE) : 'k solver =
- fun e -> X.solve (Formula.transform (module X) e)
+  fun e -> X.solve (Formula.transform (module X) e)
+
+type ('a, 'k) key_value = ('a, 'k) Symbol.t * value:'a
+type 'k assignment =
+  | Assign : ('a, 'k) key_value -> 'k assignment
+let rec find_unit_literal (f : (bool, 'k) Formula.t) : 'k assignment option =
+  match f with
+  | Formula.Key bool_symbol -> Some (Assign (bool_symbol, ~value:true))
+  | Binop (Equal, Key k, Const_int value) -> Some (Assign (k, ~value))
+  | Not f -> 
+    begin match find_unit_literal f with
+    | None -> None
+    | Some assignment -> (
+      match assignment with
+      | Assign (I _ as key, ~value) -> Some (Assign (key, ~value:(if value = 0 then 1 else 0)))
+      | Assign (B _ as key, ~value) -> Some (Assign (key, ~value:(not value)))
+    )
+    end
+  | _ -> None
 
 (*
   First attempts to solve with a few heuristics, and then calls the solver.
@@ -115,8 +137,6 @@ let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t
       | Formula.Binop (Binop.Or, Formula.Key key, _) -> key
       | Formula.Binop (Binop.Or, _, Formula.Key key) -> key
       | _ -> choose_literal tl)
-
-let formula_to_clauses = function Formula.And ls -> ls | e -> [ e ]
 
 (** [contains_const_false ls] returns if an immediate element of LS is 
     a [Formula.Const_bool false].
@@ -301,7 +321,9 @@ let dpll_simplify : 'k simplifier =
   dpll
     ~to_symbol:(fun off ->
       off + Char.code 'p' |> Utils.Uid.of_int |> fun uid -> Symbol.B uid)
-    ~logics:[ (Integer.solve_int_diff, Integer.partition_idl) ]
+    ~logics:[ 
+      (Integer.solve_diff, Integer.partition_idl)
+    ]
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =

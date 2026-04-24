@@ -287,19 +287,16 @@ module Set = struct
 end
 
 (** [clauses_from f] unwraps the [And] list from F if F is a conjunction or
-    [[F]] if F is anything else
-*)
+    [[F]] if F is anything else *)
 let clauses_from (f : (bool, 'k) t) = match f with And ls -> ls | f -> [ f ]
 
 (** [clause_indices_from f] unwraps the [And] list from F and maps each element
-    to its array index (0 indexed)
-*)
+    to its array index (0 indexed) *)
 let clause_indices_from (f : (bool, 'k) t) =
   f |> clauses_from |> List.mapi (fun i _ -> i) |> IntSet.of_list
 
 (** [from_partition partition f] rebuilds the conjunction by mapping each index in
-    PARTITION to its clause from F.
-*)
+    PARTITION to its clause from F. *)
 let from_partition (partition : int list) (f : (bool, 'k) t) : (bool, 'k) t =
   f |> clauses_from |> Array.of_list |> fun clauses ->
   List.map (fun index -> clauses.(index)) partition |> and_
@@ -310,16 +307,6 @@ let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
       Binop.poly_equal op target || contains_binop target l
       || contains_binop target r
   | _ -> false
-
-let count (formula : ('a, 'k) t) : int =
-  let rec aux : type a k. (a, k) t -> int = function
-    | Not next -> 1 + aux next
-    | And ls -> 1 + List.fold_left (fun acc f -> acc + aux f) 0 ls
-    | Key _ -> 1
-    | Binop (_, l, r) -> 1 + aux l + aux r
-    | Const_int _ | Const_bool _ -> 1
-  in
-  aux formula
 
 let to_string : type a. ?uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
  fun ?(uid : Utils.Uid.t -> string =
