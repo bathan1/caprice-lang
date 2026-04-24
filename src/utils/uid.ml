@@ -1,3 +1,6 @@
+module IntSet = Set.Make (Int)
+
+module IntMap = Map.Make (Int)
 
 module T = struct
   type t = Uid of int [@@unboxed]

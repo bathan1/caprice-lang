@@ -1,10 +1,10 @@
 open Utils
 
+module IntSet = Uid.IntSet
+
 (** [symbol uid] is an int symbol with UID wrapped over a [Formula.Key]
 *)
 let symbol (uid : Uid.t) = Formula.symbol (I uid)
-
-module Set = Set.Make (Int)
 
 (** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula.
 *)
@@ -114,8 +114,8 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   let type int_constraint = {
     lower : int;
     upper : int;
-    neq : Set.t;
-    eq : Set.t;
+    neq : IntSet.t;
+    eq : IntSet.t;
   }
   in
   let find_or_default key map =
@@ -127,9 +127,9 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
         (* greatest lower bound *)
         upper = Int.max_int;
         (* lowest upper bound *)
-        neq = Set.empty;
+        neq = IntSet.empty;
         (* not equal list *)
-        eq = Set.empty;
+        eq = IntSet.empty;
       }
   in
   let collect_bounds = 
@@ -139,7 +139,7 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       | Formula.Not (Binop (Equal, Const_int c, Key (I key)))
         | Not (Binop (Equal, Key (I key), Const_int c)) ->
         let { lower; upper; neq; eq } = find_or_default key acc in
-        let next_neq_set = Set.add c neq in
+        let next_neq_set = IntSet.add c neq in
         let next =
           Uid.Map.add key { lower; upper; neq = next_neq_set; eq } acc
         in
@@ -148,7 +148,7 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       | Formula.Binop (Equal, Const_int c, Key (I key))
         | Formula.Binop (Equal, Key (I key), Const_int c) ->
         let { lower; upper; neq; eq } = find_or_default key acc in
-        let next_eq_set = Set.add c eq in
+        let next_eq_set = IntSet.add c eq in
         let next =
           Uid.Map.add key { lower; upper; neq; eq = next_eq_set } acc
         in
@@ -192,11 +192,11 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   bounds_map |> Uid.Map.to_list
   |> List.concat_map (fun (uid, { lower; upper; neq; eq }) ->
     let is_impossible_bound = lower > upper in
-    let num_eq = Set.cardinal eq in
+    let num_eq = IntSet.cardinal eq in
     let is_eqs_impossible =
       num_eq > 1
-      || Set.cardinal (Set.inter eq neq) > 0
-      || Set.exists (fun veq -> lower > veq || veq > upper) eq
+      || IntSet.cardinal (IntSet.inter eq neq) > 0
+      || IntSet.exists (fun veq -> lower > veq || veq > upper) eq
     in
     if is_impossible_bound || is_eqs_impossible then
       [ Formula.const_bool false ]
@@ -204,19 +204,19 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       let variable = Formula.symbol (I uid) in
       let neq_formulas =
         neq 
-        |> Set.to_list
+        |> IntSet.to_list
         |> List.filter (fun v -> lower < v && v < upper)
         |> List.map (fun v ->
           Formula.not_
             (Formula.binop Equal variable (Formula.const_int v)))
       in
       if num_eq = 1 then
-        let value_eq = Set.find_first (fun _ -> true) eq in
+        let value_eq = IntSet.find_first (fun _ -> true) eq in
         Formula.binop Equal variable (Formula.const_int value_eq)
         :: neq_formulas
       else
-        let lower_neq = Set.find_opt lower neq in
-        let upper_neq = Set.find_opt upper neq in
+        let lower_neq = IntSet.find_opt lower neq in
+        let upper_neq = IntSet.find_opt upper neq in
         let resolved_lower, resolved_upper =
           match (lower_neq, upper_neq) with
           | None, None -> (lower, upper)
@@ -514,15 +514,10 @@ let solve_diff (formula : (bool, 'k) Formula.t) : 'k Solution.t =
   bellman_ford nodes edges ~src:0 |> function
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->
-      let n = Array.length distances in
-      let offset = distances.(n - 1) in
-      let keys =
-        key_to_index |> Uid.Map.to_list |> List.map (fun (key, _) -> key)
-      in
-      let model =
-        Model.of_local keys ~lookup:(fun symbol_key ->
-            match Uid.Map.find_opt symbol_key key_to_index with
-            | None -> None
-            | Some i -> Some (-1 * (distances.(i) - offset)))
-      in
-      Solution.Sat model
+    let n = Array.length distances in
+    let offset = distances.(n - 1) in
+    let local_model = Uid.Map.map (fun index ->
+      offset - distances.(index)
+    ) key_to_index in
+    let model = Model.from_int_map local_model in
+    Solution.Sat model

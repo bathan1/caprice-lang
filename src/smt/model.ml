@@ -1,8 +1,9 @@
+open Utils
 
 type 'k t =
   { 
     value : 'a. ('a, 'k) Symbol.t -> 'a option;
-    domain : Utils.Uid.t list; 
+    domain : Uid.t list; 
   }
 
 let merge (s1 : 'k t) (s2 : 'k t) : 'k t =
@@ -18,8 +19,8 @@ let empty : 'k t = { value = (fun _ -> None) ; domain = [] }
 let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
   let value (type b) (s' : (b, 'k) Symbol.t) : b option =
     match s, s' with
-    | I uid, I uid' when Utils.Uid.equal uid uid' -> Some a
-    | B uid, B uid' when Utils.Uid.equal uid uid' -> Some a
+    | I uid, I uid' when Uid.equal uid uid' -> Some a
+    | B uid, B uid' when Uid.equal uid uid' -> Some a
     | _ -> None
   in
   { value ; domain = [ match s with (I uid | B uid) -> uid ] }
@@ -56,7 +57,7 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
 
     {["From local: { a => hello; b => world }"]}
 *)
-let of_local (domain : Utils.Uid.t list) ~(lookup : Utils.Uid.t -> 'b option): 'k t =
+let of_local (domain : Uid.t list) ~(lookup : Uid.t -> 'b option): 'k t =
   {
     domain;
     value =
@@ -69,10 +70,23 @@ let of_local (domain : Utils.Uid.t list) ~(lookup : Utils.Uid.t -> 'b option): '
       );
   }
 
+let from_int_map (assignments : int Uid.Map.t) =
+  let bindings = Uid.Map.to_list assignments in
+  let domain = List.map (fun (key, _) -> key) bindings in
+  {
+    domain;
+    value =
+      (fun (type a) (sym : (a, 'k) Symbol.t) : a option ->
+        match sym with
+        | B _ -> None
+        | I key -> Uid.Map.find_opt key assignments
+      );
+  }
+
 let to_string
   (type a k)
   (model : k t)
-  ~(uid : Utils.Uid.t -> (a, k) Symbol.t * string)
+  ~(uid : Uid.t -> (a, k) Symbol.t * string)
   : string =
   let indent = "  " in
   let entry_to_string : type a. (a, k) Symbol.t -> string -> a -> string =
