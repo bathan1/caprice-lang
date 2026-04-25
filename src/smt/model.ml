@@ -1,10 +1,8 @@
 open Utils
 
 type 'k t =
-  { 
-    value : 'a. ('a, 'k) Symbol.t -> 'a option;
-    domain : Uid.t list; 
-  }
+  { value : 'a. ('a, 'k) Symbol.t -> 'a option
+  ; domain : Utils.Uid.t list }
 
 let merge (s1 : 'k t) (s2 : 'k t) : 'k t =
   let value (type a) (sym : (a, 'k) Symbol.t) : a option =
@@ -27,7 +25,7 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
 
 (** [of_local domain ~lookup] (unsafely) casts DOMAIN and LOOKUP function into a [Model.t]
 
-    LOOKUP is passed in the [Uid.t] of a formula key and should return 
+    LOOKUP is passed in the [Uid.t] of a formula key and should return
     an [option] of whatever value LOCAL holds for the given uid.
 
     {2 From an {!Int.Map} local solution}

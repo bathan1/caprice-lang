@@ -4,7 +4,7 @@ type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
 (** A [k solver] accepts a FORMULA with K [Symbol.t] and returns a K [Solution.t] *)
 
 type 'k simplifier = 'k solver -> 'k solver
-(** A [k simplifier] accepts a SOLVER that operates on formulas using 
+(** A [k simplifier] accepts a SOLVER that operates on formulas using
     K [Symbol.t] symbols and returns another K SOLVER *)
 
 type 'k partitioner = (bool, 'k) Formula.t -> (bool, 'k) Formula.t list * (bool, 'k) Formula.t list
@@ -20,8 +20,8 @@ module type SOLVABLE = sig
   val solve : (bool, 'k) t -> 'k Solution.t
 end
 
-let direct_solve (module X : SOLVABLE) : 'k solver =
-  fun e -> X.solve (Formula.transform (module X) e)
+let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
+  X.solve (Formula.transform (module X) e)
 
 type ('a, 'k) key_value = ('a, 'k) Symbol.t * value:'a
 type 'k assignment =
@@ -30,7 +30,7 @@ let rec find_unit_literal (f : (bool, 'k) Formula.t) : 'k assignment option =
   match f with
   | Formula.Key bool_symbol -> Some (Assign (bool_symbol, ~value:true))
   | Binop (Equal, Key k, Const_int value) -> Some (Assign (k, ~value))
-  | Not f -> 
+  | Not f ->
     begin match find_unit_literal f with
     | None -> None
     | Some assignment -> (
@@ -49,58 +49,60 @@ let rec find_unit_literal (f : (bool, 'k) Formula.t) : 'k assignment option =
   As more simplifiers are added, we could instead name this after implied
   concretization.
 *)
-let rec propagate_constants : 'k simplifier =
- fun solve expr ->
+let rec propagate_constants : 'k simplifier = fun solve expr ->
   let assign i k = Solution.Sat (Model.singleton i k) in
   (* Hand-write a lot of special cases for single formulas *)
   match expr with
-  | Formula.Const_bool false -> Unsat
+  | Const_bool false -> Unsat
   | Const_bool true -> Sat Model.empty
-  | Key k -> assign true k
-  | Not (Key k) -> assign false k
-  | Not (Binop (Equal, Key k, Const_int i)) -> assign (if i = 0 then 1 else 0) k
+  | Key k ->
+    assign true k
+  | Not Key k ->
+    assign false k
+  | Not (Binop (Equal, Key k, Const_int i)) ->
+    assign (if i = 0 then 1 else 0) k
   | Binop ((Equal | Less_than_eq), Key (I _ as k), Const_int i)
   | Binop ((Equal | Less_than_eq), Const_int i, Key (I _ as k)) ->
-      assign i k
-  | Binop (Less_than, Key k, Const_int i) -> assign (i - 1) k
-  | Binop (Less_than, Const_int i, Key k) -> assign (i + 1) k
+    assign i k
+  | Binop (Less_than, Key k, Const_int i) ->
+    assign (i - 1) k
+  | Binop (Less_than, Const_int i, Key k) ->
+    assign (i + 1) k
   | Binop (Less_than, Key (I _ as k), Key (I _ as k'))
   | Binop (Less_than_eq, Key (I _ as k), Key (I _ as k')) ->
-      Solution.merge (assign 0 k) (assign 1 k')
+    Solution.merge (assign 0 k) (assign 1 k')
   | Binop (Equal, Key k, Key k') ->
-      begin match (k, k') with
-      | I _, I _ -> Solution.merge (assign 0 k) (assign 0 k')
-      | B _, B _ -> Solution.merge (assign true k) (assign true k')
-      end
-  | Not (Binop (Equal, Key k, Key k')) ->
-      begin match (k, k') with
-      | I _, I _ -> Solution.merge (assign 0 k) (assign 1 k')
-      | B _, B _ -> Solution.merge (assign true k) (assign false k')
-      end
+    begin match k, k' with
+    | I _, I _ -> Solution.merge (assign 0 k) (assign 0 k')
+    | B _, B _ -> Solution.merge (assign true k) (assign true k')
+    end
+  | Not Binop (Equal, Key k, Key k') ->
+    begin match k, k' with
+    | I _, I _ -> Solution.merge (assign 0 k) (assign 1 k')
+    | B _, B _ -> Solution.merge (assign true k) (assign false k')
+    end
   | And e_ls ->
-      (*
+    (*
       If there is any (key = int) formula, then we can subst it through, for it
       is an "implied concretization".
+
       This idea originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
       from Section 3.3, paragraph _Constraint Set Simplification_.
     *)
-      let find (e : ('a, 'k) Formula.t) :
-          (const:int * (int, 'k) Symbol.t) option =
-        match e with
-        | Binop (Equal, Key k, Const_int const) -> Some (~const, k)
-        | _ -> None
-      in
-      begin match List.find_map find e_ls with
-      | Some (~const, k) ->
-          let reduced_expr =
-            Formula.and_ (List.map (Formula.subst const k) e_ls)
-          in
-          Solution.merge
-            (propagate_constants solve reduced_expr)
-            (assign const k)
-      | None -> solve expr
-      end
-  | _ -> solve expr
+    let find (e : ('a, 'k) Formula.t) : (const:int * (int, 'k) Symbol.t) option =
+      match e with
+      | Binop (Equal, Key k, Const_int const) -> Some (~const, k)
+      | _ -> None
+    in
+    begin match List.find_map find e_ls with
+    | Some (~const, k) ->
+      let reduced_expr = Formula.and_ (List.map (Formula.subst const k) e_ls) in
+      Solution.merge (propagate_constants solve reduced_expr) (assign const k)
+    | None ->
+      solve expr
+    end
+  | _ ->
+    solve expr
 
 let find_first_unit_literal (ls : (bool, 'k) Formula.t list) :
     ((bool, 'k) Symbol.t * bool) option =
@@ -137,7 +139,7 @@ let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t
       | Formula.Binop (Binop.Or, _, Formula.Key key) -> key
       | _ -> choose_literal tl)
 
-(** [contains_const_false ls] returns if an immediate element of LS is 
+(** [contains_const_false ls] returns if an immediate element of LS is
     a [Formula.Const_bool false].
 *)
 let contains_const_false ls = List.exists (
@@ -172,12 +174,12 @@ let is_solvable_by
   in
   loop (FormulaSet.of_list (Formula.clauses_from f)) logics
 
-let check 
+let check
   (type k)
   (module Symbol : Symbol.KEY with type t = k)
   (logics : k logic list)
   (f : (bool, k) Formula.t)
-  (keyset : Uid.Set.t) 
+  (keyset : Uid.Set.t)
   : k Solution.t =
   let module FormulaSet = Formula.Set.Make (Symbol) in
   let clauses = FormulaSet.of_list (Formula.clauses_from f) in
@@ -265,7 +267,7 @@ let dpll
         || List.exists (is_falsified_clause model_state) curr_keyset
       then
         if List.is_empty curr_keyset then
-          (* 
+          (*
            TODO: This means sat at the bool level, so try model_state solution...
         *)
           Solution.Unsat
@@ -334,19 +336,19 @@ let dpll_simplify (type k) (module FormulaSymbol : Symbol.KEY with type t = k) :
   dpll
     ~to_symbol:(fun off ->
       off + Char.code 'p' |> Utils.Uid.of_int |> fun uid -> Symbol.B uid)
-    ~logics:[ 
+    ~logics:[
       (Integer.solve_diff, Integer.partition_idl)
     ]
     (module FormulaSymbol)
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
-let main_solve 
+let main_solve
   (type k)
   (module Oracle : SOLVABLE)
-  (module FormulaSymbol : Symbol.KEY with type t = k) 
+  (module FormulaSymbol : Symbol.KEY with type t = k)
   : k solver =
-  let pipeline = 
-    propagate_constants 
+  let pipeline =
+    propagate_constants
     @> (fun next expr -> next (Integer.rewrite_bounds expr))
     @> dpll_simplify (module FormulaSymbol)
   in
