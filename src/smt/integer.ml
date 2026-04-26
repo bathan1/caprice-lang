@@ -11,54 +11,54 @@ let symbol (uid : Uid.t) = Formula.symbol (I uid)
 let linearize formula =
   match formula with
   | Formula.Binop
-      ( ((Less_than_eq | Less_than) as binop),
-        Binop (Plus, Key (I x), Key (I y)),
-        Key (I z) )
+    ( ((Less_than_eq | Less_than) as binop),
+    Binop (Plus, Key (I x), Key (I y)),
+    Key (I z) )
     when x = z ->
-      Formula.binop binop (symbol y) (Formula.const_int 0)
+    Formula.binop binop (symbol y) (Formula.const_int 0)
   | Formula.Binop
-      ( ((Less_than_eq | Less_than) as binop),
-        Binop (Plus, Key (I x), Key (I y)),
-        Key (I z) )
+    ( ((Less_than_eq | Less_than) as binop),
+    Binop (Plus, Key (I x), Key (I y)),
+    Key (I z) )
     when y = z -> Formula.binop binop (symbol x) (Formula.const_int 0)
   | Formula.Binop
-      ( ((Less_than_eq | Less_than) as binop),
-        Binop (Plus, Key (I x), Const_int a),
-        Const_int b ) ->
-      Formula.binop binop (symbol x) (Formula.const_int (b - a))
+    ( ((Less_than_eq | Less_than) as binop),
+    Binop (Plus, Key (I x), Const_int a),
+    Const_int b ) ->
+    Formula.binop binop (symbol x) (Formula.const_int (b - a))
   (* expr <= c  OR expr < c OR expr = c *)
   | Formula.Binop
-      ( ((Less_than_eq | Less_than | Equal) as binop),
-        Binop (((Plus | Minus) as op), Key (I a), Key (I b)),
-        Const_int c ) -> (
+    ( ((Less_than_eq | Less_than | Equal) as binop),
+    Binop (((Plus | Minus) as op), Key (I a), Key (I b)),
+    Const_int c ) -> (
       match op with
       | Plus ->
-          (* a + b <= c  ==>  a <= c - b *)
-          Formula.binop binop
-            (symbol a)
-            (Formula.binop Minus (Formula.const_int c) (symbol b))
+        (* a + b <= c  ==>  a <= c - b *)
+        Formula.binop binop
+          (symbol a)
+          (Formula.binop Minus (Formula.const_int c) (symbol b))
       | Minus ->
-          (* a - b <= c  ==>  a <= c + b *)
-          Formula.binop binop
-            (symbol a)
-            (Formula.binop Plus (Formula.const_int c) (symbol b))
+        (* a - b <= c  ==>  a <= c + b *)
+        Formula.binop binop
+          (symbol a)
+          (Formula.binop Plus (Formula.const_int c) (symbol b))
       | _ -> failwith "unreachable")
   (* c <= expr OR c < expr OR c = expr *)
   | Formula.Binop
-      ( ((Less_than_eq | Less_than | Equal) as binop),
-        Const_int c,
-        Binop (((Plus | Minus) as op), Key (I a), Key (I b)) ) -> (
+    ( ((Less_than_eq | Less_than | Equal) as binop),
+    Const_int c,
+    Binop (((Plus | Minus) as op), Key (I a), Key (I b)) ) -> (
       match op with
       | Plus ->
-          (* c <= a + b  ==>  c - b <= a *)
-          Formula.binop binop
-            (Formula.binop Minus (Formula.const_int c) (symbol b))
-            (symbol a)
+        (* c <= a + b  ==>  c - b <= a *)
+        Formula.binop binop
+          (Formula.binop Minus (Formula.const_int c) (symbol b))
+          (symbol a)
       | Minus ->
-          (* c <= a - b  ==>  c + b <= a *)
-          Formula.binop binop
-            (Formula.binop Plus (Formula.const_int c) (symbol b))
-            (symbol a)
+        (* c <= a - b  ==>  c + b <= a *)
+        Formula.binop binop
+          (Formula.binop Plus (Formula.const_int c) (symbol b))
+          (symbol a)
       | _ -> failwith "unreachable")
   | f -> f
 
@@ -67,29 +67,86 @@ let linearize formula =
 *)
 let to_propositional
     ?(to_symbol : int -> (bool, 'k) Symbol.t =
-      fun uid -> uid |> Uid.of_int |> fun uid -> Symbol.B uid)
-    (formula : (bool, 'k) Formula.t) =
+    fun uid -> uid |> Uid.of_int |> fun uid -> Symbol.B uid)
+  (formula : (bool, 'k) Formula.t) =
   let counter = ref 0 in
   let hash = Hashtbl.create 32 in
   let rec aux f =
     match f with
     | ( Formula.Not (Binop (Equal, _, _))
       | Formula.Binop ((Less_than_eq | Less_than | Equal), _, _) ) as atomic ->
-        let count = !counter in
-        let prop_sym = to_symbol count in
-        let resolved_uid = Symbol.to_uid prop_sym in
-        let prop_formula = Formula.symbol prop_sym in
-        counter := count + 1;
-        Hashtbl.add hash resolved_uid atomic;
-        prop_formula
+      let count = !counter in
+      let prop_sym = to_symbol count in
+      let resolved_uid = Symbol.to_uid prop_sym in
+      let prop_formula = Formula.symbol prop_sym in
+      counter := count + 1;
+      Hashtbl.add hash resolved_uid atomic;
+      prop_formula
     | And ls -> ls |> List.map aux |> Formula.and_
     | expr -> expr
   in
   let bool_f = aux formula in
   (bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq)
 
+type int_constraint = {
+  lower : int;
+  upper : int;
+  neq : IntSet.t;
+  eq : IntSet.t;
+}
+
+let bound_to_formula_clauses (uid, { lower; upper; neq; eq } : Uid.t * int_constraint) =
+  let is_impossible_bound = lower > upper in
+  let num_eq = IntSet.cardinal eq in
+  let is_eqs_impossible =
+    num_eq > 1
+    || IntSet.cardinal (IntSet.inter eq neq) > 0
+    || IntSet.exists (fun veq -> lower > veq || veq > upper) eq
+  in
+  if is_impossible_bound || is_eqs_impossible then
+    [ Formula.const_bool false ]
+  else
+    let variable = Formula.symbol (I uid) in
+    let neq_formulas =
+      neq 
+      |> IntSet.to_list
+      |> List.filter (fun v -> lower < v && v < upper)
+      |> List.map (fun v ->
+        Formula.not_
+          (Formula.binop Equal variable (Formula.const_int v)))
+    in
+    if num_eq = 1 then
+      let value_eq = IntSet.find_first (fun _ -> true) eq in
+      Formula.binop Equal variable (Formula.const_int value_eq)
+      :: neq_formulas
+    else
+      let lower_neq = IntSet.find_opt lower neq in
+      let upper_neq = IntSet.find_opt upper neq in
+      let resolved_lower, resolved_upper =
+        match (lower_neq, upper_neq) with
+        | None, None -> (lower, upper)
+        (* drop neq and increment lower bound *)
+        | Some lower_bound_neq, None -> (lower_bound_neq + 1, upper)
+        (* drop neq and decrement upper bound *)
+        | None, Some upper_bound_neq -> (lower, upper_bound_neq - 1)
+        | Some lower_bound_eq, Some upper_bound_eq ->
+          (lower_bound_eq + 1, upper_bound_eq - 1)
+      in
+      match (resolved_lower, resolved_upper) with
+      | lb, rb when lb = Int.min_int && rb = Int.max_int -> neq_formulas
+      | lb, rb when lb = Int.min_int ->
+        Formula.binop Less_than_eq variable (Formula.const_int rb)
+        :: neq_formulas
+      | lb, rb when rb = Int.max_int ->
+        Formula.binop Less_than_eq (Formula.const_int lb) variable
+        :: neq_formulas
+      | lb, rb ->
+        Formula.binop Less_than_eq (Formula.const_int lb) variable
+        :: Formula.binop Less_than_eq variable (Formula.const_int rb)
+        :: neq_formulas
+
 (** [prune clauses] drops redundant inequalities and neqs from CLAUSES
-     
+
     For example, (a >= 2) ^ (a != 1) would turn into (a >= 2)
     because (a != 1) is implied by (a >= 2).
     {[
@@ -111,13 +168,6 @@ let to_propositional
     ]}
 *)
 let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
-  let type int_constraint = {
-    lower : int;
-    upper : int;
-    neq : IntSet.t;
-    eq : IntSet.t;
-  }
-  in
   let find_or_default key map =
     match Uid.Map.find_opt key map with
     | Some v -> v
@@ -190,61 +240,13 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   |> List.fold_left collect_bounds (Uid.Map.empty, [])
   |> fun (bounds_map, other_clauses) ->
   bounds_map |> Uid.Map.to_list
-  |> List.concat_map (fun (uid, { lower; upper; neq; eq }) ->
-    let is_impossible_bound = lower > upper in
-    let num_eq = IntSet.cardinal eq in
-    let is_eqs_impossible =
-      num_eq > 1
-      || IntSet.cardinal (IntSet.inter eq neq) > 0
-      || IntSet.exists (fun veq -> lower > veq || veq > upper) eq
-    in
-    if is_impossible_bound || is_eqs_impossible then
-      [ Formula.const_bool false ]
-    else
-      let variable = Formula.symbol (I uid) in
-      let neq_formulas =
-        neq 
-        |> IntSet.to_list
-        |> List.filter (fun v -> lower < v && v < upper)
-        |> List.map (fun v ->
-          Formula.not_
-            (Formula.binop Equal variable (Formula.const_int v)))
-      in
-      if num_eq = 1 then
-        let value_eq = IntSet.find_first (fun _ -> true) eq in
-        Formula.binop Equal variable (Formula.const_int value_eq)
-        :: neq_formulas
-      else
-        let lower_neq = IntSet.find_opt lower neq in
-        let upper_neq = IntSet.find_opt upper neq in
-        let resolved_lower, resolved_upper =
-          match (lower_neq, upper_neq) with
-          | None, None -> (lower, upper)
-          (* drop neq and increment lower bound *)
-          | Some lower_bound_neq, None -> (lower_bound_neq + 1, upper)
-          (* drop neq and decrement upper bound *)
-          | None, Some upper_bound_neq -> (lower, upper_bound_neq - 1)
-          | Some lower_bound_eq, Some upper_bound_eq ->
-            (lower_bound_eq + 1, upper_bound_eq - 1)
-        in
-        match (resolved_lower, resolved_upper) with
-        | lb, rb when lb = Int.min_int && rb = Int.max_int -> neq_formulas
-        | lb, rb when lb = Int.min_int ->
-          Formula.binop Less_than_eq variable (Formula.const_int rb)
-          :: neq_formulas
-        | lb, rb when rb = Int.max_int ->
-          Formula.binop Less_than_eq (Formula.const_int lb) variable
-          :: neq_formulas
-        | lb, rb ->
-          Formula.binop Less_than_eq (Formula.const_int lb) variable
-          :: Formula.binop Less_than_eq variable (Formula.const_int rb)
-          :: neq_formulas)
+  |> List.concat_map bound_to_formula_clauses
   |> fun rewritten -> rewritten @ other_clauses
 
 (** [rewrite_bounds f] is F with redundant inequalities / disequalties dropped.
 *)
 let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
- fun f ->
+  fun f ->
   let open Formula in
   let int_symbol key = symbol (I key) in
   let handle_neq left right =
@@ -258,13 +260,13 @@ let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
     | And ls -> and_ (List.map (fun clause -> normalize_unit clause) ls)
     (* neqs into disjunctions that bellman ford can solve *)
     | Not (Binop (Equal, Key (I left), Key (I right))) ->
-        handle_neq (int_symbol left) (int_symbol right)
+      handle_neq (int_symbol left) (int_symbol right)
     (* x != C *)
     | Not (Binop (Equal, Key (I key), Const_int c)) ->
-        handle_neq (int_symbol key) (const_int c)
+      handle_neq (int_symbol key) (const_int c)
     (* C != x *)
     | Not (Binop (Equal, Const_int c, Key (I key))) ->
-        handle_neq (int_symbol key) (const_int c)
+      handle_neq (int_symbol key) (const_int c)
     | f -> f
   in
   f 
@@ -291,64 +293,64 @@ let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
   let const_int = Formula.const_int in
   match formula with
   | Formula.Not (Binop (Less_than, Key (I y), Key (I x))) ->
-      to_diff_constraints (binop Less_than_eq (symbol x) (symbol y))
+    to_diff_constraints (binop Less_than_eq (symbol x) (symbol y))
   | Not (Binop (Less_than_eq, Key (I x), Key (I y))) ->
-      to_diff_constraints (binop Greater_than (symbol x) (symbol y))
+    to_diff_constraints (binop Greater_than (symbol x) (symbol y))
   | Not (Binop (Less_than_eq, Const_int c, Key (I x))) ->
-      to_diff_constraints (binop Less_than (symbol x) (const_int c))
+    to_diff_constraints (binop Less_than (symbol x) (const_int c))
   | Not (Binop (Less_than, Key (I x), Const_int c)) ->
-      to_diff_constraints (binop Greater_than (symbol x) (const_int c))
+    to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   | Not (Binop (Less_than, Const_int c, Key (I x))) ->
-      to_diff_constraints (binop Greater_than (symbol x) (const_int c))
+    to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   | Not (Binop (Less_than_eq, Key (I x), Const_int c)) ->
-      to_diff_constraints (binop Greater_than (symbol x) (const_int c))
+    to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   (* x = c -> (x - 0 <= c) and (0 - y) <= -c *)
   | Binop (Equal, Key (I x), Const_int c) | Binop (Equal, Const_int c, Key (I x))
     ->
-      [ { x = Symbol_key x; y = Z0; c }; { x = Z0; y = Symbol_key x; c = -c } ]
+    [ { x = Symbol_key x; y = Z0; c }; { x = Z0; y = Symbol_key x; c = -c } ]
   (* x = y -> (x - y) <= 0 and (y - x) <= 0 *)
   | Binop (Equal, Key (I x), Key (I y)) ->
-      [
-        { x = Symbol_key x; y = Symbol_key y; c = 0 };
-        { x = Symbol_key y; y = Symbol_key x; c = 0 };
-      ]
+    [
+      { x = Symbol_key x; y = Symbol_key y; c = 0 };
+      { x = Symbol_key y; y = Symbol_key x; c = 0 };
+    ]
   (* x <= y -> (x - y <= 0)
         y >= x -> (x - y <= 0)
         not (x > y) -> x <= y -> (x - y) <= 0 *)
   | Binop (Less_than_eq, Key (I x), Key (I y)) ->
-      [ { x = Symbol_key x; y = Symbol_key y; c = 0 } ]
+    [ { x = Symbol_key x; y = Symbol_key y; c = 0 } ]
   (* x <= c -> (x - 0) <= c
         c >= x -> (x - 0) <= c
         not (x > c) -> x <= c -> (x - 0) <= c *)
   | Binop (Less_than_eq, Key (I x), Const_int c) ->
-      [ { x = Symbol_key x; y = Z0; c } ]
+    [ { x = Symbol_key x; y = Z0; c } ]
   (* x < c -> x - 0 <= c - 1 *)
   | Binop (Less_than, Key (I x), Const_int c) ->
-      [ { x = Symbol_key x; y = Z0; c = c - 1 } ]
+    [ { x = Symbol_key x; y = Z0; c = c - 1 } ]
   (* x >= c -> 0 - x <= -c
        not (x < c) -> x >= c -> (0 - x) <= -c *)
   | Binop (Less_than_eq, Const_int c, Key (I x)) ->
-      [ { x = Z0; y = Symbol_key x; c = -c } ]
+    [ { x = Z0; y = Symbol_key x; c = -c } ]
   (* x > c -> (0 - x) <= -(c + 1) *)
   | Binop (Less_than, Const_int c, Key (I x)) ->
-      [ { x = Z0; y = Symbol_key x; c = -(c + 1) } ]
+    [ { x = Z0; y = Symbol_key x; c = -(c + 1) } ]
   (* x > y -> (y - x) <= -1 (difference is at least 1) *)
   | Binop (Less_than, Key (I y), Key (I x)) ->
-      [ { x = Symbol_key y; y = Symbol_key x; c = -1 } ]
+    [ { x = Symbol_key y; y = Symbol_key x; c = -1 } ]
   (* x + c <= y  ->  x - y <= -c *)
   | Binop (Less_than_eq, Binop (Plus, Key (I x), Const_int c), Key (I y))
-  | Binop (Less_than_eq, Binop (Plus, Const_int c, Key (I x)), Key (I y)) ->
-      [ { x = Symbol_key x; y = Symbol_key y; c = -c } ]
+    | Binop (Less_than_eq, Binop (Plus, Const_int c, Key (I x)), Key (I y)) ->
+    [ { x = Symbol_key x; y = Symbol_key y; c = -c } ]
   (* y <= x + c  ->  y - x <= c *)
   | Binop (Less_than_eq, Key (I y), Binop (Plus, Key (I x), Const_int c))
-  | Binop (Less_than_eq, Key (I y), Binop (Plus, Const_int c, Key (I x))) ->
-      [ { x = Symbol_key y; y = Symbol_key x; c } ]
+    | Binop (Less_than_eq, Key (I y), Binop (Plus, Const_int c, Key (I x))) ->
+    [ { x = Symbol_key y; y = Symbol_key x; c } ]
   (* x - c <= y  ->  x - y <= c *)
   | Binop (Less_than_eq, Binop (Minus, Key (I x), Const_int c), Key (I y)) ->
-      [ { x = Symbol_key x; y = Symbol_key y; c } ]
+    [ { x = Symbol_key x; y = Symbol_key y; c } ]
   (* y <= x - c  ->  y - x <= -c *)
   | Binop (Less_than_eq, Key (I y), Binop (Minus, Key (I x), Const_int c)) ->
-      [ { x = Symbol_key y; y = Symbol_key x; c = -c } ]
+    [ { x = Symbol_key y; y = Symbol_key x; c = -c } ]
   | And exprs -> List.concat_map to_diff_constraints exprs
   | _ -> []
 
@@ -377,17 +379,17 @@ let to_constraint_graph (formula : (bool, 'k) Formula.t)
   |> fun key_to_index -> (
     let nodes =
       1 + Uid.Map.cardinal key_to_index + 1
-      (* [0; x; y; z0] *)
+    (* [0; x; y; z0] *)
     in
     let get_index x = Uid.Map.find x key_to_index in
     let edges_constraints =
       constraints
       |> List.filter_map (fun { x; y; c } ->
-          match (x, y) with
-          | Symbol_key x, Symbol_key y -> Some (get_index x, get_index y, c)
-          | Symbol_key x, Z0 -> Some (get_index x, nodes - 1, c)
-          | Z0, Symbol_key y -> Some (nodes - 1, get_index y, c)
-          | _ -> None)
+        match (x, y) with
+        | Symbol_key x, Symbol_key y -> Some (get_index x, get_index y, c)
+        | Symbol_key x, Z0 -> Some (get_index x, nodes - 1, c)
+        | Z0, Symbol_key y -> Some (nodes - 1, get_index y, c)
+        | _ -> None)
     in
     let dummy_root_edges = List.init nodes (fun i -> (0, i, 0)) in
     let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
@@ -400,11 +402,11 @@ let to_constraint_graph (formula : (bool, 'k) Formula.t)
 *)
 let is_idl_clause : type k. (bool, k) Formula.t -> bool = function
   | Formula.Binop (Less_than, Key (I _), Key (I _))
-  | Formula.Binop (Less_than_eq, Key (I _), Key (I _))
-  | Formula.Binop (Less_than, Const_int _, Key (I _))
-  | Formula.Binop (Less_than_eq, Const_int _, Key (I _))
-  | Formula.Binop (Less_than, Key (I _), Const_int _)
-  | Formula.Binop (Less_than_eq, Key (I _), Const_int _) -> true
+    | Formula.Binop (Less_than_eq, Key (I _), Key (I _))
+    | Formula.Binop (Less_than, Const_int _, Key (I _))
+    | Formula.Binop (Less_than_eq, Const_int _, Key (I _))
+    | Formula.Binop (Less_than, Key (I _), Const_int _)
+    | Formula.Binop (Less_than_eq, Key (I _), Const_int _) -> true
   | _ -> false
 
 (** [partition formula] partitions FORMULA into formulas [SOLVABLE, UNSOLVABLE],
@@ -414,9 +416,9 @@ let partition_idl (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t list *
   let rec aux solvable unsolvable = function
     | [] -> (List.rev solvable, List.rev unsolvable)
     | clause :: rest ->
-        if is_idl_clause clause then
-          aux (clause :: solvable) unsolvable rest
-        else aux solvable (clause :: unsolvable) rest
+      if is_idl_clause clause then
+        aux (clause :: solvable) unsolvable rest
+      else aux solvable (clause :: unsolvable) rest
   in
   aux [] [] (Formula.clauses_from formula)
 
@@ -432,21 +434,21 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
   in
   let vertices = Array.init nodes (fun i -> i) in
   let relax_distances =
-   fun (distance, predecessor) (u, v, w) ->
+    fun (distance, predecessor) (u, v, w) ->
     match (distance.(u), distance.(v)) with
     | du, _ when du = Int.max_int -> (distance, predecessor)
     | du, dv when dv = Int.max_int ->
-        let () =
-          distance.(v) <- du + w;
-          predecessor.(v) <- Some u
-        in
-        (distance, predecessor)
+      let () =
+        distance.(v) <- du + w;
+        predecessor.(v) <- Some u
+      in
+      (distance, predecessor)
     | du, dv ->
-        let () =
-          if du + w < dv then distance.(v) <- du + w;
-          predecessor.(v) <- Some u
-        in
-        (distance, predecessor)
+      let () =
+        if du + w < dv then distance.(v) <- du + w;
+        predecessor.(v) <- Some u
+      in
+      (distance, predecessor)
   in
   let distance, predecessor =
     Array.fold_left
@@ -468,22 +470,22 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
   match find_cycle_start 0 with
   | None -> `No_negative_cycle (distance, predecessor)
   | Some vertex ->
-      let rec move_back x i =
-        if i = 0 then x
-        else
-          match predecessor.(x) with
-          | None -> x
-          | Some parent -> move_back parent (i - 1)
-      in
-      let cycle_vertex = move_back vertex nodes in
-      let rec collect_cycle curr acc =
-        if List.mem curr acc then curr :: acc
-        else
-          match predecessor.(curr) with
-          | None -> curr :: acc
-          | Some parent -> collect_cycle parent (curr :: acc)
-      in
-      `Negative_cycle (collect_cycle cycle_vertex [])
+    let rec move_back x i =
+      if i = 0 then x
+      else
+        match predecessor.(x) with
+        | None -> x
+        | Some parent -> move_back parent (i - 1)
+    in
+    let cycle_vertex = move_back vertex nodes in
+    let rec collect_cycle curr acc =
+      if List.mem curr acc then curr :: acc
+      else
+        match predecessor.(curr) with
+        | None -> curr :: acc
+        | Some parent -> collect_cycle parent (curr :: acc)
+    in
+    `Negative_cycle (collect_cycle cycle_vertex [])
 
 (** [solve_diff formula] finds the tightest upper bounds of each integer variable in FORMULA
 
