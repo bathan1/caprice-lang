@@ -249,7 +249,7 @@ let dpll
   : k Solution.t =
   if not (is_solvable_by (module FormulaSymbol) logics f) then solve_next f
   else
-    f |> Integer.to_propositional ~to_symbol |> fun (props, map) ->
+    let props, map = Integer.to_propositional ~to_symbol f in
     let keyset = Formula.symbols f in
     let decode = fun uid -> Uid.Map.find uid map in
     let clauses = Formula.clauses_from props in

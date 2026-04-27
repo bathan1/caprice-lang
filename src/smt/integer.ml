@@ -92,18 +92,11 @@ type int_constraint = {
   lower : int;
   upper : int;
   neq : IntSet.t;
-  eq : IntSet.t;
 }
 
-let bound_to_formula_clauses (uid, { lower; upper; neq; eq } : Uid.t * int_constraint) =
+let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constraint) =
   let is_impossible_bound = lower > upper in
-  let num_eq = IntSet.cardinal eq in
-  let is_eqs_impossible =
-    num_eq > 1
-    || IntSet.cardinal (IntSet.inter eq neq) > 0
-    || IntSet.exists (fun veq -> lower > veq || veq > upper) eq
-  in
-  if is_impossible_bound || is_eqs_impossible then
+  if is_impossible_bound then
     [ Formula.const_bool false ]
   else
     let variable = Formula.symbol (I uid) in
@@ -115,9 +108,8 @@ let bound_to_formula_clauses (uid, { lower; upper; neq; eq } : Uid.t * int_const
         Formula.not_
           (Formula.binop Equal variable (Formula.const_int v)))
     in
-    if num_eq = 1 then
-      let value_eq = IntSet.find_first (fun _ -> true) eq in
-      Formula.binop Equal variable (Formula.const_int value_eq)
+    if lower = upper then
+      Formula.binop Equal variable (Formula.const_int lower)
       :: neq_formulas
     else
       let lower_neq = IntSet.find_opt lower neq in
@@ -179,67 +171,64 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
         (* lowest upper bound *)
         neq = IntSet.empty;
         (* not equal list *)
-        eq = IntSet.empty;
       }
   in
   let collect_bounds = 
-    (fun (acc, other) clause ->
+    fun (acc, other) clause ->
       match clause with
-      (* neq case *)
-      | Formula.Not (Binop (Equal, Const_int c, Key (I key)))
-        | Not (Binop (Equal, Key (I key), Const_int c)) ->
-        let { lower; upper; neq; eq } = find_or_default key acc in
+      | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
+        let { lower; upper; neq; } = find_or_default key acc in
         let next_neq_set = IntSet.add c neq in
         let next =
-          Uid.Map.add key { lower; upper; neq = next_neq_set; eq } acc
+          Uid.Map.add key { lower; upper; neq = next_neq_set; } acc
         in
         (next, other)
       (* eq case *)
       | Formula.Binop (Equal, Const_int c, Key (I key))
-        | Formula.Binop (Equal, Key (I key), Const_int c) ->
-        let { lower; upper; neq; eq } = find_or_default key acc in
-        let next_eq_set = IntSet.add c eq in
+      | Formula.Binop (Equal, Key (I key), Const_int c) ->
+        let { neq; _ } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower; upper; neq; eq = next_eq_set } acc
+          Uid.Map.add key { lower = c; upper = c; neq; } acc
         in
         (next, other)
       (* lower bounds *)
       | Binop (Less_than_eq, Const_int c, Key (I key)) ->
-        let { lower; upper; neq; eq } = find_or_default key acc in
+        let { lower; upper; neq; } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower = max lower c; upper; neq; eq } acc
+          Uid.Map.add key { lower = max lower c; upper; neq; } acc
         in
         (next, other)
       | Binop (Less_than, Const_int c, Key (I key)) ->
-        let { lower; upper; neq; eq } = find_or_default key acc in
+        let { lower; upper; neq; } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower = max lower (c + 1); upper; neq; eq }
+            { lower = max lower (c + 1); upper; neq; }
             acc
         in
         (next, other)
       (* upper bounds *)
       | Binop (Less_than_eq, Key (I key), Const_int c) ->
-        let { lower; upper; neq; eq } = find_or_default key acc in
+        let { lower; upper; neq; } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower; upper = min upper c; neq; eq } acc
+          Uid.Map.add key { lower; upper = min upper c; neq; } acc
         in
         (next, other)
       | Binop (Less_than, Key (I key), Const_int c) ->
-        let { lower; upper; neq; eq } = find_or_default key acc in
+        let { lower; upper; neq; } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower; upper = min upper (c - 1); neq; eq }
+            { lower; upper = min upper (c - 1); neq; }
             acc
         in
         (next, other)
       | f -> (acc, f :: other)
-    ) in
+  in
   fun clauses ->
-  clauses
-  |> List.fold_left collect_bounds (Uid.Map.empty, [])
-  |> fun (bounds_map, other_clauses) ->
-  bounds_map |> Uid.Map.to_list
+  let bounds_map, other_clauses = (
+    List.fold_left collect_bounds (Uid.Map.empty, []) clauses
+  ) in
+  bounds_map 
+  |> Uid.Map.to_list
   |> List.concat_map bound_to_formula_clauses
   |> fun rewritten -> rewritten @ other_clauses
 
