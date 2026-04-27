@@ -1,11 +1,7 @@
 open Utils
 
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
-(** A [k solver] accepts a FORMULA with K [Symbol.t] and returns a K [Solution.t] *)
-
 type 'k simplifier = 'k solver -> 'k solver
-(** A [k simplifier] accepts a SOLVER that operates on formulas using
-    K [Symbol.t] symbols and returns another K SOLVER *)
 
 type 'k partitioner = (bool, 'k) Formula.t -> (bool, 'k) Formula.t list * (bool, 'k) Formula.t list
 (** A partitioner is a function [partition f] that partitions ORDERED clauses F
@@ -26,6 +22,7 @@ let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
 type ('a, 'k) key_value = ('a, 'k) Symbol.t * value:'a
 type 'k assignment =
   | Assign : ('a, 'k) key_value -> 'k assignment
+
 let rec find_unit_literal (f : (bool, 'k) Formula.t) : 'k assignment option =
   match f with
   | Formula.Key bool_symbol -> Some (Assign (bool_symbol, ~value:true))
@@ -119,13 +116,14 @@ let unit_propagate (clauses : (bool, 'k) Formula.t list) :
     match find_first_unit_literal clauses with
     | None -> (clauses, truth_tbl)
     | Some (key, value) -> (
-        let clauses_anded = Formula.and_ clauses in
         let uid = Symbol.to_uid key in
         let next_truthtbl = Uid.Map.add uid value truth_tbl in
-        let next = Formula.subst value key clauses_anded in
+        let next = List.map (Formula.subst value key) clauses in
         match next with
-        | And next_ls -> propagate next_ls next_truthtbl
-        | rest -> ([ rest ], next_truthtbl))
+        | [] -> clauses, next_truthtbl
+        | [hd] -> ([ hd ], next_truthtbl)
+        | next -> propagate next next_truthtbl
+    )
   in
   propagate clauses Uid.Map.empty
 
