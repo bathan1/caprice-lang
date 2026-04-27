@@ -82,7 +82,7 @@ let to_propositional
       counter := count + 1;
       Hashtbl.add hash resolved_uid atomic;
       prop_formula
-    | And ls -> ls |> List.map aux |> Formula.and_
+    | And ls -> Formula.and_ (List.map aux ls)
     | expr -> expr
   in
   let bool_f = aux formula in

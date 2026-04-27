@@ -146,13 +146,12 @@ let contains_const_false ls = List.exists (
   | _ -> false
 ) ls
 
-let is_falsified_clause (model_state : bool Uid.Map.t) (vars : Uid.Set.t) : bool
-    =
-  vars
-  |> Uid.Set.for_all (fun symbol ->
-      match Uid.Map.find_opt symbol model_state with
-      | None -> false
-      | Some v -> not v)
+let is_falsified_clause (model_state : bool Uid.Map.t) (vars : Uid.Set.t) : bool =
+  Uid.Set.for_all (fun symbol ->
+    match Uid.Map.find_opt symbol model_state with
+    | None -> false
+    | Some v -> not v
+  ) vars
 
 let is_solvable_by
     (type k)
