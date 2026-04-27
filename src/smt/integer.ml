@@ -91,7 +91,7 @@ let to_propositional
 type int_constraint = {
   lower : int;
   upper : int;
-  neq : IntSet.t;
+  neq : int list;
 }
 
 let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constraint) =
@@ -102,18 +102,17 @@ let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constrai
     let variable = Formula.symbol (I uid) in
     let neq_formulas =
       neq 
-      |> IntSet.to_list
       |> List.filter (fun v -> lower < v && v < upper)
       |> List.map (fun v ->
-        Formula.not_
-          (Formula.binop Equal variable (Formula.const_int v)))
+        Formula.binop Not_equal variable (Formula.const_int v)
+      )
     in
     if lower = upper then
       Formula.binop Equal variable (Formula.const_int lower)
       :: neq_formulas
     else
-      let lower_neq = IntSet.find_opt lower neq in
-      let upper_neq = IntSet.find_opt upper neq in
+      let lower_neq = List.find_opt (fun v -> v = lower) neq in
+      let upper_neq = List.find_opt (fun v -> v = upper) neq in
       let resolved_lower, resolved_upper =
         match (lower_neq, upper_neq) with
         | None, None -> (lower, upper)
@@ -169,7 +168,7 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
         (* greatest lower bound *)
         upper = Int.max_int;
         (* lowest upper bound *)
-        neq = IntSet.empty;
+        neq = [];
         (* not equal list *)
       }
   in
@@ -178,7 +177,7 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       match clause with
       | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
         let { lower; upper; neq; } = find_or_default key acc in
-        let next_neq_set = IntSet.add c neq in
+        let next_neq_set = c :: neq in
         let next =
           Uid.Map.add key { lower; upper; neq = next_neq_set; } acc
         in
@@ -418,23 +417,23 @@ exception Graph_disconnected of int
 *)
 let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
   let init =
-    ( Array.init nodes (fun i -> if i = src then 0 else Int.max_int),
+    ( Array.init nodes (fun i -> if i = src then Some 0 else None),
       Array.init nodes (fun _ : int option -> None) )
   in
   let vertices = Array.init nodes (fun i -> i) in
   let relax_distances =
     fun (distance, predecessor) (u, v, w) ->
     match (distance.(u), distance.(v)) with
-    | du, _ when du = Int.max_int -> (distance, predecessor)
-    | du, dv when dv = Int.max_int ->
+    | None , _ -> (distance, predecessor)
+    | Some du, None ->
       let () =
-        distance.(v) <- du + w;
+        distance.(v) <- Some (du + w);
         predecessor.(v) <- Some u
       in
       (distance, predecessor)
-    | du, dv ->
+    | Some du, Some dv ->
       let () =
-        if du + w < dv then distance.(v) <- du + w;
+        if du + w < dv then distance.(v) <- Some (du + w);
         predecessor.(v) <- Some u
       in
       (distance, predecessor)
@@ -451,13 +450,13 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
     else
       let u, v, w = edges.(i) in
       match (distance.(u), distance.(v)) with
-      | du, _ when du = Int.max_int -> raise (Graph_disconnected u)
-      | _, dv when dv = Int.max_int -> raise (Graph_disconnected v)
-      | du, dv when du + w < dv -> Some v
+      | None, _ -> raise (Graph_disconnected u)
+      | _, None -> raise (Graph_disconnected v)
+      | Some du, Some dv when du + w < dv -> Some v
       | _ -> find_cycle_start (i + 1)
   in
   match find_cycle_start 0 with
-  | None -> `No_negative_cycle (distance, predecessor)
+  | None -> `No_negative_cycle (Array.map (Option.value ~default:Int.max_int) distance, predecessor)
   | Some vertex ->
     let rec move_back x i =
       if i = 0 then x
