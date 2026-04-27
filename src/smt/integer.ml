@@ -2,9 +2,9 @@ open Utils
 
 module IntSet = Uid.IntSet
 
-(** [symbol uid] is an int symbol with UID wrapped over a [Formula.Key]
+(** [int_symbol uid] is an int symbol with UID wrapped over a [Formula.Key]
 *)
-let symbol (uid : Uid.t) = Formula.symbol (I uid)
+let int_symbol (uid : Uid.t) = Formula.symbol (I uid)
 
 (** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula.
 *)
@@ -15,17 +15,17 @@ let linearize formula =
     Binop (Plus, Key (I x), Key (I y)),
     Key (I z) )
     when x = z ->
-    Formula.binop binop (symbol y) (Formula.const_int 0)
+    Formula.binop binop (int_symbol y) (Formula.const_int 0)
   | Binop
     ( ((Less_than_eq | Less_than) as binop),
     Binop (Plus, Key (I x), Key (I y)),
     Key (I z) )
-    when y = z -> Formula.binop binop (symbol x) (Formula.const_int 0)
+    when y = z -> Formula.binop binop (int_symbol x) (Formula.const_int 0)
   | Binop
     ( ((Less_than_eq | Less_than) as binop),
     Binop (Plus, Key (I x), Const_int a),
     Const_int b ) ->
-    Formula.binop binop (symbol x) (Formula.const_int (b - a))
+    Formula.binop binop (int_symbol x) (Formula.const_int (b - a))
   (* expr <= c  OR expr < c OR expr = c *)
   | Binop
     ( ((Less_than_eq | Less_than | Equal) as binop),
@@ -35,13 +35,13 @@ let linearize formula =
       | Plus ->
         (* a + b <= c  ==>  a <= c - b *)
         Formula.binop binop
-          (symbol a)
-          (Formula.binop Minus (Formula.const_int c) (symbol b))
+          (int_symbol a)
+          (Formula.binop Minus (Formula.const_int c) (int_symbol b))
       | Minus ->
         (* a - b <= c  ==>  a <= c + b *)
         Formula.binop binop
-          (symbol a)
-          (Formula.binop Plus (Formula.const_int c) (symbol b))
+          (int_symbol a)
+          (Formula.binop Plus (Formula.const_int c) (int_symbol b))
       | _ -> failwith "unreachable")
   (* c <= expr OR c < expr OR c = expr *)
   | Binop
@@ -52,13 +52,13 @@ let linearize formula =
       | Plus ->
         (* c <= a + b  ==>  c - b <= a *)
         Formula.binop binop
-          (Formula.binop Minus (Formula.const_int c) (symbol b))
-          (symbol a)
+          (Formula.binop Minus (Formula.const_int c) (int_symbol b))
+          (int_symbol a)
       | Minus ->
         (* c <= a - b  ==>  c + b <= a *)
         Formula.binop binop
-          (Formula.binop Plus (Formula.const_int c) (symbol b))
-          (symbol a)
+          (Formula.binop Plus (Formula.const_int c) (int_symbol b))
+          (int_symbol a)
       | _ -> failwith "unreachable")
   | f -> f
 
@@ -238,22 +238,19 @@ let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
   let open Formula in
   let int_symbol key = symbol (I key) in
   let handle_neq left right =
-    let right_minus_one = binop Plus right (const_int (-1)) in
+    let right_minus_one = binop Minus right (const_int 1) in
     let right_plus_one = binop Plus right (const_int 1) in
     let left_ineq = binop Less_than_eq left right_minus_one in
     let right_ineq = binop Less_than_eq right_plus_one left in
     binop Or left_ineq right_ineq
   in
   let rec normalize_unit : type a. (a, k) t -> (a, k) t = function
-    | And ls -> and_ (List.map (fun clause -> normalize_unit clause) ls)
+    | And ls -> and_ (List.map normalize_unit ls)
     (* neqs into disjunctions that bellman ford can solve *)
     | Not (Binop (Equal, Key (I left), Key (I right))) ->
       handle_neq (int_symbol left) (int_symbol right)
     (* x != C *)
     | Not (Binop (Equal, Key (I key), Const_int c)) ->
-      handle_neq (int_symbol key) (const_int c)
-    (* C != x *)
-    | Not (Binop (Equal, Const_int c, Key (I key))) ->
       handle_neq (int_symbol key) (const_int c)
     | f -> f
   in
@@ -277,23 +274,9 @@ type diff_constraint = {
 *)
 let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
   : diff_constraint list =
-  let binop = Formula.binop in 
-  let const_int = Formula.const_int in
   match formula with
-  | Formula.Not (Binop (Less_than, Key (I y), Key (I x))) ->
-    to_diff_constraints (binop Less_than_eq (symbol x) (symbol y))
-  | Not (Binop (Less_than_eq, Key (I x), Key (I y))) ->
-    to_diff_constraints (binop Greater_than (symbol x) (symbol y))
-  | Not (Binop (Less_than_eq, Const_int c, Key (I x))) ->
-    to_diff_constraints (binop Less_than (symbol x) (const_int c))
-  | Not (Binop (Less_than, Key (I x), Const_int c)) ->
-    to_diff_constraints (binop Greater_than (symbol x) (const_int c))
-  | Not (Binop (Less_than, Const_int c, Key (I x))) ->
-    to_diff_constraints (binop Greater_than (symbol x) (const_int c))
-  | Not (Binop (Less_than_eq, Key (I x), Const_int c)) ->
-    to_diff_constraints (binop Greater_than (symbol x) (const_int c))
   (* x = c -> (x - 0 <= c) and (0 - y) <= -c *)
-  | Binop (Equal, Key (I x), Const_int c) | Binop (Equal, Const_int c, Key (I x))
+  | Binop (Equal, Key (I x), Const_int c)
     ->
     [ { x = Symbol_key x; y = Z0; c }; { x = Z0; y = Symbol_key x; c = -c } ]
   (* x = y -> (x - y) <= 0 and (y - x) <= 0 *)
@@ -353,9 +336,8 @@ let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
 *)
 let to_constraint_graph (formula : (bool, 'k) Formula.t)
   : nodes:int * edges:(int * int * int) array * int Uid.Map.t =
-  formula
-  |> to_diff_constraints
-  |> fun constraints -> List.concat_map (fun {x; y; _} ->
+  let constraints = to_diff_constraints formula in
+  List.concat_map (fun {x; y; _} ->
     match (x, y) with
     | Symbol_key x, Symbol_key y -> [ x; y ]
     | Symbol_key key, Z0 | Z0, Symbol_key key -> [ key ]
@@ -401,14 +383,7 @@ let is_idl_clause : type k. (bool, k) Formula.t -> bool = function
     where UNSOLVABLE is an empty list if everything can be solved by IDL
 *)
 let partition_idl (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t list * (bool, 'k) Formula.t list =
-  let rec aux solvable unsolvable = function
-    | [] -> (List.rev solvable, List.rev unsolvable)
-    | clause :: rest ->
-      if is_idl_clause clause then
-        aux (clause :: solvable) unsolvable rest
-      else aux solvable (clause :: unsolvable) rest
-  in
-  aux [] [] (Formula.clauses_from formula)
+  List.partition is_idl_clause (Formula.clauses_from formula)
 
 exception Graph_disconnected of int
 
@@ -500,14 +475,15 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
     ]}
 *)
 let solve_diff (formula : (bool, 'k) Formula.t) : 'k Solution.t =
-  formula |> to_constraint_graph |> fun (~nodes, ~edges, key_to_index) ->
-  bellman_ford nodes edges ~src:0 |> function
+  let (~nodes, ~edges, key_to_index) = to_constraint_graph formula in
+  match bellman_ford nodes edges ~src:0 with
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->
     let n = Array.length distances in
     let offset = distances.(n - 1) in
     let local_model = Uid.Map.map (fun index ->
-      Model.Int (offset - distances.(index))
-    ) key_to_index in
+        Model.Int (offset - distances.(index))
+      ) key_to_index
+    in
     let model = Model.from_value_map local_model in
     Solution.Sat model

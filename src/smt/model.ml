@@ -23,30 +23,27 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
   in
   { value ; domain = [ match s with (I uid | B uid) -> uid ] }
 
-(** [of_local domain ~lookup] (unsafely) casts DOMAIN and LOOKUP function into a [Model.t]
 
-    LOOKUP is passed in the [Uid.t] of a formula key and should return
-    an [option] of whatever value LOCAL holds for the given uid.
+type value =
+  | Bool of bool
+  | Int of int
 
-    {2 From an {!Int.Map} local solution}
-
-    Local solutions that use some kind of a {!Map} map nicely to
-    to the 'global' {!t}:
+(** [from_value_map map] wraps [Uid.t]-keyed MAP with Model.t.
 
     {[
     module IntMap = Map.Make (Int)
     let () =
       let int_map = (
         IntMap.empty
-        |> Map.add_exn ~key:(Char.to_int 'a') ~data:0
-        |> Map.add_exn ~key:(Char.to_int 'b') ~data:1
+        |> Map.add_exn ~key:(Char.to_int 'a') ~data:(Int 0)
+        |> Map.add_exn ~key:(Char.to_int 'b') ~data:(Int 1)
       ) in
         let pp_model = Model.to_string ~sep:("; ") ~pp_assignment:(
           fun (I x) v -> sprintf " %c => %s" (Char.of_int_exn x) (
             if v = 0 then "hello" else "world"
           )
         ) in
-        let model = Model.of_local int_map ~lookup:Map.find in
+        let model = Model.from_value_map int_map in
         pp_model model [a; b;]
         |> printf "From local: %s\n";
     ]}
@@ -55,11 +52,6 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
 
     {["From local: { a => hello; b => world }"]}
 *)
-
-type value =
-  | Bool of bool
-  | Int of int
-
 let from_value_map (map : value Uid.Map.t) =
   let bindings = Uid.Map.to_list map in
   let domain = List.map (fun (key, _) -> key) bindings in

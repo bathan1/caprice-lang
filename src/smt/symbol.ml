@@ -31,9 +31,11 @@ module Make (Key : KEY) = struct
     B (Key.uid k)
 end
 
+(** [to_uid symbol] extracts the [Uid.t] key from SYMBOL. *)
 let to_uid (type a) (key : (a, 'k) t) = 
-  key
-  |> function | B uid -> uid | I uid -> uid
+  match key with
+  | B uid
+  | I uid -> uid
 
 module AsciiSymbol = Make (struct
   type t = char
