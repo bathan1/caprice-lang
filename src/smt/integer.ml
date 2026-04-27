@@ -1,6 +1,6 @@
 open Utils
 
-module IntSet = Uid.IntSet
+module IntSet = Iterables.IntSet
 
 (** [int_symbol uid] is an int symbol with UID wrapped over a [Formula.Key]
 *)
