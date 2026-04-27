@@ -202,20 +202,14 @@ let check
         | Solution.Unknown -> None
         | Solution.Unsat -> None)
     in
-
-    let domains =
-      sat_models |> List.map (fun m -> m.Model.domain |> Uid.Set.of_list)
-    in
-
+    let domains = List.map (fun m -> Uid.Set.of_list m.Model.domain) sat_models in
     let rec is_pairwise_disjoint = function
       | [] -> true
       | d :: rest ->
           List.for_all (fun d' -> Uid.Set.is_empty (Uid.Set.inter d d')) rest
           && is_pairwise_disjoint rest
     in
-
-    let covered = domains |> List.fold_left Uid.Set.union Uid.Set.empty in
-
+    let covered = List.fold_left Uid.Set.union Uid.Set.empty domains in
     if is_pairwise_disjoint domains && Uid.Set.equal covered keyset then
       let merged_model =
         List.fold_left Model.merge Model.empty sat_models
@@ -235,6 +229,14 @@ let check
 *)
 let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
  fun f g -> fun solve -> g (f solve)
+
+
+let contains_const_true model keys =
+  Uid.Set.exists (fun uid ->
+    match Uid.Map.find_opt uid model with
+    | None -> false
+    | Some v -> v
+  ) keys
 
 let dpll
   (type k)
@@ -259,7 +261,7 @@ let dpll
             if tv then formula else Formula.not_ formula))
     in
     let rec dpll clauses model_state =
-      let curr_keyset = clauses |> List.map Formula.symbols in
+      let curr_keyset = List.map Formula.symbols clauses in
       if
         List.is_empty curr_keyset
         || List.exists (is_falsified_clause model_state) curr_keyset
@@ -275,39 +277,30 @@ let dpll
           match clauses with [ Const_bool true ] -> true | _ -> false
         in
         let is_sat =
-          is_trivial_true
-          || curr_keyset
-             |> List.for_all (fun uids ->
-                 uids
-                 |> Uid.Set.exists (fun uid ->
-                     match Uid.Map.find_opt uid model_state with
-                     | None -> false
-                     | Some v -> v))
+          is_trivial_true ||
+          List.for_all (fun uids -> contains_const_true model_state uids) curr_keyset
         in
         if is_sat then
-          let final_model =
-            Uid.Map.add_seq
-              (model_state |> Uid.Map.domain |> Uid.Set.to_seq
-              |> Seq.map (fun key -> (key, leftovers key)))
-              model_state
-          in
+          let missing_keys = Uid.Set.diff keyset (Uid.Map.domain model_state) in
+          let with_leftovers_assigned = (
+            missing_keys
+            |> Uid.Set.to_seq
+            |> Seq.map (fun key -> (key, leftovers key))
+          ) in
+          let final_model = Uid.Map.add_seq with_leftovers_assigned model_state in
           check (module FormulaSymbol) logics (rebuild_logical final_model) keyset
         else
-          let propped, model =
-            clauses |> unit_propagate |> fun (e, partial) ->
-            ( e,
-              model_state |> Uid.Map.union (fun _ _ new_v -> Some new_v) partial
-            )
-          in
+          let propagated, partial_model = unit_propagate clauses in 
+          let curr_model = Uid.Map.union (fun _ _ new_v -> Some new_v) model_state partial_model in
           let check_model model = check (module FormulaSymbol) logics (rebuild_logical model) keyset in
-          match propped with
-          | [] -> check_model model
+          match propagated with
+          | [] -> check_model curr_model
           | ls when contains_const_false ls -> Solution.Unsat
-          | propped ->
-              let next_f = Formula.and_ propped in
-              let branch_key = choose_literal propped in
+          | propagated ->
+              let next_f = Formula.and_ propagated in
+              let branch_key = choose_literal propagated in
               let uid = Symbol.to_uid branch_key in
-              let true_model = Uid.Map.add uid true model in
+              let true_model = Uid.Map.add uid true curr_model in
               let true_clauses = Formula.clauses_from (
                 Formula.subst true branch_key next_f
               ) in
@@ -317,19 +310,18 @@ let dpll
               | true_clauses -> (
                   match dpll true_clauses true_model with
                   | Solution.Unsat ->
-                      let false_model = Uid.Map.add uid false model in
+                      let false_model = Uid.Map.add uid false curr_model in
                       let false_clauses = Formula.clauses_from (
                         Formula.subst false branch_key next_f
                       ) in
                       dpll false_clauses false_model
                   | s -> s)
     in
-    dpll clauses Uid.Map.empty |> function
+    match dpll clauses Uid.Map.empty with
     | Solution.Unknown -> solve_next f
     | s -> s
 
 [@@@ocaml.warning "-48"]
-
 let dpll_simplify (type k) (module FormulaSymbol : Symbol.KEY with type t = k) : k simplifier =
   dpll
     ~to_symbol:(fun off ->

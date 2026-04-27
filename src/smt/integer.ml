@@ -223,13 +223,13 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       | f -> (acc, f :: other)
   in
   fun clauses ->
-  let bounds_map, other_clauses = (
-    List.fold_left collect_bounds (Uid.Map.empty, []) clauses
-  ) in
-  bounds_map 
-  |> Uid.Map.to_list
-  |> List.concat_map bound_to_formula_clauses
-  |> fun rewritten -> rewritten @ other_clauses
+    let bounds_map, other_clauses = (
+      List.fold_left collect_bounds (Uid.Map.empty, []) clauses
+    ) in
+    bounds_map 
+    |> Uid.Map.to_list
+    |> List.concat_map bound_to_formula_clauses
+    |> fun rewritten -> rewritten @ other_clauses
 
 (** [rewrite_bounds f] is F with redundant inequalities / disequalties dropped.
 *)
