@@ -123,18 +123,20 @@ let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constrai
         | Some lower_bound_eq, Some upper_bound_eq ->
           (lower_bound_eq + 1, upper_bound_eq - 1)
       in
-      match (resolved_lower, resolved_upper) with
-      | lb, rb when lb = Int.min_int && rb = Int.max_int -> neq_formulas
-      | lb, rb when lb = Int.min_int ->
-        Formula.binop Less_than_eq variable (Formula.const_int rb)
-        :: neq_formulas
-      | lb, rb when rb = Int.max_int ->
-        Formula.binop Less_than_eq (Formula.const_int lb) variable
-        :: neq_formulas
-      | lb, rb ->
-        Formula.binop Less_than_eq (Formula.const_int lb) variable
-        :: Formula.binop Less_than_eq variable (Formula.const_int rb)
-        :: neq_formulas
+      let lower_bound = 
+        match resolved_lower with
+        | lb when lb = Int.min_int -> None
+        | lb -> Some (Formula.binop Less_than_eq (Formula.const_int lb) variable)
+      in
+      let upper_bound =
+        match resolved_upper with
+        | ub when ub = Int.max_int -> None
+        | ub -> Some (Formula.binop Less_than_eq variable (Formula.const_int ub))
+      in
+      match lower_bound, upper_bound with
+      | None, None -> neq_formulas
+      | Some bound, None | None, Some bound -> bound :: neq_formulas
+      | Some lb, Some ub -> lb :: ub :: neq_formulas
 
 (** [prune clauses] drops redundant inequalities and neqs from CLAUSES
 
