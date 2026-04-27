@@ -16,18 +16,18 @@ let linearize formula =
     Key (I z) )
     when x = z ->
     Formula.binop binop (symbol y) (Formula.const_int 0)
-  | Formula.Binop
+  | Binop
     ( ((Less_than_eq | Less_than) as binop),
     Binop (Plus, Key (I x), Key (I y)),
     Key (I z) )
     when y = z -> Formula.binop binop (symbol x) (Formula.const_int 0)
-  | Formula.Binop
+  | Binop
     ( ((Less_than_eq | Less_than) as binop),
     Binop (Plus, Key (I x), Const_int a),
     Const_int b ) ->
     Formula.binop binop (symbol x) (Formula.const_int (b - a))
   (* expr <= c  OR expr < c OR expr = c *)
-  | Formula.Binop
+  | Binop
     ( ((Less_than_eq | Less_than | Equal) as binop),
     Binop (((Plus | Minus) as op), Key (I a), Key (I b)),
     Const_int c ) -> (
@@ -44,7 +44,7 @@ let linearize formula =
           (Formula.binop Plus (Formula.const_int c) (symbol b))
       | _ -> failwith "unreachable")
   (* c <= expr OR c < expr OR c = expr *)
-  | Formula.Binop
+  | Binop
     ( ((Less_than_eq | Less_than | Equal) as binop),
     Const_int c,
     Binop (((Plus | Minus) as op), Key (I a), Key (I b)) ) -> (

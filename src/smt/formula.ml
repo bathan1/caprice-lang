@@ -309,14 +309,14 @@ let clauses_from (f : (bool, 'k) t) = match f with And ls -> ls | f -> [ f ]
 
 let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
  fun target -> function
+  | Not formula -> contains_binop target formula
   | Binop (op, l, r) ->
       Binop.poly_equal op target || contains_binop target l
       || contains_binop target r
   | _ -> false
 
-let to_string : type a. ?uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
- fun ?(uid : Utils.Uid.t -> string =
-       fun x -> x |> Utils.Uid.to_int |> Char.chr |> String.of_char) x ->
+let to_string : type a. uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
+ fun ~uid formula ->
   let rec to_string : type a. (a, 'k) t -> string = function
     | Const_int i -> string_of_int i
     | Const_bool b -> string_of_bool b
@@ -331,5 +331,5 @@ let to_string : type a. ?uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
         Format.sprintf "(%s %s %s)" (to_string e1) (Binop.to_string bop)
           (to_string e2)
   in
-  to_string x
+  to_string formula
 
