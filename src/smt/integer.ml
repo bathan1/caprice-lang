@@ -22,9 +22,14 @@ let linearize formula =
     Key (I z) )
     when y = z -> Formula.binop binop (int_symbol x) (Formula.const_int 0)
   | Binop
-    ( ((Less_than_eq | Less_than) as binop),
-    Binop (Plus, Key (I x), Const_int a),
-    Const_int b ) ->
+    (
+      ((Less_than_eq | Less_than) as binop),
+      (
+        Binop (Plus, Key (I x), Const_int a)
+        | Binop (Plus, Const_int a, Key (I x))
+      ),
+      Const_int b
+    ) ->
     Formula.binop binop (int_symbol x) (Formula.const_int (b - a))
   (* expr <= c  OR expr < c OR expr = c *)
   | Binop
@@ -71,21 +76,30 @@ let to_propositional
   (formula : (bool, 'k) Formula.t) =
   let counter = ref 0 in
   let hash = Hashtbl.create 32 in
-  let rec aux f =
-    match f with
-    | ( Formula.Not (Binop (Equal, _, _))
-      | Formula.Binop ((Less_than_eq | Less_than | Equal), _, _) ) as atomic ->
-      let count = !counter in
-      let prop_sym = to_symbol count in
-      let resolved_uid = Symbol.to_uid prop_sym in
-      let prop_formula = Formula.symbol prop_sym in
-      counter := count + 1;
-      Hashtbl.add hash resolved_uid atomic;
-      prop_formula
-    | And ls -> Formula.and_ (List.map aux ls)
-    | expr -> expr
+  let get_next_symbol atomic = 
+    let count = !counter in
+    let prop_sym = to_symbol count in
+    let resolved_uid = Symbol.to_uid prop_sym in
+    counter := count + 1;
+    Hashtbl.add hash resolved_uid atomic;
+    Formula.symbol prop_sym
   in
-  let bool_f = aux formula in
+  let rec to_bool_formula : type a. (a, 'k) Formula.t -> (bool, 'k) Formula.t =
+    fun f ->
+    match f with
+    | Formula.Not (Binop (Equal, left, right)) ->
+        Formula.not_ (get_next_symbol (Formula.binop Binop.Equal left right))
+    | Binop (Less_than_eq, left, right) ->
+        get_next_symbol (Formula.binop Less_than_eq left right)
+    | Binop (Less_than, left, right) ->
+        get_next_symbol (Formula.binop Less_than left right)
+    | And ls -> Formula.and_ (List.map to_bool_formula ls)
+    | expr ->
+      failwith (
+        Printf.sprintf "Can't map that to %s" (Formula.to_string ~uid:Symbol.AsciiSymbol.to_string expr)
+      )
+  in
+  let bool_f = to_bool_formula formula in
   (bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq)
 
 type int_constraint = {
@@ -372,7 +386,8 @@ let to_constraint_graph (formula : (bool, 'k) Formula.t)
     can be meaningfully decoded by the formula to bellman-ford graph
     decoder [graph_constraints].
 *)
-let is_idl_clause (formula : (bool, 'k) Formula.t) =
+let is_idl_clause : type a k. (a, k) Formula.t -> bool =
+  fun formula ->
   match formula with
   | Binop (Less_than, Key (I _), Key (I _))
   | Binop (Less_than_eq, Key (I _), Key (I _))
@@ -385,13 +400,18 @@ let is_idl_clause (formula : (bool, 'k) Formula.t) =
 (** [is_idl_solvable formula] returns if all clauses in FORMULA can be solved 
     with bellman ford for difference logic
 *)
-let rec is_idl_solvable : type k. (bool, k) Formula.t -> bool =
-  fun formula ->
+let is_idl_solvable (formula : (bool, 'k) Formula.t) : bool =
+  let rec contains_idl_clause : type a k. (a, k) Formula.t -> bool =
+    fun formula ->
     match formula with
     | Formula.And clauses ->
-        List.for_all is_idl_solvable clauses
+        List.for_all contains_idl_clause clauses
+    | Binop (Or, left, right) -> 
+      contains_idl_clause left && contains_idl_clause right
     | clause ->
         is_idl_clause clause
+  in
+  contains_idl_clause formula
 
 exception Graph_disconnected of int
 

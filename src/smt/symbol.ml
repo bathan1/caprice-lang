@@ -37,7 +37,15 @@ let to_uid (type a) (key : (a, 'k) t) =
   | B uid
   | I uid -> uid
 
-module AsciiSymbol = Make (struct
-  type t = char
-  let uid t = t |> Char.code |> Utils.Uid.of_int
-end)
+module AsciiSymbol = struct 
+  include Make (struct
+    type t = char
+    let uid t = t |> Char.code |> Utils.Uid.of_int
+  end)
+
+  let to_string uid =
+    uid
+    |> Utils.Uid.to_int
+    |> Char.chr
+    |> String.of_char
+end

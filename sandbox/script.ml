@@ -49,7 +49,7 @@ open Overlays
 let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let sanity_check () =
-  let fs = Boolean.from_stdin () in
+  let fs = ["(b <= a) ^ ((1 + a) < 0)"] in
   let iter =
    fun i f_text ->
     let f = Boolean.parse f_text in
@@ -107,7 +107,7 @@ let benchmark num_trials =
   let fs = Boolean.from_stdin () in
 
   Printf.printf
-    "CREATE TABLE IF NOT EXISTS benchmark_results (\n\
+    "CREATE TABLE IF NOT EXISTS benchmarks (\n\
     \  trial_num INTEGER NOT NULL,\n\
     \  formula_id INTEGER NOT NULL,\n\
     \  formula TEXT NOT NULL,\n\
@@ -142,7 +142,7 @@ let benchmark num_trials =
           in
 
           Printf.printf
-            "INSERT INTO benchmark_results (trial_num, formula_id, formula, was_backend_used,\
+            "INSERT INTO benchmarks (trial_num, formula_id, formula, was_backend_used,\
              time_us_blue3, time_us_z3) VALUES (%d, %d, '%s', '%s', %.6f, %.6f);\n"
             trial_num formula_id formula_sql (Bool.to_string was_backend_used) 
             time_us_blue3 time_us_z3);

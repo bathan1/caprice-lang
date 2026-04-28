@@ -130,14 +130,14 @@ let unit_propagate (clauses : (bool, 'k) Formula.t list) :
 (** [choose_literal formula] picks the first Key from the left from the unit-clause pruned FORMULA.
     It throws if there is no symbol found
 *)
-let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t = 
+let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t option = 
   function
-  | [] -> failwith "No symbol found"
+  | [] -> None
   | hd :: tl -> (
       match hd with
-      | Formula.Not Key key | Key key -> key
-      | Binop (Or, Key key, _) -> key
-      | Binop (Or, _, Key key) -> key
+      | Formula.Not Key key | Key key -> Some key
+      | Binop (Or, Key key, _) -> Some key
+      | Binop (Or, _, Key key) -> Some key
       | _ -> choose_literal tl)
 
 (** [contains_const_false ls] returns if an immediate element of LS is
@@ -223,8 +223,15 @@ let dpll
         | _ -> false
       ) ls -> solve_next (rebuild_logical curr_model)
     | propagated ->
+        let branch_key = (
+          match choose_literal propagated with
+          | None -> failwith (
+            Printf.sprintf "Couldn't choose literal for unit propagated %s\n"
+            (Formula.to_string ~uid:Symbol.AsciiSymbol.to_string (Formula.and_ propagated))
+          )
+          | Some key -> key
+        ) in
         let next_formula = Formula.and_ propagated in
-        let branch_key = choose_literal propagated in
         let uid = Symbol.to_uid branch_key in
         let true_model = Uid.Map.add uid true curr_model in
         let true_clauses = Formula.clauses_from (
@@ -253,9 +260,16 @@ let dpll_simplify : type k. k solver -> (bool, k) Formula.t -> k Solution.t =
       solve
       formula
 
-let logics = [
+let logics : 'k logic list = [
   (Integer.solve_idl, Integer.is_idl_solvable)
 ]
+
+let uid = (fun uid -> uid |> Uid.to_int |> Char.chr |> String.of_char)
+
+let fastcheck_is_unsolvable expr = 
+  Formula.contains_binop Binop.Modulus expr ||
+  Formula.contains_binop Binop.Divide expr ||
+  Formula.contains_binop Binop.Times expr
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
@@ -263,9 +277,12 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     propagate_constants
     @> (fun next expr -> next (Integer.rewrite_bounds expr))
     @> (fun next expr ->
-      match choose_solver logics expr with
-      | None -> next expr
-      | Some solve -> dpll_simplify solve expr
+      if fastcheck_is_unsolvable expr then next expr
+      else
+        match choose_solver logics expr with
+        | None ->
+          next expr
+        | Some solve -> dpll_simplify solve expr
     )
   in
   pipeline (direct_solve (module Oracle))
