@@ -372,14 +372,26 @@ let to_constraint_graph (formula : (bool, 'k) Formula.t)
     can be meaningfully decoded by the formula to bellman-ford graph
     decoder [graph_constraints].
 *)
-let is_idl_clause : type k. (bool, k) Formula.t -> bool = function
-  | Formula.Binop (Less_than, Key (I _), Key (I _))
-    | Formula.Binop (Less_than_eq, Key (I _), Key (I _))
-    | Formula.Binop (Less_than, Const_int _, Key (I _))
-    | Formula.Binop (Less_than_eq, Const_int _, Key (I _))
-    | Formula.Binop (Less_than, Key (I _), Const_int _)
-    | Formula.Binop (Less_than_eq, Key (I _), Const_int _) -> true
+let is_idl_clause (formula : (bool, 'k) Formula.t) =
+  match formula with
+  | Binop (Less_than, Key (I _), Key (I _))
+  | Binop (Less_than_eq, Key (I _), Key (I _))
+  | Binop (Less_than, Const_int _, Key (I _))
+  | Binop (Less_than_eq, Const_int _, Key (I _))
+  | Binop (Less_than, Key (I _), Const_int _)
+  | Binop (Less_than_eq, Key (I _), Const_int _) -> true
   | _ -> false
+
+(** [is_idl_solvable formula] returns if all clauses in FORMULA can be solved 
+    with bellman ford for difference logic
+*)
+let rec is_idl_solvable : type k. (bool, k) Formula.t -> bool =
+  fun formula ->
+    match formula with
+    | Formula.And clauses ->
+        List.for_all is_idl_solvable clauses
+    | clause ->
+        is_idl_clause clause
 
 (** [partition formula] partitions FORMULA into formulas [SOLVABLE, UNSOLVABLE],
     where UNSOLVABLE is an empty list if everything can be solved by IDL
@@ -476,13 +488,12 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
           printf "UNSAT\n"
     ]}
 *)
-let solve_diff (formula : (bool, 'k) Formula.t) : 'k Solution.t =
+let solve_idl (formula : (bool, 'k) Formula.t) : 'k Solution.t =
   let (~nodes, ~edges, key_to_index) = to_constraint_graph formula in
   match bellman_ford nodes edges ~src:0 with
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->
-    let n = Array.length distances in
-    let offset = distances.(n - 1) in
+    let offset = distances.(nodes - 1) in
     let local_model = Uid.Map.map (fun index ->
         Model.Int (offset - distances.(index))
       ) key_to_index

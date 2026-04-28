@@ -305,7 +305,10 @@ end
 
 (** [clauses_from f] unwraps the [And] list from F if F is a conjunction or
     [[F]] if F is anything else *)
-let clauses_from (f : (bool, 'k) t) = match f with And ls -> ls | f -> [ f ]
+let clauses_from (f : (bool, 'k) t) = 
+  match f with 
+  | And ls -> ls
+  | f -> [ f ]
 
 let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
  fun target -> function

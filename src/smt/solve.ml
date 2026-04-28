@@ -7,7 +7,11 @@ type 'k partitioner = (bool, 'k) Formula.t -> (bool, 'k) Formula.t list * (bool,
 (** A partitioner is a function [partition f] that partitions ORDERED clauses F
     into a [(SOLVABLE_INDICES, UNSOLVABLE_INDICES)] formula tuple *)
 
-type 'k logic = 'k solver * 'k partitioner
+type 'k validator = (bool, 'k) Formula.t -> bool
+(** A validator [validate formula] returns if FORMULA 
+    is fully solvable by some solver. *)
+
+type 'k logic = 'k solver * 'k validator
 (** A 2 tuple of [SOLVER] and its corresponding [PARTITIONER] is a [LOGIC] *)
 
 module type SOLVABLE = sig
@@ -127,14 +131,17 @@ let unit_propagate (clauses : (bool, 'k) Formula.t list) :
   in
   propagate clauses Uid.Map.empty
 
-let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t
-    = function
-  | [] -> failwith "oops"
+(** [choose_literal formula] picks the first Key from the left from the unit-clause pruned FORMULA.
+    It throws if there is no symbol found
+*)
+let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t = 
+  function
+  | [] -> failwith "No symbol found"
   | hd :: tl -> (
       match hd with
-      | Formula.Key key -> key
-      | Formula.Binop (Binop.Or, Formula.Key key, _) -> key
-      | Formula.Binop (Binop.Or, _, Formula.Key key) -> key
+      | Formula.Not Key key | Key key -> key
+      | Binop (Or, Key key, _) -> key
+      | Binop (Or, _, Key key) -> key
       | _ -> choose_literal tl)
 
 (** [contains_const_false ls] returns if an immediate element of LS is
@@ -153,68 +160,23 @@ let is_falsified_clause (model_state : bool Uid.Map.t) (vars : Uid.Set.t) : bool
     | Some v -> not v
   ) vars
 
-let is_solvable_by
-    (type k)
-    (module Symbol : Symbol.KEY with type t = k)
-    (logics : k logic list)
-    (f : (bool, k) Formula.t)
-    : bool =
-  let module FormulaSet = Formula.Set.Make (Symbol) in
-  let rec loop unsolved = function
-    | [] -> FormulaSet.is_empty unsolved
-    | (_solve, partition) :: rest ->
-        let solvable, _unsolvable = partition f in
-        let solvable = FormulaSet.of_list solvable in
-        let unsolved = FormulaSet.diff unsolved solvable in
-        if FormulaSet.is_empty unsolved then true
-        else loop unsolved rest
-  in
-  loop (FormulaSet.of_list (Formula.clauses_from f)) logics
+let choose_solver
+  (logics : 'k logic list)
+  (formula : (bool, 'k) Formula.t)
+  : 'k solver option =
+  List.find_map (fun (solver, is_solvable) -> 
+    if is_solvable formula then Some solver
+    else None
+  ) logics
 
 let check
   (type k)
-  (module Symbol : Symbol.KEY with type t = k)
   (logics : k logic list)
-  (f : (bool, k) Formula.t)
-  (keyset : Uid.Set.t)
+  (formula : (bool, k) Formula.t)
   : k Solution.t =
-  let module FormulaSet = Formula.Set.Make (Symbol) in
-  let clauses = FormulaSet.of_list (Formula.clauses_from f) in
-  let solutions, solved_clauses =
-    List.fold_left
-      (fun (acc_sols, acc_solved) (solve, partition) ->
-        let solvable, _unsolvable = partition f in
-        let solvable_f = Formula.and_ solvable in
-        ( solve solvable_f :: acc_sols,
-          solvable |> FormulaSet.of_list |> FormulaSet.union acc_solved ))
-      ([], FormulaSet.empty) logics
-  in
-  let clause_diff = FormulaSet.diff clauses solved_clauses in
-  let were_all_clauses_solved = FormulaSet.is_empty clause_diff in
-  if List.is_empty solutions || not were_all_clauses_solved then
-    if List.is_empty solutions then Solution.Unsat else Solution.Unknown
-  else
-    let sat_models =
-      solutions
-      |> List.filter_map (function
-        | Solution.Sat m -> Some m
-        | Solution.Unknown -> None
-        | Solution.Unsat -> None)
-    in
-    let domains = List.map (fun m -> Uid.Set.of_list m.Model.domain) sat_models in
-    let rec is_pairwise_disjoint = function
-      | [] -> true
-      | d :: rest ->
-          List.for_all (fun d' -> Uid.Set.is_empty (Uid.Set.inter d d')) rest
-          && is_pairwise_disjoint rest
-    in
-    let covered = List.fold_left Uid.Set.union Uid.Set.empty domains in
-    if is_pairwise_disjoint domains && Uid.Set.equal covered keyset then
-      let merged_model =
-        List.fold_left Model.merge Model.empty sat_models
-      in
-      Solution.Sat merged_model
-    else Solution.Unknown
+  match choose_solver logics formula with
+  | None -> Solution.Unknown
+  | Some solve -> solve formula
 
 (*
   Right-associative simplifier composition.
@@ -230,115 +192,85 @@ let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
  fun f g -> fun solve -> g (f solve)
 
 
-let contains_const_true model keys =
-  Uid.Set.exists (fun uid ->
+let is_trivially_true model keys =
+  Uid.Set.for_all (fun uid ->
     match Uid.Map.find_opt uid model with
     | None -> false
     | Some v -> v
   ) keys
 
 let dpll
-  (type k)
-  ?(leftovers : Uid.t -> bool = fun _ -> Random.bool ())
-  ?(to_symbol : int -> (bool, k) Symbol.t =
+  ?(to_symbol : int -> (bool, 'k) Symbol.t =
     fun i -> i |> Uid.of_int |> fun uid -> Symbol.B uid)
-  (module FormulaSymbol : Symbol.KEY with type t = k)
-  ~(logics : k logic list) (solve_next : k solver)
-  (f : (bool, k) Formula.t)
-  : k Solution.t =
-  if not (is_solvable_by (module FormulaSymbol) logics f) then solve_next f
-  else
-    let props, map = Integer.to_propositional ~to_symbol f in
-    let keyset = Formula.symbols f in
-    let decode = fun uid -> Uid.Map.find uid map in
-    let clauses = Formula.clauses_from props in
-    let rebuild_logical model =
-      Formula.and_
-        (model |> Uid.Map.to_list
-        |> List.map (fun (uid, tv) ->
-            let formula = decode uid in
-            if tv then formula else Formula.not_ formula))
-    in
-    let rec dpll clauses model_state =
-      let curr_keyset = List.map Formula.symbols clauses in
-      if
-        List.is_empty curr_keyset
-        || List.exists (is_falsified_clause model_state) curr_keyset
-      then
-        if List.is_empty curr_keyset then
-          (*
-           TODO: This means sat at the bool level, so try model_state solution...
-        *)
-          Solution.Unsat
-        else Solution.Unsat
-      else
-        let is_trivial_true =
-          match clauses with [ Const_bool true ] -> true | _ -> false
-        in
-        let is_sat =
-          is_trivial_true ||
-          List.for_all (fun uids -> contains_const_true model_state uids) curr_keyset
-        in
-        if is_sat then
-          let missing_keys = Uid.Set.diff keyset (Uid.Map.domain model_state) in
-          let with_leftovers_assigned = (
-            missing_keys
-            |> Uid.Set.to_seq
-            |> Seq.map (fun key -> (key, leftovers key))
-          ) in
-          let final_model = Uid.Map.add_seq with_leftovers_assigned model_state in
-          check (module FormulaSymbol) logics (rebuild_logical final_model) keyset
-        else
-          let propagated, partial_model = unit_propagate clauses in 
-          let curr_model = Uid.Map.union (fun _ _ new_v -> Some new_v) model_state partial_model in
-          let check_model model = check (module FormulaSymbol) logics (rebuild_logical model) keyset in
-          match propagated with
-          | [] -> check_model curr_model
-          | ls when contains_const_false ls -> Solution.Unsat
-          | propagated ->
-              let next_f = Formula.and_ propagated in
-              let branch_key = choose_literal propagated in
-              let uid = Symbol.to_uid branch_key in
-              let true_model = Uid.Map.add uid true curr_model in
-              let true_clauses = Formula.clauses_from (
-                Formula.subst true branch_key next_f
-              ) in
-              match true_clauses with
-              | [ Const_bool true ] ->
-                  check_model true_model
-              | true_clauses -> (
-                  match dpll true_clauses true_model with
-                  | Solution.Unsat ->
-                      let false_model = Uid.Map.add uid false curr_model in
-                      let false_clauses = Formula.clauses_from (
-                        Formula.subst false branch_key next_f
-                      ) in
-                      dpll false_clauses false_model
-                  | s -> s)
-    in
-    match dpll clauses Uid.Map.empty with
-    | Solution.Unknown -> solve_next f
-    | s -> s
+  (solve_next : 'k solver)
+  (formula : (bool, 'k) Formula.t)
+  : 'k Solution.t =
+  let props, map = Integer.to_propositional ~to_symbol formula in
+  let to_logical = fun uid -> Uid.Map.find uid map in
+  let clauses = Formula.clauses_from props in
+  let rebuild_logical model =
+    Formula.and_
+      (model |> Uid.Map.to_list
+      |> List.map (fun (uid, tv) ->
+          let formula = to_logical uid in
+          if tv then formula else Formula.not_ formula))
+  in
+  let rec dpll clauses model_state =
+    let propagated, partial_model = unit_propagate clauses in 
+    let curr_model = Uid.Map.union (fun _ _ new_v -> Some new_v) model_state partial_model in
+    match propagated with
+    | [] -> Solution.Unsat
+    | ls when contains_const_false ls -> Solution.Unsat
+    | ls when List.for_all (
+        function
+        | Formula.Const_bool true -> true
+        | _ -> false
+      ) ls -> solve_next (rebuild_logical curr_model)
+    | propagated ->
+        let next_formula = Formula.and_ propagated in
+        let branch_key = choose_literal propagated in
+        let uid = Symbol.to_uid branch_key in
+        let true_model = Uid.Map.add uid true curr_model in
+        let true_clauses = Formula.clauses_from (
+          Formula.subst true branch_key next_formula
+        ) in
+        match true_clauses with
+        | [ Const_bool true ] ->
+            solve_next (rebuild_logical true_model)
+        | true_clauses -> (
+            match dpll true_clauses true_model with
+            | Solution.Unsat ->
+                let false_model = Uid.Map.add uid false curr_model in
+                let false_clauses = Formula.clauses_from (
+                  Formula.subst false branch_key next_formula
+                ) in
+                dpll false_clauses false_model
+            | s -> s)
+  in
+  dpll clauses Uid.Map.empty
 
 [@@@ocaml.warning "-48"]
-let dpll_simplify (type k) (module FormulaSymbol : Symbol.KEY with type t = k) : k simplifier =
-  dpll
-    ~to_symbol:(fun off ->
-      off + Char.code 'p' |> Utils.Uid.of_int |> fun uid -> Symbol.B uid)
-    ~logics:[
-      (Integer.solve_diff, Integer.partition_idl)
-    ]
-    (module FormulaSymbol)
+let dpll_simplify : type k. k solver -> (bool, k) Formula.t -> k Solution.t =
+  fun solve formula ->
+    dpll
+      ~to_symbol:(fun off ->
+        off + Char.code 'p' |> Utils.Uid.of_int |> fun uid -> Symbol.B uid)
+      solve
+      formula
+
+let logics = [
+  (Integer.solve_idl, Integer.is_idl_solvable)
+]
 
 (** TODO: Replace direct_solve with concolic/loop.ml *)
-let main_solve
-  (type k)
-  (module Oracle : SOLVABLE)
-  (module FormulaSymbol : Symbol.KEY with type t = k)
-  : k solver =
+let main_solve (module Oracle : SOLVABLE) : 'k solver =
   let pipeline =
     propagate_constants
     @> (fun next expr -> next (Integer.rewrite_bounds expr))
-    @> dpll_simplify (module FormulaSymbol)
+    @> (fun next expr ->
+      match choose_solver logics expr with
+      | None -> next expr
+      | Some solver -> dpll_simplify solver expr
+    )
   in
   pipeline (direct_solve (module Oracle))

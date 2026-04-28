@@ -46,10 +46,10 @@ let solution_text (solution : 'k Solution.t) : string =
 open Printf
 open Overlays
 
-let main_solve = Solve.main_solve (module Typed_z3.Default) (module AsciiKey)
+let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let sanity_check () =
-  let fs = [ "(a <= 0) ^ (0 <= (b + a)) ^ (b < 0)" ] in
+  let fs = Boolean.from_stdin () in
   let iter =
    fun i f_text ->
     let f = Boolean.parse f_text in
@@ -90,6 +90,7 @@ let sanity_check () =
   else Printf.printf "Invalid formulas:";
   List.iter (fun res -> printf "%d, " res) bad_results
 
+
 open Unix
 
 let sql_escape (s : string) =
@@ -110,6 +111,7 @@ let benchmark num_trials =
     \  trial_num INTEGER NOT NULL,\n\
     \  formula_id INTEGER NOT NULL,\n\
     \  formula TEXT NOT NULL,\n\
+    \  was_backend_used TEXT NOT NULL,\n\
     \  time_us_blue3 FLOAT NOT NULL,\n\
     \  time_us_z3 FLOAT NOT NULL\n\
      );\n\n";
@@ -120,10 +122,10 @@ let benchmark num_trials =
       fs
       |> List.iteri (fun formula_id ftext ->
           let formula_sql = sql_escape ftext in
+          let f = Boolean.parse ftext in
 
           let time_us_blue3 =
             time_us_float (fun () ->
-                let f = Boolean.parse ftext in
                 ignore (main_solve f))
           in
 
@@ -133,14 +135,21 @@ let benchmark num_trials =
                 ignore (solve_z3_only f))
           in
 
+          let was_backend_used = 
+            match Solve.choose_solver [Integer.solve_idl, Integer.is_idl_solvable] f with
+            | Some _ -> false
+            | None -> true
+          in
+
           Printf.printf
-            "INSERT INTO benchmark_results (trial_num, formula_id, formula, \
-             time_us_blue3, time_us_z3) VALUES (%d, %d, '%s', %.6f, %.6f);\n"
-            trial_num formula_id formula_sql time_us_blue3 time_us_z3);
+            "INSERT INTO benchmark_results (trial_num, formula_id, formula, was_backend_used,\
+             time_us_blue3, time_us_z3) VALUES (%d, %d, '%s', '%s', %.6f, %.6f);\n"
+            trial_num formula_id formula_sql (Bool.to_string was_backend_used) 
+            time_us_blue3 time_us_z3);
 
       aux (trial_num + 1)
     end
   in
   aux 0
 
-let () = sanity_check ()
+let () = benchmark 5

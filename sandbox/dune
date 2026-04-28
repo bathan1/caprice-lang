@@ -1,4 +1,4 @@
 (executable
  (name script)
  (libraries smt overlays)
- (modules script))
+)
