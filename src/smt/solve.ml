@@ -3,10 +3,6 @@ open Utils
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
 type 'k simplifier = 'k solver -> 'k solver
 
-type 'k partitioner = (bool, 'k) Formula.t -> (bool, 'k) Formula.t list * (bool, 'k) Formula.t list
-(** A partitioner is a function [partition f] that partitions ORDERED clauses F
-    into a [(SOLVABLE_INDICES, UNSOLVABLE_INDICES)] formula tuple *)
-
 type 'k validator = (bool, 'k) Formula.t -> bool
 (** A validator [validate formula] returns if FORMULA 
     is fully solvable by some solver. *)
@@ -249,7 +245,6 @@ let dpll
   in
   dpll clauses Uid.Map.empty
 
-[@@@ocaml.warning "-48"]
 let dpll_simplify : type k. k solver -> (bool, k) Formula.t -> k Solution.t =
   fun solve formula ->
     dpll
@@ -270,7 +265,7 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     @> (fun next expr ->
       match choose_solver logics expr with
       | None -> next expr
-      | Some solver -> dpll_simplify solver expr
+      | Some solve -> dpll_simplify solve expr
     )
   in
   pipeline (direct_solve (module Oracle))

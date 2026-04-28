@@ -393,12 +393,6 @@ let rec is_idl_solvable : type k. (bool, k) Formula.t -> bool =
     | clause ->
         is_idl_clause clause
 
-(** [partition formula] partitions FORMULA into formulas [SOLVABLE, UNSOLVABLE],
-    where UNSOLVABLE is an empty list if everything can be solved by IDL
-*)
-let partition_idl (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t list * (bool, 'k) Formula.t list =
-  List.partition is_idl_clause (Formula.clauses_from formula)
-
 exception Graph_disconnected of int
 
 (** [bellman_ford src nodes edges] returns the shortest paths to each node from SRC    if there is no negative cycle. Otherwise, it catches that and returns the 
