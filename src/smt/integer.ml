@@ -11,23 +11,17 @@ let linearize formula =
   | Formula.Binop
     ( ((Less_than_eq | Less_than) as binop),
     Binop (Plus, Key (I x), Key (I y)),
-    Key (I z) )
-    when x = z ->
+    Key (I z) ) when x = z ->
     Formula.binop binop (int_symbol y) (Formula.const_int 0)
   | Binop
     ( ((Less_than_eq | Less_than) as binop),
     Binop (Plus, Key (I x), Key (I y)),
-    Key (I z) )
-    when y = z -> Formula.binop binop (int_symbol x) (Formula.const_int 0)
+    Key (I z) ) when y = z -> 
+    Formula.binop binop (int_symbol x) (Formula.const_int 0)
   | Binop
-    (
-      ((Less_than_eq | Less_than) as binop),
-      (
-        Binop (Plus, Key (I x), Const_int a)
-        | Binop (Plus, Const_int a, Key (I x))
-      ),
-      Const_int b
-    ) ->
+    ( ((Less_than_eq | Less_than) as binop),
+      (Binop (Plus, Key (I x), Const_int a) | Binop (Plus, Const_int a, Key (I x))),
+      Const_int b ) ->
     Formula.binop binop (int_symbol x) (Formula.const_int (b - a))
   (* expr <= c  OR expr < c OR expr = c *)
   | Binop
@@ -113,8 +107,7 @@ let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constrai
       neq 
       |> List.filter (fun v -> lower < v && v < upper)
       |> List.map (fun v ->
-        Formula.binop Not_equal variable (Formula.const_int v)
-      )
+        Formula.binop Not_equal variable (Formula.const_int v))
     in
     if lower = upper then
       Formula.binop Equal variable (Formula.const_int lower)
@@ -173,14 +166,9 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
     match Uid.Map.find_opt key map with
     | Some v -> v
     | None ->
-      {
-        lower = Int.min_int;
-        (* greatest lower bound *)
+      { lower = Int.min_int;
         upper = Int.max_int;
-        (* lowest upper bound *)
-        neq = [];
-        (* not equal list *)
-      }
+        neq = [] }
   in
   let collect_bounds = 
     fun (acc, other) clause ->
@@ -255,12 +243,12 @@ let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
   in
   let rec normalize_unit : type a. (a, k) t -> (a, k) t = function
     | And ls -> and_ (List.map normalize_unit ls)
-    (* neqs into disjunctions that bellman ford can solve *)
     | Not (Binop (Equal, Key (I left), Key (I right))) ->
+      (* neqs into disjunctions that bellman ford can solve *)
       handle_neq (int_symbol left) (int_symbol right)
-    (* x != C *)
+      
     | Not (Binop (Equal, Key (I key), Const_int c)) ->
-      handle_neq (int_symbol key) (const_int c)
+      handle_neq (int_symbol key) (const_int c) (* x != C *)
     | f -> f
   in
   f 

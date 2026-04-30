@@ -113,7 +113,6 @@ let to_string
           match model.value symbol with
           | None -> None
           | Some v -> Some (entry_to_string symbol text v))
-
       | Int_key symbol -> (
           let text = key map_key in
           match model.value symbol with
