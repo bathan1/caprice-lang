@@ -1,5 +1,3 @@
-module IntSet = Set.Make (Int)
-
 module type S = sig
   type ('a, 'k) t
 

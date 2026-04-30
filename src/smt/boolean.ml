@@ -1,6 +1,6 @@
 exception Should_not_happen of string
 
-module IntSet = Formula.IntSet
+module IntSet = Utils.Iterables.IntSet
 
 let stringify x = x |> Char.chr |> String.of_char
 

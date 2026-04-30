@@ -70,8 +70,7 @@ let from_value_map (map : value Uid.Map.t) : 'k t =
         | Bool _ -> Bool_key (Symbol.B uid)
         | Int _ -> Int_key (Symbol.I uid))
   in
-  {
-    domain;
+  { domain;
     value =
       (fun (type a) (sym : (a, 'k) Symbol.t) : a option ->
         match sym with
@@ -83,8 +82,7 @@ let from_value_map (map : value Uid.Map.t) : 'k t =
         | I key -> (
             match Uid.Map.find_opt key map with
             | Some (Int i) -> Some i
-            | _ -> None));
-  }
+            | _ -> None)) }
 
 let to_string
   (type k)
@@ -92,38 +90,35 @@ let to_string
   ~(key : k key -> string)
   : string =
   let indent = "  " in
-
   let entry_to_string : type a. (a, k) Symbol.t -> string -> a -> string =
     fun symbol text v ->
       match symbol with
       | Symbol.B _ ->
-          Printf.sprintf "%s\"%s\": %s"
-            indent
-            text
-            (if v then "true" else "false")
-
+        Printf.sprintf "%s\"%s\": %s"
+          indent
+          text
+          (Bool.to_string v)
       | Symbol.I _ ->
-          Printf.sprintf "%s\"%s\": %d"
-            indent
-            text
-            v
+        Printf.sprintf "%s\"%s\": %d"
+          indent
+          text
+          v
   in
-
   let entries =
     model.domain
     |> List.filter_map (fun map_key ->
-        match map_key with
-        | Bool_key symbol -> (
-            let text = key map_key in
-            match model.value symbol with
-            | None -> None
-            | Some v -> Some (entry_to_string symbol text v))
+      match map_key with
+      | Bool_key symbol -> (
+          let text = key map_key in
+          match model.value symbol with
+          | None -> None
+          | Some v -> Some (entry_to_string symbol text v))
 
-        | Int_key symbol -> (
-            let text = key map_key in
-            match model.value symbol with
-            | None -> None
-            | Some v -> Some (entry_to_string symbol text v)))
+      | Int_key symbol -> (
+          let text = key map_key in
+          match model.value symbol with
+          | None -> None
+          | Some v -> Some (entry_to_string symbol text v)))
   in
 
   match entries with

@@ -2,12 +2,10 @@ open Utils
 
 module IntSet = Iterables.IntSet
 
-(** [int_symbol uid] is an int symbol with UID wrapped over a [Formula.Key]
-*)
+(** [int_symbol uid] is an int symbol with UID wrapped over a [Formula.Key] *)
 let int_symbol (uid : Uid.t) = Formula.symbol (I uid)
 
-(** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula.
-*)
+(** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula. *)
 let linearize formula =
   match formula with
   | Formula.Binop
@@ -68,8 +66,7 @@ let linearize formula =
   | f -> f
 
 (** [to_propositional to_symbol formula] returns the boolean propositional formula form of FORMULA
-    in the first element and the [Uid.t] to corresponding [Formula.t] atom map.
-*)
+    in the first element and the [Uid.t] to corresponding [Formula.t] atom map. *)
 let to_propositional
     ?(to_symbol : int -> (bool, 'k) Symbol.t =
     fun uid -> uid |> Uid.of_int |> fun uid -> Symbol.B uid)
@@ -87,7 +84,9 @@ let to_propositional
   let rec to_bool_formula : type a. (a, 'k) Formula.t -> (bool, 'k) Formula.t =
     fun f ->
     match f with
-    | Formula.Not (Binop (Equal, left, right)) ->
+    | Formula.Key (B bool_uid) ->
+      get_next_symbol (Formula.symbol (B bool_uid))
+    | Not (Binop (Equal, left, right)) ->
         Formula.not_ (get_next_symbol (Formula.binop Binop.Equal left right))
     | Binop (Less_than_eq, left, right) ->
         get_next_symbol (Formula.binop Less_than_eq left right)
@@ -102,11 +101,7 @@ let to_propositional
   let bool_f = to_bool_formula formula in
   (bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq)
 
-type int_constraint = {
-  lower : int;
-  upper : int;
-  neq : int list;
-}
+type int_constraint = { lower : int; upper : int; neq : int list }
 
 let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constraint) =
   let is_impossible_bound = lower > upper in
@@ -172,8 +167,7 @@ let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constrai
       let pruned_formula = Integer.prune formula in
       Printf.printf "%s\n" (Formula.to_string pruned_formula)
       (* "(a >= 2)" *)
-    ]}
-*)
+    ]} *)
 let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
   let find_or_default key map =
     match Uid.Map.find_opt key map with
@@ -203,21 +197,21 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       | Formula.Binop (Equal, Key (I key), Const_int c) ->
         let { neq; _ } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower = c; upper = c; neq; } acc
+          Uid.Map.add key { lower = c; upper = c; neq } acc
         in
         (next, other)
       (* lower bounds *)
       | Binop (Less_than_eq, Const_int c, Key (I key)) ->
         let { lower; upper; neq; } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower = max lower c; upper; neq; } acc
+          Uid.Map.add key { lower = max lower c; upper; neq } acc
         in
         (next, other)
       | Binop (Less_than, Const_int c, Key (I key)) ->
         let { lower; upper; neq; } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower = max lower (c + 1); upper; neq; }
+            { lower = max lower (c + 1); upper; neq }
             acc
         in
         (next, other)
@@ -225,14 +219,14 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
       | Binop (Less_than_eq, Key (I key), Const_int c) ->
         let { lower; upper; neq; } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower; upper = min upper c; neq; } acc
+          Uid.Map.add key { lower; upper = min upper c; neq } acc
         in
         (next, other)
       | Binop (Less_than, Key (I key), Const_int c) ->
         let { lower; upper; neq; } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower; upper = min upper (c - 1); neq; }
+            { lower; upper = min upper (c - 1); neq }
             acc
         in
         (next, other)
@@ -247,8 +241,7 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
     |> List.concat_map bound_to_formula_clauses
     |> fun rewritten -> rewritten @ other_clauses
 
-(** [rewrite_bounds f] is F with redundant inequalities / disequalties dropped.
-*)
+(** [rewrite_bounds f] is F with redundant inequalities / disequalties dropped. *)
 let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
   fun f ->
   let open Formula in
@@ -286,8 +279,7 @@ type diff_constraint = {
 }
 
 (** [to_diff_constraints formula] returns the list of integer difference 
-    constraints in FORMULA.
-*)
+    constraints in FORMULA. *)
 let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
   : diff_constraint list =
   match formula with
@@ -348,8 +340,7 @@ let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
     - UID_TO_INDEX maps UIDs from FORMULA to their node id (index)
 
     Index [0] is reserved for a dummy root node and index [NODES - 1]
-    is reserved for the special "zero constant" node.
-*)
+    is reserved for the special "zero constant" node. *)
 let to_constraint_graph (formula : (bool, 'k) Formula.t)
   : nodes:int * edges:(int * int * int) array * int Uid.Map.t =
   let constraints = to_diff_constraints formula in
@@ -384,8 +375,7 @@ let to_constraint_graph (formula : (bool, 'k) Formula.t)
 
 (** [is_idl_clause formula] returns true if FORMULA 
     can be meaningfully decoded by the formula to bellman-ford graph
-    decoder [graph_constraints].
-*)
+    decoder [graph_constraints]. *)
 let is_idl_clause : type a k. (a, k) Formula.t -> bool =
   fun formula ->
   match formula with
@@ -398,8 +388,7 @@ let is_idl_clause : type a k. (a, k) Formula.t -> bool =
   | _ -> false
 
 (** [is_idl_solvable formula] returns if all clauses in FORMULA can be solved 
-    with bellman ford for difference logic
-*)
+    with bellman ford for difference logic *)
 let rec is_idl_solvable : type k. (bool, k) Formula.t -> bool =
   fun formula ->
   match formula with
@@ -409,8 +398,7 @@ let rec is_idl_solvable : type k. (bool, k) Formula.t -> bool =
 exception Graph_disconnected of int
 
 (** [bellman_ford src nodes edges] returns the shortest paths to each node from SRC    if there is no negative cycle. Otherwise, it catches that and returns the 
-    cycle as a list.
-*)
+    cycle as a list. *)
 let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
   let init =
     ( Array.init nodes (fun i -> if i = src then Some 0 else None),
@@ -493,8 +481,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
             (Option.value_exn (model.value (I 0)))
       | Unsat ->
           printf "UNSAT\n"
-    ]}
-*)
+    ]} *)
 let solve_idl (formula : (bool, 'k) Formula.t) : 'k Solution.t =
   let (~nodes, ~edges, key_to_index) = to_constraint_graph formula in
   match bellman_ford nodes edges ~src:0 with
