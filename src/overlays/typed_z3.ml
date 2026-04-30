@@ -94,7 +94,7 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
       | L_FALSE -> Some false
       | L_TRUE -> Some true
       | L_UNDEF -> failwith "Invariant failure: undefined bool."
-   else None
+    else None
 
   let a_of_expr z3_model expr unbox_expr =
     Option.bind (Z3.Model.get_const_interp_e z3_model expr) unbox_expr
@@ -117,12 +117,24 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
             | B _ -> a_of_expr model (symbol s) unbox_bool_expr
           in
           let domain =
-            List.map (fun decl ->
-              decl
-              |> Z3.FuncDecl.get_name
-              |> Z3.Symbol.get_int
-              |> Utils.Uid.of_int
-            ) (Z3.Model.get_const_decls model)
+            Z3.Model.get_const_decls model
+            |> List.filter_map (fun decl ->
+              let uid =
+                decl
+                |> Z3.FuncDecl.get_name
+                |> Z3.Symbol.get_int
+                |> Utils.Uid.of_int
+              in
+
+              let range = Z3.FuncDecl.get_range decl in
+              let kind = Z3.Sort.get_sort_kind range in
+              if kind = Z3enums.BOOL_SORT then
+                Some (Model.Bool_key (Symbol.B uid))
+              else if kind = Z3enums.INT_SORT then
+                Some (Model.Int_key (Symbol.I uid))
+              else
+                None
+            )
           in
           Solution.Sat { value ; domain }
         | UNKNOWN -> Unknown

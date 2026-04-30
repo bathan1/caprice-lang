@@ -5,12 +5,7 @@
 open Smt
 open Utils
 
-module AsciiKey = struct
-  type t = char
-
-  let uid t = t |> Char.code |> Utils.Uid.of_int
-end
-module AsciiSymbol = Symbol.Make (AsciiKey)
+module AsciiSymbol = Symbol.AsciiSymbol
 
 let make_bool = AsciiSymbol.make_bool
 let make_int = fun x -> x |> AsciiSymbol.make_int |> Formula.symbol
@@ -30,18 +25,20 @@ let clauses =
 let uid_to_string = fun uid -> uid |> Uid.to_int |> Char.chr |> String.of_char
 
 let uid_to_symbol_string =
- fun uid ->
-  ( AsciiSymbol.make_int (uid |> Uid.to_int |> Char.chr),
-    uid |> Uid.to_int |> Char.chr |> String.of_char )
+  function
+  | Model.Bool_key (B k)
+  | Int_key (I k) -> AsciiSymbol.to_string k
 
 let to_string = Formula.to_string ~uid:uid_to_string
 let a = Formula.symbol (AsciiSymbol.make_int 'a')
 let b = Formula.symbol (AsciiSymbol.make_int 'b')
 
 let solution_text (solution : 'k Solution.t) : string =
-  Solution.to_string solution ~uid:(fun uid ->
-      ( AsciiSymbol.make_int (uid |> Uid.to_int |> Char.chr),
-        uid |> Uid.to_int |> Char.chr |> String.of_char ))
+  Solution.to_string solution ~key:(
+    function
+    | Bool_key (B k)
+    | Int_key (I k) -> AsciiSymbol.to_string k
+  )
 
 open Printf
 open Overlays
@@ -76,7 +73,7 @@ let sanity_check () =
           let () =
             if not eval_result then
               printf "(%d : %s) Inconsistent model:\n%s\n" (i + 1) f_text
-                (Model.to_string model ~uid:uid_to_symbol_string)
+                (Model.to_string model ~key:uid_to_symbol_string)
           in
           eval_result
   in
@@ -152,4 +149,4 @@ let benchmark num_trials =
   in
   aux 0
 
-let () = benchmark 5
+let () = sanity_check ()

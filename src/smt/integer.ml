@@ -400,18 +400,11 @@ let is_idl_clause : type a k. (a, k) Formula.t -> bool =
 (** [is_idl_solvable formula] returns if all clauses in FORMULA can be solved 
     with bellman ford for difference logic
 *)
-let is_idl_solvable (formula : (bool, 'k) Formula.t) : bool =
-  let rec contains_idl_clause : type a k. (a, k) Formula.t -> bool =
-    fun formula ->
-    match formula with
-    | Formula.And clauses ->
-        List.for_all contains_idl_clause clauses
-    | Binop (Or, left, right) -> 
-      contains_idl_clause left && contains_idl_clause right
-    | clause ->
-        is_idl_clause clause
-  in
-  contains_idl_clause formula
+let rec is_idl_solvable : type k. (bool, k) Formula.t -> bool =
+  fun formula ->
+  match formula with
+  | Formula.And clauses -> List.for_all is_idl_solvable clauses
+  | clause -> is_idl_clause clause
 
 exception Graph_disconnected of int
 
