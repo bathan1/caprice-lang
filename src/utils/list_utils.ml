@@ -1,4 +1,3 @@
-
 let fold_left_until f finish init ls =
   let rec go acc = function
     | [] -> finish acc

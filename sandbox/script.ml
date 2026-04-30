@@ -33,12 +33,13 @@ let to_string = Formula.to_string ~uid:uid_to_string
 let a = Formula.symbol (AsciiSymbol.make_int 'a')
 let b = Formula.symbol (AsciiSymbol.make_int 'b')
 
-let solution_text (solution : 'k Solution.t) : string =
-  Solution.to_string solution ~key:(
+let key_to_string =
     function
-    | Bool_key (B k)
+    | Model.Bool_key (B k)
     | Int_key (I k) -> AsciiSymbol.to_string k
-  )
+
+let solution_text (solution : 'k Solution.t) : string =
+  Solution.to_string solution ~key:key_to_string
 
 open Printf
 open Overlays
@@ -46,7 +47,7 @@ open Overlays
 let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let sanity_check () =
-  let fs = ["(b <= a) ^ ((1 + a) < 0)"] in
+  let fs = Boolean.from_stdin () in
   let iter =
    fun i f_text ->
     let f = Boolean.parse f_text in
@@ -60,6 +61,7 @@ let sanity_check () =
         | Unknown -> failwith "never should happen"
         | Sat _ -> false)
     | Solution.Sat model ->
+        Printf.printf "%s\n" (Model.to_string model ~key:key_to_string);
         f |> Formula.symbols |> Uid.Set.to_list
         |> List.fold_left
              (fun acc uid ->

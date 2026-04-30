@@ -30,11 +30,10 @@ let rec find_unit_literal (f : (bool, 'k) Formula.t) : 'k assignment option =
   | Not f ->
     begin match find_unit_literal f with
     | None -> None
-    | Some assignment -> (
+    | Some assignment ->
       match assignment with
       | Assign (I _ as key, ~value) -> Some (Assign (key, ~value:(if value = 0 then 1 else 0)))
       | Assign (B _ as key, ~value) -> Some (Assign (key, ~value:(not value)))
-    )
     end
   | _ -> None
 
@@ -114,16 +113,15 @@ let unit_propagate (clauses : (bool, 'k) Formula.t list) :
     (bool, 'k) Formula.t list * bool Uid.Map.t =
   let rec propagate clauses truth_tbl =
     match find_first_unit_literal clauses with
-    | None -> (clauses, truth_tbl)
-    | Some (key, value) -> (
-        let uid = Symbol.to_uid key in
-        let next_truthtbl = Uid.Map.add uid value truth_tbl in
-        let next = List.map (Formula.subst value key) clauses in
-        match next with
-        | [] -> clauses, next_truthtbl
-        | [hd] -> ([ hd ], next_truthtbl)
-        | next -> propagate next next_truthtbl
-    )
+    | None -> clauses, truth_tbl
+    | Some (key, value) -> 
+      let uid = Symbol.to_uid key in
+      let next_truthtbl = Uid.Map.add uid value truth_tbl in
+      let next = List.map (Formula.subst value key) clauses in
+      match next with
+      | [] -> clauses, next_truthtbl
+      | [hd] -> ([ hd ], next_truthtbl)
+      | next -> propagate next next_truthtbl
   in
   propagate clauses Uid.Map.empty
 
@@ -143,18 +141,17 @@ let rec choose_literal : type k. (bool, k) Formula.t list -> (bool, k) Symbol.t 
 (** [contains_const_false ls] returns if an immediate element of LS is
     a [Formula.Const_bool false].
 *)
-let contains_const_false ls = List.exists (
-  function
+let contains_const_false ls = List.exists
+  (function
   | Formula.Const_bool false -> true
-  | _ -> false
-) ls
+  | _ -> false) 
+  ls
 
 let is_falsified_clause (model_state : bool Uid.Map.t) (vars : Uid.Set.t) : bool =
   Uid.Set.for_all (fun symbol ->
     match Uid.Map.find_opt symbol model_state with
     | None -> false
-    | Some v -> not v
-  ) vars
+    | Some v -> not v) vars
 
 let choose_solver
   (logics : 'k logic list)
@@ -162,8 +159,7 @@ let choose_solver
   : 'k solver option =
   List.find_map (fun (solver, is_solvable) -> 
     if is_solvable formula then Some solver
-    else None
-  ) logics
+    else None) logics
 
 let check
   (type k)
@@ -185,10 +181,9 @@ let check
   then with simpl2, and finally with simpl3 before calling the solver.
 *)
 let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
- fun f g -> fun solve -> g (f solve)
+  fun f g -> fun solve -> g (f solve)
 
-
-let is_trivially_true model keys =
+let is_trivial_true model keys =
   Uid.Set.for_all (fun uid ->
     match Uid.Map.find_opt uid model with
     | None -> false
@@ -263,8 +258,6 @@ let dpll_simplify : type k. k solver -> (bool, k) Formula.t -> k Solution.t =
 let logics : 'k logic list = [
   (Integer.solve_idl, Integer.is_idl_solvable)
 ]
-
-let uid = (fun uid -> uid |> Uid.to_int |> Char.chr |> String.of_char)
 
 let fastcheck_is_unsolvable expr = 
   Formula.contains_binop Binop.Modulus expr ||

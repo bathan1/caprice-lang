@@ -95,12 +95,31 @@ let to_propositional
   let bool_f = to_bool_formula formula in
   (bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq)
 
-type int_constraint = { lower : int; upper : int; neq : int list }
+type int_constraint = 
+  { lower : int
+  ; upper : int
+  ; neq : int list
+  ; eq : int list
+  }
 
-let bound_to_formula_clauses (uid, { lower; upper; neq; } : Uid.t * int_constraint) =
-  let is_impossible_bound = lower > upper in
-  if is_impossible_bound then
-    [ Formula.const_bool false ]
+let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_constraint) =
+  let over_one_eq eq =
+    eq
+    |> List.sort_uniq Int.compare
+    |> function
+      | [] -> false
+      | _ :: [] -> false
+      | _ -> true
+  in
+  let has_conflicting_eqs neq =
+    List.exists (fun n -> List.mem n eq) neq
+  in
+  if lower > upper
+    then [Formula.const_bool false]
+  else if over_one_eq eq 
+    then [Formula.const_bool false]
+  else if has_conflicting_eqs neq
+    then [Formula.const_bool false]
   else
     let variable = Formula.symbol (I uid) in
     let neq_formulas =
@@ -166,55 +185,57 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
     match Uid.Map.find_opt key map with
     | Some v -> v
     | None ->
-      { lower = Int.min_int;
-        upper = Int.max_int;
-        neq = [] }
+      { lower = Int.min_int
+      ; upper = Int.max_int
+      ; neq = [] 
+      ; eq = []
+      }
   in
   let collect_bounds = 
     fun (acc, other) clause ->
       match clause with
       | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
-        let { lower; upper; neq; } = find_or_default key acc in
+        let { lower ; upper ; neq ; eq } = find_or_default key acc in
         let next_neq_set = c :: neq in
         let next =
-          Uid.Map.add key { lower; upper; neq = next_neq_set; } acc
+          Uid.Map.add key { lower ; upper ; neq = next_neq_set ; eq } acc
         in
         (next, other)
       (* eq case *)
       | Formula.Binop (Equal, Const_int c, Key (I key))
       | Formula.Binop (Equal, Key (I key), Const_int c) ->
-        let { neq; _ } = find_or_default key acc in
+        let current = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower = c; upper = c; neq } acc
+            Uid.Map.add key { current with eq = c :: current.eq } acc
         in
         (next, other)
       (* lower bounds *)
       | Binop (Less_than_eq, Const_int c, Key (I key)) ->
-        let { lower; upper; neq; } = find_or_default key acc in
+        let { lower ; upper ; neq ; eq } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower = max lower c; upper; neq } acc
+          Uid.Map.add key { lower = max lower c ; upper ; neq ; eq } acc
         in
         (next, other)
       | Binop (Less_than, Const_int c, Key (I key)) ->
-        let { lower; upper; neq; } = find_or_default key acc in
+      let { lower ; upper ; neq ; eq } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower = max lower (c + 1); upper; neq }
+            { lower = max lower (c + 1) ; upper ; neq ; eq }
             acc
         in
         (next, other)
       (* upper bounds *)
       | Binop (Less_than_eq, Key (I key), Const_int c) ->
-        let { lower; upper; neq; } = find_or_default key acc in
+        let { lower ; upper ; neq ; eq } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower; upper = min upper c; neq } acc
+          Uid.Map.add key { lower ; upper = min upper c ; neq ; eq } acc
         in
         (next, other)
       | Binop (Less_than, Key (I key), Const_int c) ->
-        let { lower; upper; neq; } = find_or_default key acc in
+        let { lower ; upper ; neq ; eq } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower; upper = min upper (c - 1); neq }
+            { lower ; upper = min upper (c - 1) ; neq ; eq }
             acc
         in
         (next, other)
@@ -260,64 +281,64 @@ let rewrite_bounds : type k. (bool, k) Formula.t -> (bool, k) Formula.t =
 
 type var = Symbol_key of Uid.t | Z0
 
-type diff_constraint = {
-  x : var;  (** Variable id to subtract. *)
-  y : var;  (** Variable id that subtracts [x]. *)
-  c : int;  (** Intepreted as an int {i literal} *)
-}
+type diff_constraint = 
+  (** Encodes [x - y <= c] *)
+  { x : var  (** Variable to subtract *)
+  ; y : var  (** Variable id that subtracts [x]. *)
+  ; c : int  (** Intepreted as an int {i literal} *)
+  }
 
-(** [to_diff_constraints formula] returns the list of integer difference 
-    constraints in FORMULA. *)
+(** [to_diff_constraints formula] returns the list of integer difference constraints in FORMULA. *)
 let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
   : diff_constraint list =
   match formula with
   (* x = c -> (x - 0 <= c) and (0 - y) <= -c *)
   | Binop (Equal, Key (I x), Const_int c)
     ->
-    [ { x = Symbol_key x; y = Z0; c }; { x = Z0; y = Symbol_key x; c = -c } ]
+    [ { x = Symbol_key x ; y = Z0; c } ; { x = Z0; y = Symbol_key x; c = -c } ]
   (* x = y -> (x - y) <= 0 and (y - x) <= 0 *)
   | Binop (Equal, Key (I x), Key (I y)) ->
     [
-      { x = Symbol_key x; y = Symbol_key y; c = 0 };
-      { x = Symbol_key y; y = Symbol_key x; c = 0 };
+      { x = Symbol_key x ; y = Symbol_key y ; c = 0 };
+      { x = Symbol_key y ; y = Symbol_key x ; c = 0 };
     ]
   (* x <= y -> (x - y <= 0)
         y >= x -> (x - y <= 0)
         not (x > y) -> x <= y -> (x - y) <= 0 *)
   | Binop (Less_than_eq, Key (I x), Key (I y)) ->
-    [ { x = Symbol_key x; y = Symbol_key y; c = 0 } ]
+    [ { x = Symbol_key x ; y = Symbol_key y ; c = 0 } ]
   (* x <= c -> (x - 0) <= c
         c >= x -> (x - 0) <= c
         not (x > c) -> x <= c -> (x - 0) <= c *)
   | Binop (Less_than_eq, Key (I x), Const_int c) ->
-    [ { x = Symbol_key x; y = Z0; c } ]
+    [ { x = Symbol_key x ; y = Z0 ; c } ]
   (* x < c -> x - 0 <= c - 1 *)
   | Binop (Less_than, Key (I x), Const_int c) ->
-    [ { x = Symbol_key x; y = Z0; c = c - 1 } ]
+    [ { x = Symbol_key x ; y = Z0 ; c = c - 1 } ]
   (* x >= c -> 0 - x <= -c
        not (x < c) -> x >= c -> (0 - x) <= -c *)
   | Binop (Less_than_eq, Const_int c, Key (I x)) ->
-    [ { x = Z0; y = Symbol_key x; c = -c } ]
+    [ { x = Z0 ; y = Symbol_key x ; c = -c } ]
   (* x > c -> (0 - x) <= -(c + 1) *)
   | Binop (Less_than, Const_int c, Key (I x)) ->
-    [ { x = Z0; y = Symbol_key x; c = -(c + 1) } ]
+    [ { x = Z0 ; y = Symbol_key x ; c = -(c + 1) } ]
   (* x > y -> (y - x) <= -1 (difference is at least 1) *)
   | Binop (Less_than, Key (I y), Key (I x)) ->
-    [ { x = Symbol_key y; y = Symbol_key x; c = -1 } ]
+    [ { x = Symbol_key y ; y = Symbol_key x ; c = -1 } ]
   (* x + c <= y  ->  x - y <= -c *)
   | Binop (Less_than_eq, Binop (Plus, Key (I x), Const_int c), Key (I y))
     | Binop (Less_than_eq, Binop (Plus, Const_int c, Key (I x)), Key (I y)) ->
-    [ { x = Symbol_key x; y = Symbol_key y; c = -c } ]
+    [ { x = Symbol_key x ; y = Symbol_key y ; c = -c } ]
   (* y <= x + c  ->  y - x <= c *)
   | Binop (Less_than_eq, Key (I y), Binop (Plus, Key (I x), Const_int c))
     | Binop (Less_than_eq, Key (I y), Binop (Plus, Const_int c, Key (I x))) ->
-    [ { x = Symbol_key y; y = Symbol_key x; c } ]
+    [ { x = Symbol_key y ; y = Symbol_key x ; c } ]
   (* x - c <= y  ->  x - y <= c *)
   | Binop (Less_than_eq, Binop (Minus, Key (I x), Const_int c), Key (I y)) ->
-    [ { x = Symbol_key x; y = Symbol_key y; c } ]
+    [ { x = Symbol_key x ; y = Symbol_key y ; c } ]
   (* y <= x - c  ->  y - x <= -c *)
   | Binop (Less_than_eq, Key (I y), Binop (Minus, Key (I x), Const_int c)) ->
-    [ { x = Symbol_key y; y = Symbol_key x; c = -c } ]
+    [ { x = Symbol_key y ; y = Symbol_key x ; c = -c } ]
   | And exprs -> List.concat_map to_diff_constraints exprs
   | _ -> []
 
@@ -332,9 +353,9 @@ let rec to_diff_constraints (formula : (bool, 'k) Formula.t)
 let to_constraint_graph (formula : (bool, 'k) Formula.t)
   : nodes:int * edges:(int * int * int) array * int Uid.Map.t =
   let constraints = to_diff_constraints formula in
-  List.concat_map (fun {x; y; _} ->
+  List.concat_map (fun {x ; y ; _} ->
     match (x, y) with
-    | Symbol_key x, Symbol_key y -> [ x; y ]
+    | Symbol_key x, Symbol_key y -> [ x ; y ]
     | Symbol_key key, Z0 | Z0, Symbol_key key -> [ key ]
     | _ -> []
   ) constraints
@@ -349,7 +370,7 @@ let to_constraint_graph (formula : (bool, 'k) Formula.t)
     let get_index x = Uid.Map.find x key_to_index in
     let edges_constraints =
       constraints
-      |> List.filter_map (fun { x; y; c } ->
+      |> List.filter_map (fun { x ; y ; c } ->
         match (x, y) with
         | Symbol_key x, Symbol_key y -> Some (get_index x, get_index y, c)
         | Symbol_key x, Z0 -> Some (get_index x, nodes - 1, c)

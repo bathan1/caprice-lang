@@ -70,8 +70,8 @@ let from_value_map (map : value Uid.Map.t) : 'k t =
         | Bool _ -> Bool_key (Symbol.B uid)
         | Int _ -> Int_key (Symbol.I uid))
   in
-  { domain;
-    value =
+  { domain
+  ; value =
       (fun (type a) (sym : (a, 'k) Symbol.t) : a option ->
         match sym with
         | B key -> (
@@ -82,7 +82,8 @@ let from_value_map (map : value Uid.Map.t) : 'k t =
         | I key -> (
             match Uid.Map.find_opt key map with
             | Some (Int i) -> Some i
-            | _ -> None)) }
+            | _ -> None))
+  }
 
 let to_string
   (type k)
