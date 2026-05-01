@@ -1,8 +1,6 @@
 open Formula
 
-type t = literal list
-
-let value_opt (x : 'a) (model : t) : literal option =
+let value_opt (x : 'a) (model : literal list) : literal option =
   List.find_opt (fun lit -> key lit = x) model
 
 let (#::) (x : 'a) (xs : ('a list) option) : ('a list) option =
@@ -16,7 +14,7 @@ let (#::) (x : 'a) (xs : ('a list) option) : ('a list) option =
     - [None] means we found a matching literal between MODEL and CLAUSE, implying CLAUSE is true
     - [Some nonempty] means we haven't found a match yet but there are remaining literals in [nonempty] to match
     - [Some []] means no matching literal pair could be found, implying CLAUSE is falsified *)
-let rec use_clause (model : t) ~(clause : clause) : clause option =
+let rec use_clause (model : literal list) ~(clause : literal list) : literal list option =
   match clause with
   | [] -> Some [] (* then we couldn't find a single true clause *)
   | lit :: clause' ->
@@ -26,18 +24,18 @@ let rec use_clause (model : t) ~(clause : clause) : clause option =
       if lit = lit' then None (* *)
       else use_clause model ~clause:clause'
 
-(** [use model form] uses the literal values from MODEL across
+(** [use model ~form] uses the literal values from MODEL across
     all clauses in FORM and spits out the resulting formula *)
-let rec use (model : t) (form : Formula.t) : Formula.t =
+let rec use (model : literal list) ~(form : Formula.t) : Formula.t =
   match form with
   | [] -> []
   | clause :: form' -> 
     match use_clause model ~clause with
-    | None -> use model form'
-    | Some clause' -> clause' :: (use model form')
+    | None -> use model ~form:form'
+    | Some clause' -> clause' :: (use model ~form:form')
 
-let is_tautology (form : Formula.t) (model : t) : bool =
-  Formula.is_tautology (use model form)
+let is_tautology (model : literal list) ~(form : Formula.t) : bool =
+  Formula.is_tautology (use model ~form)
 
-let pp_model ppf (m : t) =
+let pp_model ppf (m : literal list) =
   List.iter (Printf.fprintf ppf "%a " pp_literal) m

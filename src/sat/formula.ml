@@ -1,32 +1,32 @@
 open Utils
 open Utils.List_utils
 
+type atom = Uid.t
+
 type literal =
-  | Pos of Uid.t
-  | Neg of Uid.t
+  | Pos of atom
+  | Neg of atom
 
-type clause = literal list
-
-type t = clause list
+type t = literal list list
 
 let negate (lit : literal) : literal =
   match lit with
   | Pos n -> Neg n
   | Neg n -> Pos n
 
-let is_empty (c : clause) : bool =
-  match c with
+let is_empty (clause : literal list) : bool =
+  match clause with
   | [] -> true
   | _ -> false
 
-let is_unit_clause (c : clause) : bool =
-  match c with
+let is_unit_clause (clause : literal list) : bool =
+  match clause with
   | [_] -> true
   | _ -> false
 
-let key (lit : literal) : Uid.t = match lit with | Pos n | Neg n -> n
+let key (lit : literal) : atom = match lit with | Pos n | Neg n -> n
 
-let find_free_variable (bound : Uid.t list) (form : t) : Uid.t option =
+let find_free_variable (bound : atom list) (form : t) : atom option =
   form
   |> List.flatten
   |> List.find_opt (fun lit -> not (List.mem (key lit) bound))
@@ -34,22 +34,22 @@ let find_free_variable (bound : Uid.t list) (form : t) : Uid.t option =
 
 let is_tautology (form : t) : bool = form = []
 
-let disjoin (c1 : clause) (c2 : clause) : clause =
-  List.fold_right (fun lit c3 -> if (List.mem lit c3) then c3 else lit :: c3) c1 c2
+let disjoin (clause1 : literal list) (clause2 : literal list) : literal list =
+  List.fold_right (fun lit clause3 -> if (List.mem lit clause3) then clause3 else lit :: clause3) clause1 clause2
 
-let conjoin1 (form : t) (c : clause) : clause list = c :: form
+let conjoin1 (form : t) (clause : literal list) : t = clause :: form
 
 let conjoin (forms : t list) : t = List.flatten forms
 
-let resolve_pair (c1 : clause) (c2 : clause) =
-  match find_pair (fun x y -> x = negate y) c1 c2 with
+let resolve_pair (clause1 : literal list) (clause2 : literal list) =
+  match find_pair (fun lit1 lit2 -> lit1 = negate lit2) clause1 clause2 with
   | None -> failwith "that's not resolvable!"
-  | Some (l1, l2) -> disjoin (remove1 l1 c1) (remove1 l2 c2)
+  | Some (l1, l2) -> disjoin (remove1 l1 clause1) (remove1 l2 clause2)
 
 let pp_literal fd (lit : literal) : unit =
   Printf.fprintf fd "%s%d" (match lit with | Pos _ -> "" | Neg _ -> "~") (Uid.to_int (key lit))
 
-let pp_clause fd (clause : clause) : unit =
+let pp_clause fd (clause : literal list) : unit =
   let n = List.length clause in 
   List.iteri
     (fun i lit -> 

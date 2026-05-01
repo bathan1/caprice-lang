@@ -2,7 +2,7 @@ open Formula
 
 type reason =
   | Decided
-  | Propagated of clause
+  | Propagated of literal list
 
 type t = { level : int ; lit : literal ; reason : reason }
 
@@ -17,7 +17,7 @@ let find_level (lit : literal) (trail : t list) : int =
   | Some entry -> entry.level
 
 (** [to_model trail] derives the boolean value list of each literal from TRAIL *)
-let to_model (trail : t list) : Model.t =
+let to_model (trail : t list) : literal list =
   List.map (fun entry -> entry.lit) trail
 
 (** [find_propagated_opt lits trail] returns the first literal in LITS that exists in TRAIL *and* has [reason = Propagated] *)
@@ -37,7 +37,7 @@ let find_propagated (lits : literal list) (trail : t list) : literal =
 
 (** [find_reason_opt lits trail] returns the reason clause of the
     first propagated literal from LITS in TRAIL, or throws if that doesn't exist *)
-let find_reason_opt (lits : literal list) (trail : t list) : clause option =
+let find_reason_opt (lits : literal list) (trail : t list) : literal list option =
   List.find_map
     (fun lit ->
       match find_opt lit trail with
@@ -45,11 +45,14 @@ let find_reason_opt (lits : literal list) (trail : t list) : clause option =
       | _ -> None)
       lits
 
-(** [find_propagated_reason lits trail] returns the first literal in LITS that exists in TRAIL *and* has [reason = Propagated] if it exists otherwise it throws *)
-let find_reason (lits : literal list) (trail : t list) : clause =
+(** [find_propagated_reason lits trail] returns the first literal in LITS that exists in TRAIL *and* has 
+    [reason = Propagated] if it exists otherwise it throws *)
+let find_reason (lits : literal list) (trail : t list) : literal list =
   match find_reason_opt lits trail with
   | None -> failwith "no propagated literal from LITS in TRAIL"
   | Some clause -> clause
 
+(** [backtrack backtrack_level trail] returns a new trail list where all elements
+    with [level > BACKTRACK_LEVEL] are popped *)
 let backtrack (backtrack_level : int) (trail : t list) : t list =
   List.filter (fun { level; _ } -> level <= backtrack_level) trail

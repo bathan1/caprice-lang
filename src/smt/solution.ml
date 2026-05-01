@@ -1,8 +1,18 @@
-
 type 'k t =
   | Sat of 'k Model.t
   | Unknown
   | Unsat
+
+type ('k, 'core) theory_solution =
+  | Theory_sat of 'k Model.t
+  | Theory_unsat of 'core
+  | Theory_unknown
+
+let from_theory (theory : ('k, 'core) theory_solution) : 'k t =
+  match theory with
+  | Theory_unknown -> Unknown
+  | Theory_unsat _ -> Unsat
+  | Theory_sat model -> Sat model
 
 let merge (x : 'k t) (y : 'k t) : 'k t =
   match x, y with

@@ -308,6 +308,15 @@ let clauses_from (f : (bool, 'k) t) =
   | And ls -> ls
   | f -> [ f ]
 
+let rec disjuncts_from_clause
+    (clause : (bool, 'k) t)
+  : (bool, 'k) t list =
+  match clause with
+  | Binop (Or, left, right) ->
+      disjuncts_from_clause left @ disjuncts_from_clause right
+  | lit ->
+      [ lit ]
+
 let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
  fun target -> function
   | Not formula -> contains_binop target formula

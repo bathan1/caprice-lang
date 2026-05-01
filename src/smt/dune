@@ -4,6 +4,7 @@
  (libraries
   ; internal
   utils
+  sat
   ; external
   baby)
  (synopsis "SMT module for Caprice")

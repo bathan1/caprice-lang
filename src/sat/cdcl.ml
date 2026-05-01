@@ -1,24 +1,25 @@
 open Utils
+open Formula
 
 type next =
 (** [next] is the message type that indicates the next step 
     the main loop should propagate onto a solver state [t] *)
   | Decide
-  | Conflict of Formula.clause
-  | Implication of Formula.clause * Formula.literal
+  | Conflict of literal list
+  | Implication of literal list * literal
 
 let pp_next fd (next : next) : unit =
   match next with
   | Decide ->
       Printf.fprintf fd "Decide"
   | Conflict clause ->
-      Printf.fprintf fd "Conflict (%a)" Formula.pp_clause clause
+      Printf.fprintf fd "Conflict (%a)" pp_clause clause
   | Implication (clause, lit) ->
-      Printf.fprintf fd "Implication (%a, %a)" Formula.pp_clause clause Formula.pp_literal lit
+      Printf.fprintf fd "Implication (%a, %a)" pp_clause clause pp_literal lit
 
 (** [analyze_conflict conflict trail level] returns the first (minimum) unique-implication-point cut
     of decision level LEVEL that directs to the CONFLICT clause based on the TRAIL state *)
-let rec analyze_conflict (level : int) (conflict : Formula.clause) (trail : Trail.t list) : Formula.clause * int =
+let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.t list) : literal list * int =
   match List.filter (fun lit -> Trail.find_level lit trail = level) conflict with
   | [hd] ->
     if level = 0 then
@@ -50,7 +51,7 @@ let find_next (trail : Trail.t list) (form : Formula.t) : next =
     |> Trail.to_model
     |> Model.use_clause
   in
-  let rec search_empty (clauses : Formula.t) (unit_clause : Formula.clause) (lit : Formula.literal) : next =
+  let rec search_empty (clauses : Formula.t) (unit_clause : literal list) (lit : Formula.literal) : next =
     match clauses with
     | [] -> Implication (unit_clause, lit)
     | clause :: clauses' ->
@@ -69,13 +70,13 @@ let find_next (trail : Trail.t list) (form : Formula.t) : next =
   in
   search_unit form
 
-let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : Model.t option =
+let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : literal list option =
   let model = Trail.to_model trail in
   begin match find_next trail form with
   | Decide ->
     begin match Formula.find_free_variable (List.map Formula.key model) form with
     | None -> 
-      if Model.is_tautology form model then Some model
+      if Model.is_tautology model ~form then Some model
       else None
     | Some x -> decide x (level + 1) trail form
     end
@@ -91,12 +92,13 @@ let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : Model.t op
     in
     bcp level (entry :: trail) form
   end
+
 and backtrack_learn
     (backtrack_level : int)
-    (conflict : Formula.clause)
+    (conflict : literal list)
     (trail : Trail.t list)
     (form : Formula.t)
-  : Model.t option =
+  : literal list option =
   let trail' =
     Trail.backtrack backtrack_level trail
   in
@@ -104,14 +106,15 @@ and backtrack_learn
     Formula.conjoin1 form conflict
   in
   bcp backtrack_level trail' form'
+
 and decide 
     (x : Uid.t) 
     (level : int)
     (trail : Trail.t list) 
     (form : Formula.t) 
-  : Model.t option =
+  : literal list option =
   let entry = { level ; Trail.lit = Formula.Pos x ; reason = Decided } in
   bcp level (entry :: trail) form
 
-let cdcl (form : Formula.t) : Model.t option =
+let solve (form : Formula.t) : literal list option =
   bcp 0 [] form

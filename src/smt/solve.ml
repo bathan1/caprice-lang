@@ -259,6 +259,7 @@ let logics : 'k logic list = [
   (Integer.solve_idl, Integer.is_idl_solvable)
 ]
 
+
 let fastcheck_is_unsolvable expr = 
   Formula.contains_binop Binop.Modulus expr ||
   Formula.contains_binop Binop.Divide expr ||
@@ -279,3 +280,36 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     )
   in
   pipeline (direct_solve (module Oracle))
+
+type 'k t_solution = ('k, 'k Connector.smt_literal list) Solution.theory_solution
+type 'k t_solver = 'k Connector.smt_literal list -> 'k t_solution
+
+let cdcl_T (form : (bool, 'k) Formula.t) ~(theory : 'k t_solver) =
+  let conn = Connector.make () in
+  let smt_clauses = Connector.from_smt_formula form in
+  let propositional = Connector.abstract conn smt_clauses in
+  let rec loop conn sat_formula =
+    match Sat.Cdcl.solve sat_formula with
+    | None ->
+      Solution.Unsat
+
+    | Some model ->
+      let smt_lits =
+        Connector.literals_from_model conn model
+      in
+
+      match theory smt_lits with
+      | Theory_unknown ->
+        Solution.Unknown
+
+      | Theory_sat model ->
+        Solution.Sat model
+
+      | Theory_unsat core ->
+        let learned =
+          Connector.theory_learn conn core
+        in
+        loop conn (Sat.Formula.conjoin1 sat_formula learned)
+  in
+
+  loop conn propositional
