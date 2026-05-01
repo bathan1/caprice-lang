@@ -2,3 +2,8 @@
  (name script)
  (libraries smt overlays)
 )
+
+(executable
+ (name props)
+ (libraries sat overlays)
+)

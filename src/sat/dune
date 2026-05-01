@@ -1,0 +1,11 @@
+(library
+ (name sat)
+ (public_name caprice.sat)
+ (libraries
+  ; internal
+  utils
+  ; external
+  baby)
+ (synopsis "SMT module for Caprice")
+ (instrumentation
+  (backend landmarks --auto)))
