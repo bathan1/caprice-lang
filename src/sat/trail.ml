@@ -1,7 +1,7 @@
 open Formula
 
 type reason =
-  | Decision
+  | Decided
   | Propagated of clause
 
 type t = { level : int ; lit : literal ; reason : reason }
@@ -50,3 +50,6 @@ let find_reason (lits : literal list) (trail : t list) : clause =
   match find_reason_opt lits trail with
   | None -> failwith "no propagated literal from LITS in TRAIL"
   | Some clause -> clause
+
+let backtrack (backtrack_level : int) (trail : t list) : t list =
+  List.filter (fun { level; _ } -> level <= backtrack_level) trail

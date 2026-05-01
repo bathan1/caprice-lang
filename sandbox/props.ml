@@ -5,6 +5,9 @@
 open Sat
 open Sat.Formula
 
+let pos x = Pos (Utils.Uid.of_int x)
+let neg x = Neg (Utils.Uid.of_int x)
+
 let form : Formula.t = [
   [ neg 1 ; neg 2 ];
   [ neg 1 ; pos 3 ];
@@ -20,7 +23,7 @@ let form : Formula.t = [
 ]
 
 let trail : Trail.t list = [
-  { lit = pos 1 ; level = 1 ; reason = Decision };
+  { lit = pos 1 ; level = 1 ; reason = Decided };
   { lit = neg 2
   ; level = 1
   ; reason = Propagated [neg 1 ; neg 2]
@@ -39,7 +42,7 @@ let trail : Trail.t list = [
   };
   { lit = neg 6
   ; level = 2
-  ; reason = Decision
+  ; reason = Decided
   };
   { lit = neg 7
   ; level = 2
@@ -70,6 +73,6 @@ let trail : Trail.t list = [
 let conflict = [ neg 11 ; pos 12 ]
 
 let () =
-  let clause, lvl = Cdcl.analyze_conflict conflict trail 2 in
-  (Formula.pp_clause stdout clause);
-  Printf.printf "lvl=%d\n" lvl;
+  match Cdcl.cdcl form with
+  | None -> Printf.printf "UNSAT\n"
+  | Some model -> Printf.printf "SAT: "; Model.pp_model stdout model; Printf.printf "\n";

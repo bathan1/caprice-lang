@@ -9,10 +9,6 @@ type clause = literal list
 
 type t = clause list
 
-let pos (raw_id : int) = Pos (Uid.of_int raw_id)
-
-let neg (raw_id : int) = Neg (Uid.of_int raw_id)
-
 let negate (lit : literal) : literal =
   match lit with
   | Pos n -> Neg n
@@ -50,12 +46,22 @@ let resolve_pair (c1 : clause) (c2 : clause) =
   | None -> failwith "that's not resolvable!"
   | Some (l1, l2) -> disjoin (remove1 l1 c1) (remove1 l2 c2)
 
-let pp_lit fd (lit : literal) : unit =
+let pp_literal fd (lit : literal) : unit =
   Printf.fprintf fd "%s%d" (match lit with | Pos _ -> "" | Neg _ -> "~") (Uid.to_int (key lit))
 
 let pp_clause fd (clause : clause) : unit =
-  List.iter (Printf.fprintf fd "%a " pp_lit) clause
+  let n = List.length clause in 
+  List.iteri
+    (fun i lit -> 
+      if i < n - 1 then Printf.fprintf fd "(%a) " pp_literal lit
+      else Printf.fprintf fd "(%a)" pp_literal lit)
+    clause
 
 let pp_formula fd (form : t) : unit =
+  let n = List.length form in
   if (is_tautology form) then Printf.fprintf fd "true"
-  else List.iter (Printf.fprintf fd "(%a) " pp_clause) form
+  else List.iteri 
+    (fun i clause ->
+      if i < n - 1 then (Printf.fprintf fd "(%a) " pp_clause) clause
+      else (Printf.fprintf fd "(%a)" pp_clause) clause)
+    form
