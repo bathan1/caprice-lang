@@ -1,3 +1,7 @@
+[@@@ocaml.warning "-26"]
+[@@@ocaml.warning "-27"]
+[@@@ocaml.warning "-32"]
+
 open Sat
 open Sat.Formula
 
@@ -65,13 +69,7 @@ let trail : Trail.t list = [
 
 let conflict = [ neg 11 ; pos 12 ]
 
-let state : Cdcl.t = 
-  { clauses = form
-  ; level = 2
-  ; learned = []
-  }
-
 let () =
-  let clause, lvl = Cdcl.analyze_conflict state trail conflict in
+  let clause, lvl = Cdcl.analyze_conflict conflict trail 2 in
   (Formula.pp_clause stdout clause);
   Printf.printf "lvl=%d\n" lvl;

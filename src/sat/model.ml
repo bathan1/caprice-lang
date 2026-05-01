@@ -10,24 +10,32 @@ let (#::) (x : 'a) (xs : ('a list) option) : ('a list) option =
   | None -> None
   | Some xs' -> Some (x :: xs')
 
-let rec use_clause (clause : clause) (model : t) : clause option =
+(** [use_clause model clause] uses the literal values from MODEL in CLAUSE 
+    and returns an option that is one of the following, depending on the inputs:
+
+    - [None] means we found a matching literal between MODEL and CLAUSE, implying CLAUSE is true
+    - [Some nonempty] means we haven't found a match yet, but there are the remaining 
+      literals to match in NONEMPTY
+    - [Some []] means no matching literal pair could be found, implying CLAUSE is falsified *)
+let rec use_clause (model : t) (clause : clause) : clause option =
   match clause with
-  | [] -> Some []
+  | [] -> Some [] (* then we couldn't find a single true clause *)
   | lit :: clause' ->
     match value_opt (key lit) model with
     | None -> lit #:: (use_clause clause' model)
     | Some lit' ->
-      if lit = lit' then None
+      if lit = lit' then None (* *)
       else use_clause clause' model
 
-let rec use (form : Formula.t) (model : t) : Formula.t =
+(** [use model form] uses the literal values from MODEL across
+    all clauses in FORM and spits out the resulting formula *)
+let rec use (model : t) (form : Formula.t) : Formula.t =
   match form with
   | [] -> []
   | clause :: form' -> 
     match use_clause clause model with
-    | None -> use form' model
-    | Some clause' -> clause' :: (use form' model)
+    | None -> use model form'
+    | Some clause' -> clause' :: (use model form')
 
 let is_tautology (form : Formula.t) (model : t) : bool =
-  Formula.is_tautology (use form model)
-
+  Formula.is_tautology (use model form)
