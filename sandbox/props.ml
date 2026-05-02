@@ -140,6 +140,81 @@ let unsat_form =
       (Formula.binop Binop.Plus (Formula.symbol b) (Formula.const_int 5));
   ]
 
+let sat_form =
+  let module AsciiSymbol = Symbol.AsciiSymbol in
+  let a = AsciiSymbol.make_int 'a' in
+  let b = AsciiSymbol.make_int 'b' in
+  let c = AsciiSymbol.make_int 'c' in
+  let d = AsciiSymbol.make_int 'd' in
+  [
+    (* 
+      Original variables:
+
+        x1 -> a
+        x2 -> b
+        x3 -> c
+        x4 -> d
+
+      Original constraints:
+
+        (x1 <= x3 - 5) ∧ (x1 <= x4 - 3) ∧
+        (x2 <= x1 + 3) ∧ (x3 <= x2 + 2) ∧
+        (x3 <= x4 - 1) ∧ (x4 <= x2 + 5)
+
+      Rewritten:
+
+        (a <= c - 5) ∧ (a <= d - 3) ∧
+        (b <= a + 3) ∧ (c <= b + 2) ∧
+        (c <= d - 1) ∧ (d <= b + 5)
+
+      Difference-logic form:
+
+        a - c <= -5
+        a - d <= -3
+        b - a <=  3
+        c - b <=  2
+        c - d <= -1
+        d - b <=  5
+
+      Expected model from the example:
+
+        a -> -2
+        b ->  1
+        c ->  3
+        d ->  4
+    *)
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol a)
+      (Formula.binop Binop.Minus (Formula.symbol c) (Formula.const_int 5));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol a)
+      (Formula.binop Binop.Minus (Formula.symbol d) (Formula.const_int 3));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol b)
+      (Formula.binop Binop.Plus (Formula.symbol a) (Formula.const_int 3));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol c)
+      (Formula.binop Binop.Plus (Formula.symbol b) (Formula.const_int 2));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol c)
+      (Formula.binop Binop.Minus (Formula.symbol d) (Formula.const_int 1));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol d)
+      (Formula.binop Binop.Plus (Formula.symbol b) (Formula.const_int 5));
+  ]
+
 let pp_list pp_item fmt xs =
   Format.fprintf fmt "[@[<hov>";
   List.iteri
@@ -153,13 +228,18 @@ let model_key_to_string : type k. k Model.key -> string = function
   | Model.Bool_key sym -> Symbol.AsciiSymbol.to_string (Symbol.to_uid sym)
   | Model.Int_key sym -> Symbol.AsciiSymbol.to_string (Symbol.to_uid sym)
 
-let () =
-  let as_t_lits = List.flatten (Theory.from_smt_formula unsat_form) in
+let run_idl_example name form =
+  let as_t_lits = List.flatten (Theory.from_smt_formula form) in
   let res = Idl.idl as_t_lits in
 
   Format.printf
-    "%a@."
+    "%s:@.%a@.@."
+    name
     (Solution.pp_theory_solution
        ~key:model_key_to_string
        (pp_list Theory.pp_literal))
     res
+
+let () =
+  run_idl_example "UNSAT example" unsat_form;
+  run_idl_example "SAT example" sat_form
