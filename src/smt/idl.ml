@@ -160,7 +160,7 @@ let build_constraint_graph (constraints : diff_constraint list) (key_to_index : 
     1 + Uid.Map.cardinal key_to_index + 1 (* [0; x; y; z0] *)
   in
   let edges_constraints = edges_from_constraints constraints nodes key_to_index in
-  let dummy_root_edges = List.init nodes (fun i -> (0, i, 0)) in
+  let dummy_root_edges = List.init (nodes - 1) (fun i -> (0, i + 1, 0)) in
   let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
   (~nodes, ~edges, key_to_index)
 
@@ -194,10 +194,10 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
       in
       (distance, predecessor)
     | Some du, Some dv ->
-      let () =
-        if du + w < dv then distance.(v) <- Some (du + w);
+      if du + w < dv then (
+        distance.(v) <- Some (du + w);
         predecessor.(v) <- Some u
-      in
+      );
       (distance, predecessor)
   in
   let distance, predecessor =
