@@ -29,3 +29,34 @@ let to_string
   | Unknown -> "\"Unknown\""
   | Unsat -> "\"Unsat\""
   | Sat model -> Model.to_string model ~key
+
+let pp_solution
+  (type k)
+  ~(key : k Model.key -> string)
+  (fmt : Format.formatter)
+  (solution : k t)
+  : unit =
+  match solution with
+  | Unknown ->
+    Format.fprintf fmt "Unknown"
+
+  | Unsat ->
+    Format.fprintf fmt "Unsat"
+
+  | Sat model ->
+    Format.fprintf fmt "Sat %a" (Model.pp_key ~key) model
+
+let pp_theory_solution
+  (type k core)
+  ~(key : k Model.key -> string)
+  (pp_core : Format.formatter -> core -> unit)
+  (fmt : Format.formatter)
+  (solution : (k, core) theory_solution)
+  : unit =
+  match solution with
+  | Theory_unknown ->
+    Format.fprintf fmt "Theory_unknown"
+  | Theory_unsat core ->
+    Format.fprintf fmt "Theory_unsat %a" pp_core core
+  | Theory_sat model ->
+    Format.fprintf fmt "Theory_sat %a" (Model.pp_key ~key) model

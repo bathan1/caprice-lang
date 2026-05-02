@@ -343,3 +343,10 @@ let to_string : type a. uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
   in
   to_string formula
 
+let pp_formula
+  (type a)
+  ~(uid : Utils.Uid.t -> string)
+  (fmt : Format.formatter)
+  (formula : (a, 'k) t)
+  : unit =
+  Format.fprintf fmt "%s" (to_string ~uid formula)

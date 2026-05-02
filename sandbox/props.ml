@@ -72,7 +72,94 @@ let trail : Trail.t list = [
 
 let conflict = [ neg 11 ; pos 12 ]
 
+open Smt
+(*
+  Original constraints:
+
+    (x1 <= x3 - 6) ∧ (x1 <= x4 - 3) ∧
+    (x2 <= x1 + 3) ∧ (x3 <= x2 + 2) ∧
+    (x3 <= x4 - 1) ∧ (x4 <= x2 + 5)
+
+  ASCII variable mapping:
+
+    x1 -> a
+    x2 -> b
+    x3 -> c
+    x4 -> d
+
+  Rewritten:
+
+    (a <= c - 6) ∧ (a <= d - 3) ∧
+    (b <= a + 3) ∧ (c <= b + 2) ∧
+    (c <= d - 1) ∧ (d <= b + 5)
+
+  Difference-logic form:
+
+    a - c <= -6
+    a - d <= -3
+    b - a <=  3
+    c - b <=  2
+    c - d <= -1
+    d - b <=  5
+*)
+let unsat_form =
+  let module AsciiSymbol = Symbol.AsciiSymbol in
+  let a = AsciiSymbol.make_int 'a' in
+  let b = AsciiSymbol.make_int 'b' in
+  let c = AsciiSymbol.make_int 'c' in
+  let d = AsciiSymbol.make_int 'd' in
+  [
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol a)
+      (Formula.binop Binop.Minus (Formula.symbol c) (Formula.const_int 6));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol a)
+      (Formula.binop Binop.Minus (Formula.symbol d) (Formula.const_int 3));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol b)
+      (Formula.binop Binop.Plus (Formula.symbol a) (Formula.const_int 3));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol c)
+      (Formula.binop Binop.Plus (Formula.symbol b) (Formula.const_int 2));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol c)
+      (Formula.binop Binop.Minus (Formula.symbol d) (Formula.const_int 1));
+
+    Formula.binop
+      Binop.Less_than_eq
+      (Formula.symbol d)
+      (Formula.binop Binop.Plus (Formula.symbol b) (Formula.const_int 5));
+  ]
+
+let pp_list pp_item fmt xs =
+  Format.fprintf fmt "[@[<hov>";
+  List.iteri
+    (fun i x ->
+      if i > 0 then Format.fprintf fmt ";@ ";
+      pp_item fmt x)
+    xs;
+  Format.fprintf fmt "@]]"
+
+let model_key_to_string : type k. k Model.key -> string = function
+  | Model.Bool_key sym -> Symbol.AsciiSymbol.to_string (Symbol.to_uid sym)
+  | Model.Int_key sym -> Symbol.AsciiSymbol.to_string (Symbol.to_uid sym)
+
 let () =
-  match Cdcl.cdcl form with
-  | None -> Printf.printf "UNSAT\n"
-  | Some model -> Printf.printf "SAT: "; Model.pp_model stdout model; Printf.printf "\n";
+  let as_t_lits = List.flatten (Theory.from_smt_formula unsat_form) in
+  let res = Idl.idl as_t_lits in
+
+  Format.printf
+    "%a@."
+    (Solution.pp_theory_solution
+       ~key:model_key_to_string
+       (pp_list Theory.pp_literal))
+    res

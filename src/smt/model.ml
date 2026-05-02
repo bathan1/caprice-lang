@@ -124,3 +124,57 @@ let to_string
   match entries with
   | [] -> "{\n}"
   | _ -> "{\n" ^ String.concat ",\n" entries ^ "\n}"
+
+let pp_key
+  (type k)
+  ~(key : k key -> string)
+  (fmt : Format.formatter)
+  (model : k t)
+  : unit =
+  let pp_entry : type a. (a, k) Symbol.t -> string -> a -> unit =
+    fun symbol text v ->
+      match symbol with
+      | Symbol.B _ ->
+        Format.fprintf fmt "@[<h>\"%s\": %s@]"
+          text
+          (Bool.to_string v)
+
+      | Symbol.I _ ->
+        Format.fprintf fmt "@[<h>\"%s\": %d@]"
+          text
+          v
+  in
+
+  let entries =
+    model.domain
+    |> List.filter_map (fun map_key ->
+      match map_key with
+      | Bool_key symbol ->
+        let text = key map_key in
+        begin
+          match model.value symbol with
+          | None -> None
+          | Some v -> Some (fun () -> pp_entry symbol text v)
+        end
+
+      | Int_key symbol ->
+        let text = key map_key in
+        begin
+          match model.value symbol with
+          | None -> None
+          | Some v -> Some (fun () -> pp_entry symbol text v)
+        end)
+  in
+
+  match entries with
+  | [] ->
+    Format.fprintf fmt "{@,}"
+
+  | _ ->
+    Format.fprintf fmt "{@[<v 2>@,";
+    List.iteri
+      (fun i pp_entry ->
+        if i > 0 then Format.fprintf fmt ",@,";
+        pp_entry ())
+      entries;
+    Format.fprintf fmt "@]@,}"

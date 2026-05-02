@@ -492,7 +492,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : (int * int * int) array) =
           printf "UNSAT\n"
     ]} *)
 let solve_idl (formula : (bool, 'k) Formula.t) : 'k Solution.t =
-  let (~nodes, ~edges, key_to_index) = to_constraint_graph formula in
+  let ~nodes, ~edges, key_to_index = to_constraint_graph formula in
   match bellman_ford nodes edges ~src:0 with
   | `Negative_cycle _ -> Solution.Unsat
   | `No_negative_cycle (distances, _) ->
