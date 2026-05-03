@@ -94,10 +94,10 @@ let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : literal li
   end
 
 and backtrack_learn
-    (backtrack_level : int)
-    (conflict : literal list)
-    (trail : Trail.t list)
-    (form : Formula.t)
+  (backtrack_level : int)
+  (conflict : literal list)
+  (trail : Trail.t list)
+  (form : Formula.t)
   : literal list option =
   let trail' =
     Trail.backtrack backtrack_level trail
@@ -108,13 +108,13 @@ and backtrack_learn
   bcp backtrack_level trail' form'
 
 and decide 
-    (x : Uid.t) 
-    (level : int)
-    (trail : Trail.t list) 
-    (form : Formula.t) 
+  (x : Uid.t) 
+  (level : int)
+  (trail : Trail.t list) 
+  (form : Formula.t) 
   : literal list option =
   let entry = { level ; Trail.lit = Formula.Pos x ; reason = Decided } in
   bcp level (entry :: trail) form
 
-let solve (form : Formula.t) : literal list option =
+let cdcl (form : Formula.t) : literal list option =
   bcp 0 [] form

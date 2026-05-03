@@ -280,12 +280,12 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
   in
   pipeline (direct_solve (module Oracle))
 
-let cdcl_T (form : (bool, 'k) Formula.t) ~(theory : 'k Theory.solver) =
+let cdcl_T (formula : (bool, 'k) Formula.t) ~(theory : 'k Theory.solver) =
   let conn = Connector.make () in
-  let smt_clauses = Theory.from_smt_formula (Formula.clauses_from form) in
+  let smt_clauses = Theory.from_smt_formula (Formula.clauses_from formula) in
   let propositional = Connector.abstract conn smt_clauses in
   let rec loop conn sat_formula =
-    match Sat.Cdcl.solve sat_formula with
+    match Sat.Cdcl.cdcl sat_formula with
     | None -> Solution.Unsat
     | Some model ->
       let smt_lits = Connector.literals_from_model conn model in
