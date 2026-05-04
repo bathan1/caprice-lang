@@ -1,3 +1,5 @@
+open Utils
+
 type 'k atom =
   (** An SMT atom is either a BOOL_KEY (bool literal) 
       or a binary op that returns a bool. *)
@@ -13,6 +15,31 @@ type 'k t_solution =
   | Theory_sat of 'k Model.t
   | Theory_unsat of 'k literal list
   | Theory_unknown
+
+type 'k assumption =
+  { lit : 'k literal
+  ; reason : 'k literal list
+  }
+
+let original_assumptions (lits : 'k literal list) : 'k assumption list =
+  List.map
+    (fun lit -> { lit; reason = [lit] })
+    lits
+
+let assumption_lits (assumptions : 'k assumption list) : 'k literal list =
+  List.map (fun a -> a.lit) assumptions
+
+let explain_lit (assumptions : 'k assumption list) (lit : 'k literal)
+  : 'k literal list =
+  match List.find_opt (fun a -> a.lit = lit) assumptions with
+  | Some a -> a.reason
+  | None -> [lit]
+
+let explain_core (assumptions : 'k assumption list) (core : 'k literal list)
+  : 'k literal list =
+  core
+  |> List.concat_map (explain_lit assumptions)
+  |> List.sort_uniq compare
 
 let key =
   function
@@ -87,3 +114,195 @@ let from_smt_formula (form : (bool, 'k) Formula.t list) : 'k literal list list =
   |> List.map Formula.disjuncts_from_clause
   |> List.map from_smt_clause
 
+module Shared = struct
+  type t =
+    | Int_var of Uid.t
+    | Bool_var of Uid.t
+    | Int_const of int
+    | Bool_const of bool
+
+  let compare = compare
+
+  let to_string = function
+    | Int_var uid -> Int.to_string @@ Uid.to_int uid
+    | Bool_var uid -> Int.to_string @@ Uid.to_int uid
+    | Int_const i -> string_of_int i
+    | Bool_const b -> string_of_bool b
+
+  let from_formula : type a k. (a, k) Formula.t -> t option =
+    function
+    | Formula.Key (Symbol.I uid) ->
+        Some (Int_var uid)
+
+    | Formula.Key (Symbol.B uid) ->
+        Some (Bool_var uid)
+
+    | Formula.Const_int i ->
+        Some (Int_const i)
+
+    | Formula.Const_bool b ->
+        Some (Bool_const b)
+
+    | _ ->
+        None
+end
+
+module SharedMap = Map.Make (Shared)
+module SharedSet = Set.Make (Shared)
+
+module type THEORY = sig
+  val owns : 'k literal -> bool
+
+  val solve : 'k literal list -> 'k t_solution
+
+  val implied_equalities :
+    'k literal list ->
+    (Shared.t * Shared.t) list
+
+  val disequalities :
+    'k literal list ->
+    (Shared.t * Shared.t * 'k literal) list
+end
+
+let eq_lit_of_shared_pair : type k.
+  Shared.t * Shared.t ->
+  k literal option =
+  function
+  | Int_var x, Int_var y ->
+      Some
+        (Pos
+           (Predicate
+              (Equal,
+               Formula.symbol (I x),
+               Formula.symbol (I y))))
+
+  | Int_var x, Int_const c
+  | Int_const c, Int_var x ->
+      Some
+        (Pos
+           (Predicate
+              (Binop.Equal,
+               Formula.symbol (I x),
+               Formula.const_int c)))
+
+  | Bool_var x, Bool_var y ->
+      Some
+        (Pos
+           (Predicate
+              (Binop.Equal,
+               Formula.symbol (B x),
+               Formula.symbol (B y))))
+
+  | Bool_var x, Bool_const b
+  | Bool_const b, Bool_var x ->
+      Some
+        (Pos
+           (Predicate
+              (Binop.Equal,
+               Formula.symbol (Symbol.B x),
+               Formula.const_bool b)))
+
+  | Int_const a, Int_const b when a = b -> None
+  | Bool_const a, Bool_const b when Bool.equal a b -> None
+
+  | _ -> None
+
+let normalize_pair (a, b) =
+  if Shared.compare a b <= 0 then (a, b) else (b, a)
+
+let dedup_pairs pairs =
+  pairs
+  |> List.map normalize_pair
+  |> List.sort_uniq compare
+
+let rec propagate_equalities theories assumptions known_eqs =
+  let lits =
+    assumption_lits assumptions
+  in
+
+  let new_eqs =
+    theories
+    |> List.concat_map (fun (module T : THEORY) ->
+         let local_lits = List.filter T.owns lits in
+         T.implied_equalities local_lits)
+    |> dedup_pairs
+  in
+
+  let unseen =
+    List.filter
+      (fun eq -> not (List.mem eq known_eqs))
+      new_eqs
+  in
+
+  if unseen = [] then
+    assumptions, known_eqs
+  else
+    let new_assumptions =
+      unseen
+      |> List.filter_map (fun pair ->
+           match eq_lit_of_shared_pair pair with
+           | None ->
+               None
+
+           | Some lit ->
+               Some
+                 { lit
+                 ; reason = lits
+                 })
+    in
+
+    propagate_equalities
+      theories
+      (new_assumptions @ assumptions)
+      (unseen @ known_eqs)
+
+let find_disequality_conflict theories lits known_eqs =
+  theories
+  |> List.find_map (fun (module T : THEORY) ->
+       let local_lits = List.filter T.owns lits in
+       T.disequalities local_lits
+       |> List.find_map (fun (l, r, original_lit) ->
+            if List.mem (normalize_pair (l, r)) known_eqs then
+              Some original_lit
+            else
+              None))
+
+let solve_each_theory theories assumptions =
+  let lits =
+    assumption_lits assumptions
+  in
+  let rec loop models = function
+    | [] -> Theory_sat (List.fold_left Model.merge Model.empty models)
+    | (_i, (module T : THEORY)) :: rest ->
+        let local_lits =
+          List.filter T.owns lits
+        in
+        match T.solve local_lits with
+        | Theory_sat model -> loop (model :: models) rest
+        | Theory_unsat core ->
+          let explained =
+            explain_core assumptions core
+          in
+          Theory_unsat explained
+        | Theory_unknown -> Theory_unknown
+  in
+
+  theories
+  |> List.mapi (fun i theory -> i, theory)
+  |> loop []
+
+let combine theories : 'k t_solver =
+  fun lits ->
+    let assumptions, known_eqs =
+      propagate_equalities theories (original_assumptions lits) []
+    in
+    let propagated_lits =
+      assumption_lits assumptions
+    in
+    match solve_each_theory theories assumptions with
+    | Theory_sat model ->
+      begin match find_disequality_conflict theories propagated_lits known_eqs with
+      | Some _ -> Theory_unsat lits
+      | None -> Theory_sat model
+      end
+    | ts -> ts

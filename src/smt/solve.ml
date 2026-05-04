@@ -13,21 +13,17 @@ end
 let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   X.solve (Formula.transform (module X) e)
 
-let cdcl_T ~(theory : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
+let cdcl_T ~(t : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
   let conn = Connector.make () in
   let smt_clauses = Theory.from_smt_formula (Formula.clauses_from formula) in
   let propositional = Connector.abstract conn smt_clauses in
   let rec loop conn sat_formula =
-    Printf.printf "loop %s?\n" (Sat.Formula.to_string sat_formula);
     match Sat.Cdcl.cdcl sat_formula with
     | None ->
       Solution.Unsat
     | Some model ->
       let smt_lits = Connector.literals_from_model conn model in
-      Printf.printf "Boolean model: %s\nTheory literals: %s\n\n"
-        (Sat.Formula.clause_to_string model)
-        (Theory.unit_literals_to_formula_string smt_lits);
-      match theory smt_lits with
+      match t smt_lits with
       | Theory_unknown -> Solution.Unknown
       | Theory_sat model -> Solution.Sat model
       | Theory_unsat core ->
@@ -141,7 +137,6 @@ let implied_concretization : 'k simplifier = fun solve expr ->
     | Const_bool true -> Solution.Sat (Model.from_value_map value_map)
     | Const_bool false -> Solution.Unsat
     | _ ->
-    Printf.printf "Before: %s\n After: %s\n\n" (Formula.to_string ~key:Model.int_key_to_string expr) (Formula.to_string ~key:Model.int_key_to_string simplified);
     solve simplified
 
 (*
@@ -211,11 +206,15 @@ let linearize next expr =
   next (Integer.linearize expr)
 
 let drop_redundant_ineqs next expr =
-  let simplified = Integer.drop_redundant_ineqs expr in
-  Printf.printf "[drop_redundant_bounds] Before: %s\n[drop_redundant_bounds] After: %s\n\n" (Formula.to_string ~key:Model.int_key_to_string expr) (Formula.to_string ~key:Model.int_key_to_string simplified);
   next (Integer.drop_redundant_ineqs expr)
 
-let cdcl_idl expr = cdcl_T ~theory:Idl.idl expr
+let blue3_solve formula =
+  cdcl_T
+    ~t:(Theory.combine [
+      (module Euf : Theory.THEORY);
+      (module Idl : Theory.THEORY);
+    ])
+    formula
 
 let contains_unsolvable_binop formula =
   Formula.contains_binop Times formula
@@ -223,7 +222,7 @@ let contains_unsolvable_binop formula =
   || Formula.contains_binop Modulus formula
   || Formula.contains_binop Plus formula
 
-let try_idl ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
+let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
   if contains_unsolvable_binop formula then next formula
   else
     match formula with
@@ -233,7 +232,7 @@ let try_idl ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.
       let formula', num_cases = Idl.split_cases formula in
       if num_cases > threshold then next formula
       else
-        match cdcl_idl formula' with
+        match blue3_solve formula' with
         | Solution.Unknown ->
           next formula
         | solution -> solution
@@ -261,6 +260,6 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     linearize
     @@> implied_concretization
     @@> drop_redundant_ineqs
-    @@> try_idl ~threshold:6
+    @@> blue3 ~threshold:6
   in
   pipeline (direct_solve (module Oracle))

@@ -275,7 +275,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
 
     `Negative_cycle (collect start [])
 
-(** [idl formula] finds the tightest upper bounds of each integer variable in FORMULA
+(** [solve formula] finds the tightest upper bounds of each integer variable in FORMULA
 
     {[
     open Smt
@@ -299,7 +299,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
           printf "UNSAT\n"
     ]}
 *)
-let idl (formula : 'k Theory.literal list) : 'k Theory.t_solution =
+let solve (formula : 'k Theory.literal list) : 'k Theory.t_solution =
   let ~nodes, ~edges, ~index = to_constraint_graph formula in
   match bellman_ford nodes edges ~src:0 with
   | `Negative_cycle cycle_edges ->
@@ -361,3 +361,133 @@ let split_cases (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
     | _ -> formula, 0
   in
   split formula
+
+let partition (formula : 'k Theory.literal list) : 'k Theory.literal list * 'k Theory.literal list =
+  let owns_lit : 'k Theory.literal -> bool =
+    let is_plain_term : type a k. (a, k) Formula.t -> bool =
+      function
+      | Formula.Key _ -> true
+      | Formula.Const_int _ -> true
+      | Formula.Const_bool _ -> true
+      | _ -> false
+    in
+    function
+    | Theory.Pos (Theory.Predicate (Less_than, l, r)) -> is_plain_term l && is_plain_term r
+    | Theory.Neg (Theory.Predicate (Less_than_eq, l, r)) -> is_plain_term l && is_plain_term r
+    | _ -> false
+  in
+  List.fold_left (fun (solvable, unsolvable) lit ->
+    if owns_lit lit then
+      lit :: solvable, unsolvable
+    else
+      solvable, lit :: unsolvable)
+    ([], [])
+    formula
+
+let shared_from_var (v : var) : Theory.Shared.t =
+  match v with
+  | Symbol_key uid -> Theory.Shared.Int_var uid
+  | Z0 -> Theory.Shared.Int_const 0
+
+let canonical_shared_pair (l, r) =
+  if Theory.Shared.compare l r <= 0 then
+    (l, r)
+  else
+    (r, l)
+
+module SharedPair = struct
+  type t = Theory.Shared.t * Theory.Shared.t
+
+  let compare (l1, r1) (l2, r2) =
+    match Theory.Shared.compare l1 l2 with
+    | 0 -> Theory.Shared.compare r1 r2
+    | n -> n
+end
+
+module SharedPairSet = Set.Make (SharedPair)
+
+let dedup_shared_pairs pairs =
+  pairs
+  |> List.fold_left
+       (fun set pair ->
+         SharedPairSet.add (canonical_shared_pair pair) set)
+       SharedPairSet.empty
+  |> SharedPairSet.elements
+
+let equal_var (a : var) (b : var) : bool =
+  match a, b with
+  | Z0, Z0 -> true
+  | Symbol_key x, Symbol_key y -> Uid.equal x y
+  | _ -> false
+
+let implied_equalities
+    (formula : 'k Theory.literal list)
+  : (Theory.Shared.t * Theory.Shared.t) list =
+  let constraints =
+    formula
+    |> collect_constraints
+    |> List.map (fun { diff; _ } -> diff)
+  in
+
+  let has_zero_bound x y =
+    List.exists
+      (fun ({ x = x'; y = y'; c } : diff_constraint) ->
+         c = 0 && equal_var x x' && equal_var y y')
+      constraints
+  in
+
+  constraints
+  |> List.filter_map (fun ({ x; y; c } : diff_constraint) ->
+       if c = 0
+          && not (equal_var x y)
+          && has_zero_bound y x
+       then
+         Some (shared_from_var x, shared_from_var y)
+       else
+         None)
+  |> dedup_shared_pairs
+
+let disequalities
+    (formula : 'k Theory.literal list)
+  : (Theory.Shared.t * Theory.Shared.t * 'k Theory.literal) list =
+  formula
+  |> collect_constraints
+  |> List.filter_map (fun { diff = { x; y; c }; source } ->
+       if c < 0 && not (equal_var x y) then
+         Some
+           ( shared_from_var x
+           , shared_from_var y
+           , source )
+       else
+         None)
+
+let owns : 'k Theory.literal -> bool =
+  let owns_atom : type k. k Theory.atom -> bool =
+    function
+    | Theory.Bool_key _ ->
+        false
+
+    | Theory.Predicate (Binop.Equal, left, right) ->
+        Option.is_some (find_diff_opt Binop.Equal left right)
+
+    | Theory.Predicate (Binop.Less_than, left, right) ->
+        Option.is_some (find_diff_opt Binop.Less_than left right)
+
+    | Theory.Predicate (Binop.Less_than_eq, left, right) ->
+        Option.is_some (find_diff_opt Binop.Less_than_eq left right)
+
+    | Theory.Predicate _ ->
+        false
+  in
+
+  function
+  | Theory.Pos atom ->
+      owns_atom atom
+
+  (* not (x = y) is disequality, not a single IDL constraint.
+     It should be split earlier into x <= y - 1 OR y <= x - 1. *)
+  | Theory.Neg (Theory.Predicate (Binop.Equal, _, _)) ->
+      false
+
+  | Theory.Neg atom ->
+      owns_atom atom
