@@ -159,3 +159,9 @@ let to_string
   match entries with
   | [] -> "{\n}"
   | _ -> "{\n" ^ String.concat ",\n" entries ^ "\n}"
+
+let int_key_to_string k = k
+  |> uid_from_key
+  |> Utils.Uid.to_int
+  |> Int.to_string
+  |> Printf.sprintf "<%s>"

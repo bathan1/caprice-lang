@@ -136,13 +136,7 @@ let implied_concretization : 'k simplifier = fun solve expr ->
     | Const_bool true -> Solution.Sat (Model.from_value_map value_map)
     | Const_bool false -> Solution.Unsat
     | _ ->
-    let intstring_key k = k
-      |> Model.uid_from_key
-      |> Utils.Uid.to_int
-      |> Int.to_string
-      |> Printf.sprintf "<%s>"
-    in
-    Printf.printf "Before: %s\n After: %s\n\n" (Formula.to_string ~key:intstring_key expr) (Formula.to_string ~key:intstring_key simplified);
+    Printf.printf "Before: %s\n After: %s\n\n" (Formula.to_string ~key:Model.int_key_to_string expr) (Formula.to_string ~key:Model.int_key_to_string simplified);
     solve simplified
 
 (*
@@ -212,6 +206,8 @@ let linearize next expr =
   next (Integer.linearize expr)
 
 let drop_redundant_ineqs next expr =
+  let simplified = Integer.drop_redundant_ineqs expr in
+  Printf.printf "[drop_redundant_bounds] Before: %s\n[drop_redundant_bounds] After: %s\n\n" (Formula.to_string ~key:Model.int_key_to_string expr) (Formula.to_string ~key:Model.int_key_to_string simplified);
   next (Integer.drop_redundant_ineqs expr)
 
 let cdcl_idl expr = cdcl_T ~theory:Idl.idl expr
@@ -258,5 +254,7 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
   (* let ascii_key k = Symbol.AsciiSymbol.to_string @@ Model.uid_from_key k in *)
   let pipeline =
     implied_concretization
+    @@> linearize
+    @@> drop_redundant_ineqs
   in
   pipeline (direct_solve (module Oracle))

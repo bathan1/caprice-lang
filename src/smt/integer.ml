@@ -119,7 +119,7 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
     let variable = Formula.symbol (I uid) in
     let neq_formulas =
       neq 
-      |> List.filter (fun v -> lower < v && v < upper)
+      |> List.filter (fun v -> lower <= v && v <= upper)
       |> List.map (fun v ->
         Formula.binop Not_equal variable (Formula.const_int v))
     in
