@@ -173,9 +173,14 @@ end = struct
         | other when equal other (not_ e) -> false_
         | other when equal other e -> e
         | other -> And [ e ; other ]
+
 end
 
 include T
+
+let plus (x : (int, 'k) t) (y : (int, 'k) t) : (int, 'k) t = binop Plus x y
+
+let minus (x : (int , 'k) t) (y : (int, 'k) t) : (int, 'k) t = binop Minus x y
 
 let transform (type a) (module X : S) (e : (a, 'k) t) : (a, 'k) X.t =
   let rec transform : type a. (a, 'k) t -> (a, 'k) X.t = fun e ->

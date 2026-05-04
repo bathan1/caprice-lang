@@ -332,3 +332,60 @@ let idl (formula : 'k Theory.literal list) : 'k Theory.solution =
     in
     let model = Model.from_value_map local_model in
     Theory_sat model
+
+let affine_from_formula : type a k. (a, k) Formula.t -> affine option =
+  function
+  | Formula.Const_int c -> Some (Const c)
+  | Formula.Key (I x) -> Some (Var_plus_const (Symbol.to_uid (I x), 0))
+  | Formula.Binop (Plus, Formula.Key (I x), Formula.Const_int c)
+  | Formula.Binop (Plus, Formula.Const_int c, Formula.Key (I x)) ->
+    Some (Var_plus_const (Symbol.to_uid (I x), c))
+  | Formula.Binop (Minus, Formula.Key (I x), Formula.Const_int c) ->
+    Some (Var_plus_const (Symbol.to_uid (I x), -c))
+  | _ ->
+    None
+
+let formula_from_affine : type k. affine -> (int, k) Formula.t =
+  function
+  | Const c -> Formula.const_int c
+  | Var_plus_const (x, c) when c > 0 -> Formula.plus (Formula.symbol (Symbol.I x)) (Formula.const_int c)
+  | Var_plus_const (x, c) -> Formula.minus (Formula.symbol (Symbol.I x)) (Formula.const_int (-c))
+
+let split_cases (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
+  let one = Formula.const_int 1 in
+  let rec split (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
+    match formula with
+    | Formula.Not (Formula.Binop (Equal, x, y)) ->
+      begin match affine_from_formula x, affine_from_formula y with
+      | Some ax, Some ay ->
+        let x' = formula_from_affine ax in
+        let y' = formula_from_affine ay in
+        (* x != y  ==>  x <= y - 1 OR x >= y + 1 *)
+        let leq =
+          Formula.binop
+            Less_than_eq
+            x'
+            (Formula.minus y' one)
+        in
+        let geq =
+          Formula.binop
+            Greater_than_eq
+            x'
+            (Formula.plus y' one)
+        in
+        Formula.binop Or leq geq, 1
+      | _ -> formula, 0
+      end
+    | And ls ->
+      let ls', count =
+        List.fold_left
+          (fun (acc, count) f ->
+            let f', n = split f in
+            (f' :: acc, count + n))
+          ([], 0)
+          ls
+      in
+      Formula.and_ (List.rev ls'), count
+    | _ -> formula, 0
+  in
+  split formula

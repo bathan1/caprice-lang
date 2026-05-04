@@ -134,10 +134,7 @@ let benchmark num_trials =
                 ignore (solve_z3_only f))
           in
 
-          let was_backend_used = 
-            match Solve.choose_solver [Integer.solve_idl, Integer.is_idl_solvable] f with
-            | Some _ -> false
-            | None -> true
+          let was_backend_used = false
           in
 
           Printf.printf
