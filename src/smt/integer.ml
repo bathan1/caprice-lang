@@ -1,5 +1,71 @@
 open Utils
 
+type affine =
+  | Const of int
+  | Var_plus_const of Uid.t * int
+
+let add_affine a b =
+  match a, b with
+  | Const x, Const y -> Some (Const (x + y))
+  | Var_plus_const (x, c), Const k
+  | Const k, Var_plus_const (x, c) -> Some (Var_plus_const (x, c + k))
+  | Var_plus_const _, Var_plus_const _ -> None
+
+let sub_affine a b =
+  match a, b with
+  | Const x, Const y -> Some (Const (x - y))
+  | Var_plus_const (x, c), Const k -> Some (Var_plus_const (x, c - k))
+  | Const _, Var_plus_const (_, _) -> None
+  | Var_plus_const _, Var_plus_const _ -> None
+
+let rec affine_from_formula
+  : type a k. (a, k) Formula.t -> affine option =
+  function
+  | Const_int c -> Some (Const c)
+  | Key (I x) -> Some (Var_plus_const (x, 0))
+  | Binop (Plus, left, right) ->
+    begin match affine_from_formula left, affine_from_formula right with
+    | Some l, Some r -> add_affine l r
+    | _ -> None
+    end
+  | Binop (Minus, left, right) ->
+    begin match affine_from_formula left, affine_from_formula right with
+    | Some l, Some r -> sub_affine l r
+    | _ -> None
+    end
+  | _ -> None
+
+let formula_from_affine : type k. affine -> (int, k) Formula.t =
+  function
+  | Const c -> Formula.const_int c
+  | Var_plus_const (x, c) when c > 0 -> Formula.plus (Formula.symbol (Symbol.I x)) (Formula.const_int c)
+  | Var_plus_const (x, c) -> Formula.minus (Formula.symbol (Symbol.I x)) (Formula.const_int (-c))
+
+let formula_from_affine_comparison
+  : type k.
+    (int * int * bool) Binop.t ->
+    affine ->
+    affine ->
+    (bool, k) Formula.t option =
+  fun binop left right ->
+    match left, right with
+    | Var_plus_const (x, cx), Const c ->
+      (* x + cx op c  ==>  x op c - cx *)
+      Some
+        (Formula.binop
+            binop
+            (Formula.symbol (I x))
+            (Formula.const_int (c - cx)))
+    | Const c, Var_plus_const (x, cx) ->
+      (* c op x + cx  ==>  c - cx op x *)
+      Some
+        (Formula.binop
+            binop
+            (Formula.const_int (c - cx))
+            (Formula.symbol (I x)))
+    | Const c1, Const c2 -> Some (Formula.binop binop (Formula.const_int c1) (Formula.const_int c2))
+    | Var_plus_const _, Var_plus_const _ -> None
+
 module IntSet = Iterables.IntSet
 
 (** [int_symbol uid] is an int symbol with UID wrapped over a [Formula.Key] *)
@@ -8,63 +74,21 @@ let int_symbol (uid : Uid.t) = Formula.symbol (I uid)
 (** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula. *)
 let rec linearize (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
   match formula with
-  | Binop
-    ((Equal | Less_than | Less_than_eq) as binop,
-      Binop (Plus, a, b),
-      c) when Formula.equal a c ->
-      Formula.binop binop b (Formula.const_int 0)
-  | Binop
-    ((Equal | Less_than | Less_than_eq) as binop,
-      (Binop (Minus, (Key I a), (Key I b))),
-      Key I x) when x = a ->
-      Formula.binop binop
-        (Formula.symbol (I b))
-        (Formula.const_int 0)
-  | Binop
-    ((Equal | Less_than | Less_than_eq) as binop,
-      (Binop (Minus, (Key I a), Const_int b)),
-      Const_int 0) ->
-      Formula.binop binop
-        (Formula.symbol (I a))
-        (Formula.const_int b)
-  | And ls -> Formula.and_ (List.map linearize ls)
+  | Formula.Binop
+    (((Equal | Less_than | Less_than_eq) as binop),
+      left,
+      right) ->
+    begin match affine_from_formula left, affine_from_formula right with
+    | Some l, Some r ->
+        begin match formula_from_affine_comparison binop l r with
+        | Some formula' -> formula'
+        | None -> formula
+        end
+    | _ -> formula
+    end
+  | Formula.And ls -> Formula.and_ (List.map linearize ls)
+  | Formula.Not f -> Formula.not_ (linearize f)
   | f -> f
-
-(** [to_propositional to_symbol formula] returns the boolean propositional formula form of FORMULA
-    in the first element and the [Uid.t] to corresponding [Formula.t] atom map. *)
-let to_propositional
-    ?(to_symbol : int -> (bool, 'k) Symbol.t =
-    fun uid -> uid |> Uid.of_int |> fun uid -> Symbol.B uid)
-  (formula : (bool, 'k) Formula.t) =
-  let counter = ref 0 in
-  let hash = Hashtbl.create 32 in
-  let get_next_symbol atomic = 
-    let count = !counter in
-    let prop_sym = to_symbol count in
-    let resolved_uid = Symbol.to_uid prop_sym in
-    counter := count + 1;
-    Hashtbl.add hash resolved_uid atomic;
-    Formula.symbol prop_sym
-  in
-  let rec to_bool_formula : type a. (a, 'k) Formula.t -> (bool, 'k) Formula.t =
-    fun f ->
-    match f with
-    | Formula.Key (B bool_uid) ->
-      get_next_symbol (Formula.symbol (B bool_uid))
-    | Not (Binop (Equal, left, right)) ->
-        Formula.not_ (get_next_symbol (Formula.binop Binop.Equal left right))
-    | Binop (Less_than_eq, left, right) ->
-        get_next_symbol (Formula.binop Less_than_eq left right)
-    | Binop (Less_than, left, right) ->
-        get_next_symbol (Formula.binop Less_than left right)
-    | And ls -> Formula.and_ (List.map to_bool_formula ls)
-    | expr ->
-      failwith (
-        Printf.sprintf "Can't map that to %s" (Formula.to_string ~uid:Symbol.AsciiSymbol.to_string expr)
-      )
-  in
-  let bool_f = to_bool_formula formula in
-  (bool_f, Hashtbl.to_seq hash |> Uid.Map.of_seq)
 
 type int_constraint = 
   { lower : int

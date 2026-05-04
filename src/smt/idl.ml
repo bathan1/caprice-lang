@@ -29,26 +29,9 @@ type 'k edge =
   }
 type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
 
-type affine =
-  | Const of int
-  | Var_plus_const of Uid.t * int
-
-let affine_of_formula : type a. (a, 'k) Formula.t -> affine option =
-  function
-  | Formula.Const_int c ->
-    Some (Const c)
-  | Formula.Key (I x) ->
-    Some (Var_plus_const (x, 0))
-  | Formula.Binop (Plus, Formula.Key (I x), Formula.Const_int c)
-  | Formula.Binop (Plus, Formula.Const_int c, Formula.Key (I x)) ->
-    Some (Var_plus_const (x, c))
-  | Formula.Binop (Minus, Formula.Key (I x), Formula.Const_int c) ->
-    Some (Var_plus_const (x, -c))
-  | _ ->
-    None
 
 let diff_of_leq left right : diff_constraint option =
-  match affine_of_formula left, affine_of_formula right with
+  match Integer.affine_from_formula left, Integer.affine_from_formula right with
   | Some (Var_plus_const (x, kx)), Some (Var_plus_const (y, ky)) ->
     Some { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
   | Some (Var_plus_const (x, kx)), Some (Const c) ->
@@ -95,14 +78,13 @@ let find_diff
     | None -> failwith 
       (Printf.sprintf "No diff atom found in smt-atom: %s" 
         (Formula.to_string 
-          ~uid:Symbol.AsciiSymbol.to_string 
+          ~uid:(fun uid -> Int.to_string (Uid.to_int uid))
           (Formula.binop binop left right)))
     | Some diff -> diff
 
 let mk_atom (source : 'k Theory.literal) (atom : 'k Theory.atom) : 'k atom list =
   match atom with
-  | Bool_key _ ->
-    failwith "Expected input to be a predicate"
+  | Bool_key _ -> []
   | Predicate (binop, left, right) ->
     match find_diff binop left right with
     | Ineq diff ->
@@ -339,33 +321,15 @@ let idl (formula : 'k Theory.literal list) : 'k Theory.solution =
     let model = Model.from_value_map local_model in
     Theory_sat model
 
-let affine_from_formula : type a k. (a, k) Formula.t -> affine option =
-  function
-  | Formula.Const_int c -> Some (Const c)
-  | Formula.Key (I x) -> Some (Var_plus_const (Symbol.to_uid (I x), 0))
-  | Formula.Binop (Plus, Formula.Key (I x), Formula.Const_int c)
-  | Formula.Binop (Plus, Formula.Const_int c, Formula.Key (I x)) ->
-    Some (Var_plus_const (Symbol.to_uid (I x), c))
-  | Formula.Binop (Minus, Formula.Key (I x), Formula.Const_int c) ->
-    Some (Var_plus_const (Symbol.to_uid (I x), -c))
-  | _ ->
-    None
-
-let formula_from_affine : type k. affine -> (int, k) Formula.t =
-  function
-  | Const c -> Formula.const_int c
-  | Var_plus_const (x, c) when c > 0 -> Formula.plus (Formula.symbol (Symbol.I x)) (Formula.const_int c)
-  | Var_plus_const (x, c) -> Formula.minus (Formula.symbol (Symbol.I x)) (Formula.const_int (-c))
-
 let split_cases (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
   let one = Formula.const_int 1 in
   let rec split (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
     match formula with
     | Formula.Not (Formula.Binop (Equal, x, y)) ->
-      begin match affine_from_formula x, affine_from_formula y with
+      begin match Integer.affine_from_formula x, Integer.affine_from_formula y with
       | Some ax, Some ay ->
-        let x' = formula_from_affine ax in
-        let y' = formula_from_affine ay in
+        let x' = Integer.formula_from_affine ax in
+        let y' = Integer.formula_from_affine ay in
         (* x != y  ==>  x <= y - 1 OR x >= y + 1 *)
         let leq =
           Formula.binop
