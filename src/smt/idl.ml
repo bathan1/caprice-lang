@@ -27,8 +27,10 @@ type 'k edge =
   ; weight : int
   ; source : 'k Theory.literal option
   }
-type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
+let edge_to_string edge =
+  Printf.sprintf "(%d, %d, %d)" edge.from_ edge.to_ edge.weight
 
+type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
 
 let diff_of_leq left right : diff_constraint option =
   match Integer.affine_from_formula left, Integer.affine_from_formula right with
@@ -78,7 +80,7 @@ let find_diff
     | None -> failwith 
       (Printf.sprintf "No diff atom found in smt-atom: %s" 
         (Formula.to_string 
-          ~uid:(fun uid -> Int.to_string (Uid.to_int uid))
+          ~key:(function | Bool_key k -> "B" ^ (Int.to_string @@ Uid.to_int k) | Int_key k -> "I" ^ (Int.to_string @@ Uid.to_int k))
           (Formula.binop binop left right)))
     | Some diff -> diff
 
@@ -297,7 +299,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
           printf "UNSAT\n"
     ]}
 *)
-let idl (formula : 'k Theory.literal list) : 'k Theory.solution =
+let idl (formula : 'k Theory.literal list) : 'k Theory.t_solution =
   let ~nodes, ~edges, ~index = to_constraint_graph formula in
   match bellman_ford nodes edges ~src:0 with
   | `Negative_cycle cycle_edges ->

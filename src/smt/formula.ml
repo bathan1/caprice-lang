@@ -331,12 +331,13 @@ let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
   | And ls -> List.exists (contains_binop target) ls
   | _ -> false
 
-let to_string : type a. uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
- fun ~uid formula ->
+let to_string : type a. key:(Model.key -> string) -> (a, 'k) t -> string =
+ fun ~key formula ->
   let rec to_string : type a. (a, 'k) t -> string = function
     | Const_int i -> string_of_int i
     | Const_bool b -> string_of_bool b
-    | Key (I k) | Key (B k) -> uid k
+    | Key (I k) -> key (Model.Int_key k)
+    | Key (B k) -> key (Model.Bool_key k)
     | Not e -> Format.sprintf "(not %s)" (to_string e)
     | And [] -> "true"
     | And (hd :: tl) ->
@@ -349,10 +350,3 @@ let to_string : type a. uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =
   in
   to_string formula
 
-let pp_formula
-  (type a)
-  ~(uid : Utils.Uid.t -> string)
-  (fmt : Format.formatter)
-  (formula : (a, 'k) t)
-  : unit =
-  Format.fprintf fmt "%s" (to_string ~uid formula)

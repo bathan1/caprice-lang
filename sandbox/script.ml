@@ -22,24 +22,17 @@ let clauses =
     Formula.not_ (Formula.symbol b);
   ]
 
-let uid_to_string = fun uid -> uid |> Uid.to_int |> Char.chr |> String.of_char
-
-let uid_to_symbol_string =
+let key =
   function
-  | Model.Bool_key (B k)
-  | Int_key (I k) -> AsciiSymbol.to_string k
+  | Model.Bool_key k
+  | Int_key k -> AsciiSymbol.to_string k
 
-let to_string = Formula.to_string ~uid:uid_to_string
+let to_string = Formula.to_string ~key
 let a = Formula.symbol (AsciiSymbol.make_int 'a')
 let b = Formula.symbol (AsciiSymbol.make_int 'b')
 
-let key_to_string =
-    function
-    | Model.Bool_key (B k)
-    | Int_key (I k) -> AsciiSymbol.to_string k
-
 let solution_text (solution : 'k Solution.t) : string =
-  Solution.to_string solution ~key:key_to_string
+  Solution.to_string solution ~key
 
 open Printf
 open Overlays
@@ -76,7 +69,7 @@ let sanity_check () =
           let () =
             if not eval_result then
               printf "(%d : %s) Inconsistent model:\n%s\n" (i + 1) f_text
-                (Model.to_string model ~key:uid_to_symbol_string)
+                (Model.to_string model ~key)
           in
           eval_result
   in
@@ -149,4 +142,11 @@ let benchmark num_trials =
   in
   aux 0
 
-let () = benchmark 5
+let () =
+  let f = Boolean.parse "(a = 0) ^ (0 <= a)" in
+  let rewritten = Integer.drop_redundant_ineqs f in
+  Printf.printf "%s\n" (Formula.to_string ~key f);
+  let res = Solve.propagate_constants (fun _ -> Solution.Unknown) f in
+  Printf.printf "%s\n" (Solution.to_string ~key res);
+  let res' = main_solve f in
+  Printf.printf "%s\n" (Solution.to_string ~key res');

@@ -175,7 +175,7 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
       Printf.printf "%s\n" (Formula.to_string pruned_formula)
       (* "(a >= 2)" *)
     ]} *)
-let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
+let prune (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t list =
   let find_or_default key map =
     match Uid.Map.find_opt key map with
     | Some v -> v
@@ -236,18 +236,17 @@ let prune : type k. (bool, k) Formula.t list -> (bool, k) Formula.t list =
         (next, other)
       | f -> (acc, f :: other)
   in
-  fun clauses ->
-    let bounds_map, other_clauses = (
-      List.fold_left collect_bounds (Uid.Map.empty, []) clauses
-    ) in
-    bounds_map 
-    |> Uid.Map.to_list
-    |> List.concat_map bound_to_formula_clauses
-    |> fun rewritten -> rewritten @ other_clauses
+  let bounds_map, other_clauses =
+    List.fold_left collect_bounds (Uid.Map.empty, []) clauses
+  in
+  bounds_map 
+  |> Uid.Map.to_list
+  |> List.concat_map bound_to_formula_clauses
+  |> fun rewritten -> rewritten @ other_clauses
 
 (** [drop_redundant_ineqs formula] is FORMULA with redundant inequalities / disequalties dropped. *)
 let drop_redundant_ineqs (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
-  formula 
+  formula
   |> Formula.clauses_from
   |> prune
   |> Formula.and_

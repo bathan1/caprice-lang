@@ -129,9 +129,9 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
               let range = Z3.FuncDecl.get_range decl in
               let kind = Z3.Sort.get_sort_kind range in
               if kind = Z3enums.BOOL_SORT then
-                Some (Model.Bool_key (Symbol.B uid))
+                Some (Model.Bool_key uid)
               else if kind = Z3enums.INT_SORT then
-                Some (Model.Int_key (Symbol.I uid))
+                Some (Model.Int_key uid)
               else
                 None
             )

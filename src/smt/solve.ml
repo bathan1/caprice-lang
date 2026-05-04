@@ -101,7 +101,6 @@ let rec propagate_constants : 'k simplifier = fun solve expr ->
     solve expr
 
 let linearize next expr =
-  (* Printf.printf "linearized to %s\n" (expr |> Integer.linearize |> Formula.to_string ~uid:Symbol.AsciiSymbol.to_string); *)
   next (Integer.linearize expr)
 
 let drop_redundant_ineqs next expr =
@@ -130,50 +129,6 @@ let try_idl ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.
           next formula
         | solution -> solution
 
-let rec is_bool_formula : type a k. (a, k) Formula.t -> bool =
-  function
-  | Formula.Const_bool _ -> true
-  | Formula.Key (B _) -> true
-  | Formula.Not _ -> true
-  | Formula.And _ -> true
-  | Formula.Binop (Or, _, _) -> true
-
-  (* integer comparisons produce bool *)
-  | Formula.Binop
-      ((Equal | Less_than | Less_than_eq), _, _) ->
-      true
-
-  | _ -> false
-
-let rec lower_bool_equalities : type a k. (a, k) Formula.t -> (a, k) Formula.t =
-  function
-  | Formula.Binop (Equal, p, q) ->
-      let p = lower_bool_equalities p in
-      let q = lower_bool_equalities q in
-      Formula.and_
-        [ Formula.binop Or (Formula.not_ p) q
-        ; Formula.binop Or (Formula.not_ q) p
-        ]
-
-  | Formula.And fs ->
-      Formula.and_ (List.map lower_bool_equalities fs)
-
-  | Formula.Binop (Or, left, right) ->
-      Formula.binop Or
-        (lower_bool_equalities left)
-        (lower_bool_equalities right)
-
-  | Formula.Not f ->
-      Formula.not_ (lower_bool_equalities f)
-
-  | Formula.Binop (binop, left, right) ->
-      Formula.binop binop
-        (lower_bool_equalities left)
-        (lower_bool_equalities right)
-
-  | f ->
-      f
-
 (*
   Right-associative simplifier composition.
   E.g. this simplifier
@@ -193,6 +148,5 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     propagate_constants
     @> linearize
     @> drop_redundant_ineqs
-    @> try_idl ~threshold:6
   in
   pipeline (direct_solve (module Oracle))
