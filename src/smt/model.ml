@@ -13,6 +13,37 @@ type value =
   | Bool of bool
   | Int of int
 
+module ValueMap = struct
+  include Uid.Map
+  type binding = key * value
+  type map = value Uid.Map.t
+  type t = map
+
+  let add_bool (key : key) (bool_value : bool) (map : map) : map =
+    add key (Bool bool_value) map
+
+  let add_int (key : key) (int_value : int) (map : map) : map =
+    add key (Int int_value) map
+
+  let find_int_opt (key : key) (map : map) : int option =
+    match Uid.Map.find_opt key map with
+    | Some Int v -> Some v
+    | _ -> None
+
+  let find_bool_opt (key : key) (map : map) : bool option =
+    match Uid.Map.find_opt key map with
+    | Some Bool v -> Some v
+    | _ -> None
+
+  let find_symbol_opt : type a k. (a, k) Symbol.t -> map -> a option = fun key map ->
+    match key with
+    | B k -> find_bool_opt k map
+    | I k -> find_int_opt k map
+
+end
+
+type value_map = value Uid.Map.t
+
 type 'k t =
   { value : 'a. ('a, 'k) Symbol.t -> 'a option
   ; domain : key list }
@@ -65,7 +96,7 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
 
     {["From local: { a => hello; b => world }"]}
 *)
-let from_value_map (map : value Uid.Map.t) : 'k t =
+let from_value_map (map : value_map) : 'k t =
   let domain =
     map
     |> Uid.Map.to_list

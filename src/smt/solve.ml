@@ -1,12 +1,8 @@
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
+
+type 'k rewriter = (bool, 'k) Formula.t -> (bool, 'k) Formula.t
+
 type 'k simplifier = 'k solver -> 'k solver
-
-type 'k validator = (bool, 'k) Formula.t -> bool
-(** A validator [validate formula] returns if FORMULA 
-    is fully solvable by some solver. *)
-
-type 'k logic = 'k solver * 'k validator
-(** A 2 tuple of [SOLVER] and its corresponding [PARTITIONER] is a [LOGIC] *)
 
 module type SOLVABLE = sig
   include Formula.S
@@ -36,6 +32,118 @@ let cdcl_T ~(theory : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k 
         loop conn (Sat.Formula.conjoin1 sat_formula learned)
   in
   loop conn propositional
+
+let add_int_checked k i acc =
+  match Model.ValueMap.find_int_opt k acc with
+  | None -> Some (Model.ValueMap.add_int k i acc)
+  | Some old when old = i -> Some acc
+  | Some _ -> None
+
+let add_bool_checked k b acc =
+  match Model.ValueMap.find_bool_opt k acc with
+  | None -> Some (Model.ValueMap.add_bool k b acc)
+  | Some old when Bool.equal old b -> Some acc
+  | Some _ -> None
+
+let rec collect_concrete
+    (acc : Model.value_map)
+    (f : (bool, 'k) Formula.t)
+  : Model.value_map option =
+  match f with
+  | Binop (Equal, Key (I k), Const_int i)
+  | Binop (Equal, Const_int i, Key (I k)) ->
+      add_int_checked k i acc
+
+  | Binop (Equal, Key (B k), Const_bool b)
+  | Binop (Equal, Const_bool b, Key (B k)) ->
+      add_bool_checked k b acc
+
+  | Key (B k) ->
+      add_bool_checked k true acc
+
+  | Not (Key (B k)) ->
+      add_bool_checked k false acc
+
+  | And ls ->
+      List.fold_left
+        (fun acc_opt f ->
+          match acc_opt with
+          | None -> None
+          | Some acc -> collect_concrete acc f)
+        (Some acc)
+        ls
+  | _ ->
+      Some acc
+
+let implied_concretization : 'k simplifier = fun solve expr ->
+  let open Utils in
+  let module ValueMap = Model.ValueMap in
+  match collect_concrete Uid.Map.empty expr with
+  | None -> Solution.Unsat
+  | Some value_map ->
+    let rec sub_concrete_key : type a. (a, 'k) Formula.t  -> (a, 'k) Formula.t =
+      fun f ->
+      match f with
+      | Key (I key) ->
+        begin match ValueMap.find_int_opt key value_map with
+        | Some iv -> Formula.const_int iv
+        | None -> Formula.symbol (I key)
+        end
+      | Key (B key) -> 
+        begin
+        match ValueMap.find_bool_opt key value_map with
+        | Some iv -> Formula.const_bool iv
+        | None -> Formula.symbol (B key)
+        end
+      | Binop (Less_than, left, right) ->
+        Formula.binop Binop.Less_than
+          (sub_concrete_key left)
+          (sub_concrete_key right)
+      | Binop (Less_than_eq, left, right) ->
+          Formula.binop Binop.Less_than_eq
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Binop (Plus, left, right) ->
+          Formula.binop Binop.Plus
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Binop (Minus, left, right) ->
+          Formula.binop Binop.Minus
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Binop (Times, left, right) ->
+          Formula.binop Binop.Times
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Binop (Divide, left, right) ->
+          Formula.binop Binop.Divide
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Binop (Modulus, left, right) ->
+          Formula.binop Binop.Modulus
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Binop (Equal, left, right) ->
+          Formula.binop Binop.Equal
+            (sub_concrete_key left)
+            (sub_concrete_key right)
+      | Not f -> Formula.not_ (sub_concrete_key f)
+      | And ls -> Formula.and_ @@ List.map sub_concrete_key ls
+      | f -> f
+    in
+    let simplified = sub_concrete_key expr in
+    match simplified with
+    | Const_bool true -> Solution.Sat (Model.from_value_map value_map)
+    | Const_bool false -> Solution.Unsat
+    | _ ->
+    let intstring_key k = k
+      |> Model.uid_from_key
+      |> Utils.Uid.to_int
+      |> Int.to_string
+      |> Printf.sprintf "<%s>"
+    in
+    Printf.printf "Before: %s\n After: %s\n\n" (Formula.to_string ~key:intstring_key expr) (Formula.to_string ~key:intstring_key simplified);
+    solve simplified
 
 (*
   First attempts to solve with a few heuristics, and then calls the solver.
@@ -148,21 +256,7 @@ let ( @@> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   (* let ascii_key k = Symbol.AsciiSymbol.to_string @@ Model.uid_from_key k in *)
-  let intstring_key k = k
-    |> Model.uid_from_key
-    |> Utils.Uid.to_int
-    |> Int.to_string
-    |> Printf.sprintf "<%s>"
-  in
   let pipeline =
-    propagate_constants
-    @@> (fun next expr ->
-      let result = Integer.linearize expr in
-      Printf.printf "[linearize] before = %s | after = %s\n" (Formula.to_string expr ~key:intstring_key) (Formula.to_string result ~key:intstring_key);
-      next result)
-    @@> (fun next expr ->
-      let result = Integer.drop_redundant_ineqs expr in
-      Printf.printf "[drop_redundant_ineqs] before = %s | after = %s\n" (Formula.to_string expr ~key:intstring_key) (Formula.to_string result ~key:intstring_key);
-      next result)
+    implied_concretization
   in
   pipeline (direct_solve (module Oracle))

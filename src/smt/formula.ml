@@ -194,6 +194,36 @@ let transform (type a) (module X : S) (e : (a, 'k) t) : (a, 'k) X.t =
   in
   transform e
 
+let rec eval_opt : type a. 'k Model.t -> (a, 'k) t -> a option =
+  fun model formula ->
+  match formula with
+  | Key s ->
+    model.value s
+  | Const_int i -> Some i
+  | Const_bool b -> Some b
+  | Not e ->
+    begin match eval_opt model e with
+    | Some b -> Some (not b)
+    | None -> None
+    end
+  | And e_ls ->
+    let rec loop = function
+      | [] -> Some true
+      | e :: rest ->
+        begin match eval_opt model e with
+        | Some true -> loop rest
+        | Some false -> Some false
+        | None -> None
+        end
+    in
+    loop e_ls
+  | Binop (type b) (op, e1, e2 : (b * b * a) Binop.t * (b, 'k) t * (b, 'k) t) ->
+    begin match eval_opt model e1, eval_opt model e2 with
+    | Some v1, Some v2 ->
+      Some (Binop.to_arithmetic op v1 v2)
+    | _ -> None (* then some key couldn't be resolved *)
+    end
+
 let rec eval
   : type a. default:('c. ('c, 'k) Symbol.t -> 'c) -> 'k Model.t -> (a, 'k) t -> a
   = fun ~default model e ->
