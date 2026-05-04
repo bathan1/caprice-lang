@@ -46,6 +46,7 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
     | Less_than_eq    -> Z3.Arithmetic.mk_le ctx
     | Greater_than    -> Z3.Arithmetic.mk_gt ctx
     | Greater_than_eq -> Z3.Arithmetic.mk_ge ctx
+    | Iff
     | Equal           -> Z3.Boolean.mk_eq ctx
     | Not_equal       -> fun a b -> not_ (Z3.Boolean.mk_eq ctx a b)
     | Or              -> list_curry @@ Z3.Boolean.mk_or ctx
@@ -67,6 +68,9 @@ module Make_of_context (C : CONTEXT) : Solve.SOLVABLE = struct
 
   let and_ (exprs : (bool, 'k) t list) : (bool, 'k) t =
     Z3.Boolean.mk_and ctx exprs
+
+  let or_ (exprs: (bool, 'k) t list) : (bool, 'k) t =
+    Z3.Boolean.mk_or ctx exprs
 
   let solver = Z3.Solver.mk_simple_solver ctx
 

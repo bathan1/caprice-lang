@@ -15,6 +15,8 @@ module type S = sig
   val is_const : ('a, 'k) t -> bool
 
   val and_ : (bool, 'k) t list -> (bool, 'k) t
+
+  val or_ : (bool, 'k) t list -> (bool, 'k) t
 end
 
 module T : sig
@@ -68,6 +70,22 @@ end = struct
   let rec binop
     : type a b c. (a * a * b, c) Binop.c -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
     = fun op x y ->
+    let as_bool : type a k. (a, k) t -> (bool, k) t option =
+      function
+      | Const_bool _ as f -> Some f
+      | Key (B _) as f -> Some f
+      | Not _ as f -> Some f
+      | And _ as f -> Some f
+
+      | Binop (Or, _, _) as f -> Some f
+      | Binop (Iff, _, _) as f -> Some f
+
+      | Binop (Less_than, _, _) as f -> Some f
+      | Binop (Less_than_eq, _, _) as f -> Some f
+      | Binop (Equal, _, _) as f -> Some f
+
+      | _ -> None
+    in
     match op with
     | Or ->
       begin match x, y with
@@ -76,15 +94,19 @@ end = struct
       | e1, e2 -> Binop (Or, e1, e2)
       end
     | Equal ->
-      begin match x, y with
-      | Const_bool true, e -> e
-      | e, Const_bool true -> e
-      | Const_bool false, e -> not_ e
-      | e, Const_bool false -> not_ e
-      | Const_int _, Key _ -> Binop (Equal, y, x)
-      | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
-      | e1, e2 when equal e1 e2 -> true_
-      | e1, e2 -> Binop (Equal, e1, e2)
+      begin match as_bool x, as_bool y with
+      | Some bx, Some by -> iff bx by
+      | _ ->
+        begin match x, y with
+        | Const_int _, Key _ ->
+            Binop (Equal, y, x)
+        | Const_int i1, Const_int i2 ->
+            Const_bool (i1 = i2)
+        | e1, e2 when equal e1 e2 ->
+            true_
+        | e1, e2 ->
+            Binop (Equal, e1, e2)
+        end
       end
     | Not_equal -> not_ (binop Equal x y)
     | Plus ->
@@ -140,6 +162,26 @@ end = struct
       (* Note that we will change greater-than-eq to less-than-eq *)
       | e1, e2 -> if equal e1 e2 then true_ else Binop (Less_than_eq, e2, e1)
       end
+    | Iff -> iff x y
+
+  and iff (x : (bool, 'k) t) (y : (bool, 'k) t) : (bool, 'k) t =
+    match x, y with
+    | Const_bool true, e
+    | e, Const_bool true -> e
+    | Const_bool false, e
+    | e, Const_bool false -> not_ e
+    | e1, e2 when equal e1 e2 -> true_
+    | e1, e2 -> Binop (Iff, e1, e2)
+
+  and or_ (ls : (bool, 'k) t list) : (bool, 'k) t =
+    match ls with
+    | [] -> const_bool false
+    | [x] -> x
+    | x :: xs ->
+      List.fold_left
+        (fun acc f -> binop Or acc f)
+        x
+        xs
 
   and not_ (e : (bool, 'k) t) : (bool, 'k) t =
     match e with
@@ -152,6 +194,10 @@ end = struct
       (* not (e1 <= e2) = (e2 < e1) *)
       Binop (Less_than, e2, e1)
     | Binop (Or, e1, e2) -> and_ [ not_ e1 ; not_ e2 ] (* it's easier in general to work with "and" *)
+    | Binop (Iff, p, q) ->
+      and_ [ or_ [p; q]
+           ; or_ [not_ p; not_ q]
+           ]
     | _ -> Not e
 
   and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =

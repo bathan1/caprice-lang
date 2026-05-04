@@ -117,4 +117,5 @@ and decide
   bcp level (entry :: trail) form
 
 let cdcl (form : Formula.t) : literal list option =
+  Printf.printf "[cdcl]: input = %s\n" (Formula.to_string form);
   bcp 0 [] form

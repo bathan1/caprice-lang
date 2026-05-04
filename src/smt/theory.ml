@@ -43,6 +43,10 @@ let formula_to_string (formula : 'k literal list list) : string =
   Printf.sprintf "[%s]"
     (Utils.List_utils.join ~sep:", " clause_to_string formula)
 
+let unit_literals_to_formula_string (unit_literals : 'k literal list) : string =
+  Printf.sprintf "[%s]"
+    (Utils.List_utils.join ~sep:", " literal_to_string unit_literals)
+
 let theory_solution_to_string
   (type k)
   ~key

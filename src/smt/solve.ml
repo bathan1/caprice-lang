@@ -18,10 +18,15 @@ let cdcl_T ~(theory : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k 
   let smt_clauses = Theory.from_smt_formula (Formula.clauses_from formula) in
   let propositional = Connector.abstract conn smt_clauses in
   let rec loop conn sat_formula =
+    Printf.printf "loop %s?\n" (Sat.Formula.to_string sat_formula);
     match Sat.Cdcl.cdcl sat_formula with
-    | None -> Solution.Unsat
+    | None ->
+      Solution.Unsat
     | Some model ->
       let smt_lits = Connector.literals_from_model conn model in
+      Printf.printf "Boolean model: %s\nTheory literals: %s\n\n"
+        (Sat.Formula.clause_to_string model)
+        (Theory.unit_literals_to_formula_string smt_lits);
       match theory smt_lits with
       | Theory_unknown -> Solution.Unknown
       | Theory_sat model -> Solution.Sat model
@@ -256,5 +261,6 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     linearize
     @@> implied_concretization
     @@> drop_redundant_ineqs
+    @@> try_idl ~threshold:6
   in
   pipeline (direct_solve (module Oracle))

@@ -40,11 +40,25 @@ open Overlays
 let main_solve = Solve.main_solve (module Typed_z3.Default)
 
 let sanity_check () =
-  let fs = Boolean.from_stdin () in
+  let fs = [
+    Formula.and_ [
+      Formula.or_ [
+        Formula.binop Equal a (Formula.const_int 30);
+        Formula.binop Equal a (Formula.const_int 2);
+      ];
+      Formula.or_ [
+        Formula.not_ (Formula.binop Equal a (Formula.const_int 30));
+        Formula.not_ (Formula.binop Equal a (Formula.const_int 2));
+      ]
+    ]
+  ] in
   let iter =
-   fun i f_text ->
-    let f = Boolean.parse f_text in
+   fun i f ->
+    let key = fun k -> match k with | Model.Bool_key k | Int_key k -> AsciiSymbol.to_string k
+    in
+    let f_text = Formula.to_string f ~key in
     let res = main_solve f in
+    Printf.printf "%s\n" (Solution.to_string ~key res);
     match res with
     | Solution.Unknown -> failwith "never should happen"
     | Solution.Unsat -> (
@@ -142,11 +156,4 @@ let benchmark num_trials =
   in
   aux 0
 
-let () =
-  let f = Boolean.parse "(a = 0) ^ (0 <= a)" in
-  let rewritten = Integer.drop_redundant_ineqs f in
-  Printf.printf "%s\n" (Formula.to_string ~key f);
-  let res = Solve.propagate_constants (fun _ -> Solution.Unknown) f in
-  Printf.printf "%s\n" (Solution.to_string ~key res);
-  let res' = main_solve f in
-  Printf.printf "%s\n" (Solution.to_string ~key res');
+let () = sanity_check ()
