@@ -18,7 +18,9 @@ let from_smt_atom (atom : (bool, 'k) Formula.t) : 'k atom =
   | Formula.Key key -> Bool_key key
   | Formula.Binop (op, left, right) -> Predicate (op, left, right)
   | Formula.Not _ | Formula.And _ | Formula.Const_bool _ ->
-    failwith "that's not a Key or a Binop"
+    failwith 
+      (Printf.sprintf "[Theory.from_smt_atom] that's not a Key or a Binop: %s"
+        (Formula.to_string ~uid:Symbol.AsciiSymbol.to_string atom))
 
 let from_smt_literal (lit : (bool, 'k) Formula.t) : 'k literal =
   match lit with
@@ -32,6 +34,30 @@ let from_smt_formula (form : (bool, 'k) Formula.t list) : 'k literal list list =
   form
   |> List.map Formula.disjuncts_from_clause
   |> List.map from_smt_clause
+
+let atom_to_string (atom : 'k atom) : string =
+  let uid uid = Int.to_string (Utils.Uid.to_int uid) in
+  match atom with
+  | Bool_key (B id) -> Printf.sprintf "B%s" (uid id)
+  | Predicate (binop, left, right) ->
+    Printf.sprintf "%s %s %s"
+    (Formula.to_string left ~uid)
+    (Binop.to_string binop)
+    (Formula.to_string right ~uid)
+
+let literal_to_string (lit : 'k literal) : string =
+  Printf.sprintf "%s"
+    (match lit with
+     | Pos atom -> atom_to_string atom
+     | Neg atom -> "~" ^ atom_to_string atom)
+
+let clause_to_string (clause : 'k literal list) : string =
+  Printf.sprintf "(%s)"
+    (Utils.List_utils.join ~sep:", " literal_to_string clause)
+
+let formula_to_string (formula : 'k literal list list) : string =
+  Printf.sprintf "[%s]"
+    (Utils.List_utils.join ~sep:", " clause_to_string formula)
 
 let pp_atom fmt (atom : 'k atom) : unit =
   match atom with

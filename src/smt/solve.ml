@@ -27,10 +27,8 @@ let cdcl_T ~(theory : 'k Theory.solver) (formula : (bool, 'k) Formula.t) : 'k So
     | Some model ->
       let smt_lits = Connector.literals_from_model conn model in
       match theory smt_lits with
-      | Theory_unknown ->
-        Solution.Unknown
-      | Theory_sat model ->
-        Solution.Sat model
+      | Theory_unknown -> Solution.Unknown
+      | Theory_sat model -> Solution.Sat model
       | Theory_unsat core ->
         let learned =
           Connector.theory_learn conn core
@@ -102,12 +100,8 @@ let rec propagate_constants : 'k simplifier = fun solve expr ->
   | _ ->
     solve expr
 
-(** [pure_simplifier simplify] returns the boilerplate of calling the next solver function
-    on a SIMPLIFY function that doesn't attempt to solve at all. *)
-let pure_simplifier (simplify : (bool, 'k) Formula.t -> (bool, 'k) Formula.t) =
-  fun (next : 'k solver) (expr : (bool, 'k) Formula.t) -> next (simplify expr)
-
 let linearize next expr =
+  (* Printf.printf "linearized to %s\n" (expr |> Integer.linearize |> Formula.to_string ~uid:Symbol.AsciiSymbol.to_string); *)
   next (Integer.linearize expr)
 
 let drop_redundant_ineqs next expr =
@@ -119,15 +113,17 @@ let contains_unsolvable_binop formula =
   Formula.contains_binop Times formula
   || Formula.contains_binop Divide formula
   || Formula.contains_binop Modulus formula
+  || Formula.contains_binop Plus formula
 
 let try_idl ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
   if contains_unsolvable_binop formula then next formula
   else
     let formula', num_cases = Idl.split_cases formula in
     if num_cases > threshold then next formula
-    else 
+    else
       match cdcl_idl formula' with
-      | Solution.Unknown -> next formula
+      | Solution.Unknown ->
+        next formula
       | solution -> solution
 
 (*
@@ -152,4 +148,3 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     @> try_idl ~threshold:6
   in
   pipeline (direct_solve (module Oracle))
-

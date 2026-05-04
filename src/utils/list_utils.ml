@@ -20,3 +20,17 @@ let rec remove1 x ls =
   match ls with
   | [] -> []
   | a :: ls' -> if (x = a) then ls' else a :: (remove1 x ls')
+
+let fold_lefti f init ls =
+  let rec fold i acc = function
+    | [] -> acc
+    | hd :: tl ->
+        fold (i + 1) (f i acc hd) tl
+  in
+  fold 0 init ls
+
+let join ~sep f ls =
+  let n = List.length ls in
+  fold_lefti (fun i acc el ->
+    acc ^ f el ^ (if i < n - 1 then sep else "")
+  ) "" ls

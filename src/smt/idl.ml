@@ -258,9 +258,10 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
     `No_negative_cycle
       ( Array.map (Option.value ~default:Int.max_int) distance
       , predecessor )
-
   | Some edge ->
-    (* Move [nodes] steps back to guarantee we land inside the cycle. *)
+    (* This edge proves a negative cycle, so include it in the predecessor graph. *)
+    predecessor.(edge.to_) <- Some edge;
+
     let rec move_back vertex n =
       if n = 0 then vertex
       else
@@ -275,13 +276,13 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
       match predecessor.(curr) with
       | None ->
         acc
-
       | Some edge ->
         if List.exists
-             (fun e -> e.from_ = edge.from_
-                    && e.to_ = edge.to_
-                    && e.weight = edge.weight)
-             acc
+            (fun e ->
+                e.from_ = edge.from_
+                && e.to_ = edge.to_
+                && e.weight = edge.weight)
+            acc
         then
           edge :: acc
         else
@@ -325,11 +326,16 @@ let idl (formula : 'k Theory.literal list) : 'k Theory.solution =
     in
     Theory_unsat core
   | `No_negative_cycle (distances, _) ->
-    let local_model = Uid.Map.map 
-      (fun index ->
-        Model.Int distances.(index))
-      index
+    let z0_index = Array.length distances - 1 in
+    let z0_dist = distances.(z0_index) in
+
+    let local_model =
+      Uid.Map.map
+        (fun var_index ->
+          Model.Int (distances.(var_index) - z0_dist))
+        index
     in
+
     let model = Model.from_value_map local_model in
     Theory_sat model
 

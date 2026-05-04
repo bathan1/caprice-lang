@@ -6,57 +6,28 @@ module IntSet = Iterables.IntSet
 let int_symbol (uid : Uid.t) = Formula.symbol (I uid)
 
 (** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula. *)
-let linearize (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
+let rec linearize (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
   match formula with
-  | Formula.Binop
-    ( ((Less_than_eq | Less_than) as binop),
-    Binop (Plus, Key (I x), Key (I y)),
-    Key (I z) ) when x = z ->
-    Formula.binop binop (int_symbol y) (Formula.const_int 0)
   | Binop
-    ( ((Less_than_eq | Less_than) as binop),
-    Binop (Plus, Key (I x), Key (I y)),
-    Key (I z) ) when y = z -> 
-    Formula.binop binop (int_symbol x) (Formula.const_int 0)
+    ((Equal | Less_than | Less_than_eq) as binop,
+      Binop (Plus, a, b),
+      c) when Formula.equal a c ->
+      Formula.binop binop b (Formula.const_int 0)
   | Binop
-    ( ((Less_than_eq | Less_than) as binop),
-      (Binop (Plus, Key (I x), Const_int a) | Binop (Plus, Const_int a, Key (I x))),
-      Const_int b ) ->
-    Formula.binop binop (int_symbol x) (Formula.const_int (b - a))
-  (* expr <= c  OR expr < c OR expr = c *)
+    ((Equal | Less_than | Less_than_eq) as binop,
+      (Binop (Minus, (Key I a), (Key I b))),
+      Key I x) when x = a ->
+      Formula.binop binop
+        (Formula.symbol (I b))
+        (Formula.const_int 0)
   | Binop
-    ( ((Less_than_eq | Less_than | Equal) as binop),
-    Binop (((Plus | Minus) as op), Key (I a), Key (I b)),
-    Const_int c ) -> (
-      match op with
-      | Plus ->
-        (* a + b <= c  ==>  a <= c - b *)
-        Formula.binop binop
-          (int_symbol a)
-          (Formula.binop Minus (Formula.const_int c) (int_symbol b))
-      | Minus ->
-        (* a - b <= c  ==>  a <= c + b *)
-        Formula.binop binop
-          (int_symbol a)
-          (Formula.binop Plus (Formula.const_int c) (int_symbol b))
-      | _ -> failwith "unreachable")
-  (* c <= expr OR c < expr OR c = expr *)
-  | Binop
-    ( ((Less_than_eq | Less_than | Equal) as binop),
-    Const_int c,
-    Binop (((Plus | Minus) as op), Key (I a), Key (I b)) ) -> (
-      match op with
-      | Plus ->
-        (* c <= a + b  ==>  c - b <= a *)
-        Formula.binop binop
-          (Formula.binop Minus (Formula.const_int c) (int_symbol b))
-          (int_symbol a)
-      | Minus ->
-        (* c <= a - b  ==>  c + b <= a *)
-        Formula.binop binop
-          (Formula.binop Plus (Formula.const_int c) (int_symbol b))
-          (int_symbol a)
-      | _ -> failwith "unreachable")
+    ((Equal | Less_than | Less_than_eq) as binop,
+      (Binop (Minus, (Key I a), Const_int b)),
+      Const_int 0) ->
+      Formula.binop binop
+        (Formula.symbol (I a))
+        (Formula.const_int b)
+  | And ls -> Formula.and_ (List.map linearize ls)
   | f -> f
 
 (** [to_propositional to_symbol formula] returns the boolean propositional formula form of FORMULA

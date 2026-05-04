@@ -1,7 +1,7 @@
 open Formula
 
 let value_opt (x : 'a) (model : literal list) : literal option =
-  List.find_opt (fun lit -> key lit = x) model
+  List.find_opt (fun lit -> key_from_lit lit = x) model
 
 let (#::) (x : 'a) (xs : ('a list) option) : ('a list) option =
   match xs with
@@ -18,7 +18,7 @@ let rec use_clause (model : literal list) ~(clause : literal list) : literal lis
   match clause with
   | [] -> Some [] (* then we couldn't find a single true clause *)
   | lit :: clause' ->
-    match value_opt (key lit) model with
+    match value_opt (key_from_lit lit) model with
     | None -> lit #:: (use_clause model ~clause:clause')
     | Some lit' ->
       if lit = lit' then None (* *)
@@ -38,4 +38,4 @@ let is_tautology (model : literal list) ~(form : Formula.t) : bool =
   Formula.is_tautology (use model ~form)
 
 let pp_model ppf (m : literal list) =
-  List.iter (Printf.fprintf ppf "%a " pp_literal) m
+  List.iter (Format.fprintf ppf "%a " pp_literal) m

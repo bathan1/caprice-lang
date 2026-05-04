@@ -4,11 +4,30 @@ type reason =
   | Decided
   | Propagated of literal list
 
+let pp_reason fd =
+  function
+  | Decided -> Format.fprintf fd "Decided"
+  | Propagated clause ->
+      Format.fprintf fd "Propagated(%a)" Formula.pp_clause clause
+
 type t = { level : int ; lit : literal ; reason : reason }
+
+let pp_trail fd (trail : t list) : unit =
+  let n = List.length trail in
+  Format.fprintf fd "[";
+  List.iteri
+    (fun i t ->
+      Format.fprintf fd
+        "{ \"level\": %d, \"lit\": %a, \"reason\": %a }%s"
+    t.level Formula.pp_literal t.lit
+    pp_reason t.reason
+    (if i < n - 1 then "," else ""))
+    trail;
+  Format.fprintf fd "]"
 
 (** [find_opt lit trail] returns the entry from TRAIL with LIT *)
 let find_opt (lit : literal) (trail : t list) : t option =
-  List.find_opt (fun entry -> key entry.lit = key lit) trail
+  List.find_opt (fun entry -> key_from_lit entry.lit = key_from_lit lit) trail
 
 (** [find_level lit trail] returns the decision level of LIT in TRAIL or throws if LIT doesn't exist in TRAIL *)
 let find_level (lit : literal) (trail : t list) : int =
@@ -49,8 +68,13 @@ let find_reason_opt (lits : literal list) (trail : t list) : literal list option
     [reason = Propagated] if it exists otherwise it throws *)
 let find_reason (lits : literal list) (trail : t list) : literal list =
   match find_reason_opt lits trail with
-  | None -> failwith "no propagated literal from LITS in TRAIL"
   | Some clause -> clause
+  | None ->
+    failwith
+      (Format.asprintf
+        "no propagated literal from LITS in TRAIL\nlits = %a\ntrail = %a"
+        Formula.pp_clause lits
+        pp_trail trail)
 
 (** [backtrack backtrack_level trail] returns a new trail list where all elements
     with [level > BACKTRACK_LEVEL] are popped *)

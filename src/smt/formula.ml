@@ -328,6 +328,7 @@ let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
   | Binop (op, l, r) ->
       Binop.poly_equal op target || contains_binop target l
       || contains_binop target r
+  | And ls -> List.exists (contains_binop target) ls
   | _ -> false
 
 let to_string : type a. uid:(Utils.Uid.t -> string) -> (a, 'k) t -> string =

@@ -61,8 +61,9 @@ let sanity_check () =
         | Unknown -> failwith "never should happen"
         | Sat _ -> false)
     | Solution.Sat model ->
-        Printf.printf "%s\n" (Model.to_string model ~key:key_to_string);
-        f |> Formula.symbols |> Uid.Set.to_list
+        f
+        |> Formula.symbols
+        |> Uid.Set.to_list
         |> List.fold_left
              (fun acc uid ->
                let binding = model.value (I uid) in

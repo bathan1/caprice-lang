@@ -11,11 +11,11 @@ type next =
 let pp_next fd (next : next) : unit =
   match next with
   | Decide ->
-      Printf.fprintf fd "Decide"
+      Format.fprintf fd "Decide"
   | Conflict clause ->
-      Printf.fprintf fd "Conflict (%a)" pp_clause clause
+      Format.fprintf fd "Conflict (%a)" pp_clause clause
   | Implication (clause, lit) ->
-      Printf.fprintf fd "Implication (%a, %a)" pp_clause clause pp_literal lit
+      Format.fprintf fd "Implication (%a, %a)" pp_clause clause pp_literal lit
 
 (** [analyze_conflict conflict trail level] returns the first (minimum) unique-implication-point cut
     of decision level LEVEL that directs to the CONFLICT clause based on the TRAIL state *)
@@ -74,7 +74,7 @@ let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : literal li
   let model = Trail.to_model trail in
   begin match find_next trail form with
   | Decide ->
-    begin match Formula.find_free_variable (List.map Formula.key model) form with
+    begin match Formula.find_free_variable (List.map Formula.key_from_lit model) form with
     | None -> 
       if Model.is_tautology model ~form then Some model
       else None
