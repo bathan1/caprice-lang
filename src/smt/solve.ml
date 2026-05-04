@@ -253,8 +253,8 @@ let ( @@> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   (* let ascii_key k = Symbol.AsciiSymbol.to_string @@ Model.uid_from_key k in *)
   let pipeline =
-    implied_concretization
-    @@> linearize
+    linearize
+    @@> implied_concretization
     @@> drop_redundant_ineqs
   in
   pipeline (direct_solve (module Oracle))
