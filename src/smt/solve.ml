@@ -17,7 +17,7 @@ end
 let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   X.solve (Formula.transform (module X) e)
 
-let cdcl_T ~(theory : 'k Theory.solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
+let cdcl_T ~(theory : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
   let conn = Connector.make () in
   let smt_clauses = Theory.from_smt_formula (Formula.clauses_from formula) in
   let propositional = Connector.abstract conn smt_clauses in
@@ -147,6 +147,5 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
   let pipeline =
     propagate_constants
     @> linearize
-    @> drop_redundant_ineqs
   in
   pipeline (direct_solve (module Oracle))

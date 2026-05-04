@@ -59,7 +59,7 @@ let to_solution (theory : 'k t_solution) : 'k Solution.t =
   | Theory_unsat _ -> Unsat
   | Theory_sat model -> Sat model
 
-type 'k solver = 'k literal list -> 'k t_solution
+type 'k t_solver = 'k literal list -> 'k t_solution
 
 let from_smt_atom (atom : (bool, 'k) Formula.t) : 'k atom =
   match atom with
