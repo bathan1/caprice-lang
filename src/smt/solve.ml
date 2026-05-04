@@ -142,10 +142,27 @@ let try_idl ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.
 let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
   fun f g -> fun solve -> g (f solve)
 
+let ( @@> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
+  fun f g -> fun solve -> f (g solve)
+
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
+  (* let ascii_key k = Symbol.AsciiSymbol.to_string @@ Model.uid_from_key k in *)
+  let intstring_key k = k
+    |> Model.uid_from_key
+    |> Utils.Uid.to_int
+    |> Int.to_string
+    |> Printf.sprintf "<%s>"
+  in
   let pipeline =
     propagate_constants
-    @> linearize
+    @@> (fun next expr ->
+      let result = Integer.linearize expr in
+      Printf.printf "[linearize] before = %s | after = %s\n" (Formula.to_string expr ~key:intstring_key) (Formula.to_string result ~key:intstring_key);
+      next result)
+    @@> (fun next expr ->
+      let result = Integer.drop_redundant_ineqs expr in
+      Printf.printf "[drop_redundant_ineqs] before = %s | after = %s\n" (Formula.to_string expr ~key:intstring_key) (Formula.to_string result ~key:intstring_key);
+      next result)
   in
   pipeline (direct_solve (module Oracle))

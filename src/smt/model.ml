@@ -4,6 +4,11 @@ type key =
   | Bool_key of Uid.t
   | Int_key of Uid.t
 
+let uid_from_key (key : key) : Uid.t =
+  match key with
+  | Bool_key k
+  | Int_key k -> k
+
 type value =
   | Bool of bool
   | Int of int
