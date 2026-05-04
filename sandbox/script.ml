@@ -8,10 +8,12 @@ module AsciiSymbol = Symbol.AsciiSymbol
 
 let make_bool = AsciiSymbol.make_bool
 let make_int = fun x -> x |> AsciiSymbol.make_int |> Formula.symbol
+
 let a = make_bool 'a'
 let b = make_bool 'b'
 let c = make_bool 'c'
 let d = make_bool 'd'
+
 let or_ l r = Formula.binop Binop.Or l r
 
 let clauses =
@@ -24,9 +26,11 @@ let clauses =
 let key =
   function
   | Model.Bool_key k
-  | Int_key k -> AsciiSymbol.to_string k
+  | Model.Int_key k ->
+      AsciiSymbol.to_string k
 
 let to_string = Formula.to_string ~key
+
 let a = Formula.symbol (AsciiSymbol.make_int 'a')
 let b = Formula.symbol (AsciiSymbol.make_int 'b')
 
@@ -35,7 +39,11 @@ let solution_text (solution : 'k Solution.t) : string =
 
 open Overlays
 
-let main_solve = Solve.main_solve (module Typed_z3.Default)
+let main_solve =
+  Solve.main_solve (module Typed_z3.Default)
+
+let main_solve_with_metadata =
+  Solve.main_solve_with_metadata (module Typed_z3.Default)
 
 let rec model_assigns_all_symbols
   : type a k. k Model.t -> (a, k) Formula.t -> bool =
@@ -85,9 +93,7 @@ let solution_kind = function
   | Solution.Unknown -> "UNKNOWN"
 
 let sanity_check () =
-  let fs = [
-    "(0 <= a) ^ (not (a = 0)) ^ (not (a = 1))"
-  ] in
+  let fs = Boolean.from_stdin () in
 
   let key = function
     | Model.Bool_key k
@@ -139,7 +145,7 @@ let sanity_check () =
           , Expected_unsat_but_got_sat { model; eval_result }
           )
 
-    | Solution.Sat model, Solution.Unknown ->
+    | Solution.Sat _, Solution.Unknown ->
         failwith "z3 should not return unknown in sanity_check"
 
     | Solution.Sat model, Solution.Sat _z3_model ->
@@ -182,27 +188,29 @@ let sanity_check () =
     Printf.printf "Expected from Z3: %s\n" (solution_kind z3_result);
     Printf.printf "Got from main_solve: %s\n" (solution_kind my_result);
 
-    begin match failure with
-    | Expected_sat_but_got_unsat { z3_model } ->
-        Printf.printf "Mismatch: solver returned UNSAT, but Z3 found SAT.\n";
-        Printf.printf "Z3 model:\n%s\n" (Model.to_string z3_model ~key)
+    begin
+      match failure with
+      | Expected_sat_but_got_unsat { z3_model } ->
+          Printf.printf "Mismatch: solver returned UNSAT, but Z3 found SAT.\n";
+          Printf.printf "Z3 model:\n%s\n" (Model.to_string z3_model ~key)
 
-    | Expected_unsat_but_got_sat { model; eval_result } ->
-        Printf.printf "Mismatch: solver returned SAT, but Z3 says UNSAT.\n";
-        Printf.printf "Your model evaluates formula to: %b\n" eval_result;
-        Printf.printf "Your model:\n%s\n" (Model.to_string model ~key)
+      | Expected_unsat_but_got_sat { model; eval_result } ->
+          Printf.printf "Mismatch: solver returned SAT, but Z3 says UNSAT.\n";
+          Printf.printf "Your model evaluates formula to: %b\n" eval_result;
+          Printf.printf "Your model:\n%s\n" (Model.to_string model ~key)
 
-    | Incomplete_model { model; z3_result = _ } ->
-        Printf.printf "Mismatch: solver returned SAT, but model is incomplete.\n";
-        Printf.printf "Your model:\n%s\n" (Model.to_string model ~key)
+      | Incomplete_model { model; z3_result = _ } ->
+          Printf.printf "Mismatch: solver returned SAT, but model is incomplete.\n";
+          Printf.printf "Your model:\n%s\n" (Model.to_string model ~key)
 
-    | Inconsistent_model { model; z3_result = _ } ->
-        Printf.printf "Mismatch: solver returned SAT, but model does not satisfy the formula.\n";
-        Printf.printf "Formula.default_eval model f = false\n";
-        Printf.printf "Your model:\n%s\n" (Model.to_string model ~key)
+      | Inconsistent_model { model; z3_result = _ } ->
+          Printf.printf
+            "Mismatch: solver returned SAT, but model does not satisfy the formula.\n";
+          Printf.printf "Formula.default_eval model f = false\n";
+          Printf.printf "Your model:\n%s\n" (Model.to_string model ~key)
 
-    | Unexpected_unknown ->
-        Printf.printf "Mismatch: solver returned UNKNOWN.\n"
+      | Unexpected_unknown ->
+          Printf.printf "Mismatch: solver returned UNKNOWN.\n"
     end
   in
 
@@ -221,7 +229,9 @@ let sanity_check () =
 open Unix
 
 let sql_escape (s : string) =
-  s |> String.split_on_char '\'' |> String.concat "''"
+  s
+  |> String.split_on_char '\''
+  |> String.concat "''"
 
 let time_us_float f =
   let t1 = gettimeofday () in
@@ -230,8 +240,13 @@ let time_us_float f =
   (t2 -. t1) *. 1_000_000.0
 
 let benchmark num_trials =
-  let solve_z3_only = Solve.direct_solve (module Typed_z3.Default) in
-  let fs = Boolean.from_stdin () in
+  let solve_z3_only =
+    Solve.direct_solve (module Typed_z3.Default)
+  in
+
+  let fs =
+    Boolean.from_stdin ()
+  in
 
   Printf.printf
     "CREATE TABLE IF NOT EXISTS benchmarks (\n\
@@ -244,37 +259,58 @@ let benchmark num_trials =
      );\n\n";
 
   let rec aux trial_num =
-    if trial_num = num_trials then ()
+    if trial_num = num_trials then
+      ()
     else begin
       fs
       |> List.iteri (fun formula_id ftext ->
-          let formula_sql = sql_escape ftext in
-          let f = Boolean.parse ftext in
+          let formula_sql =
+            sql_escape ftext
+          in
+
+          let f =
+            Boolean.parse ftext
+          in
+
+          let metadata_ref =
+            ref { Solve.was_backend_used = false }
+          in
 
           let time_us_blue3 =
             time_us_float (fun () ->
-                ignore (main_solve f))
+                let _solution, metadata =
+                  main_solve_with_metadata f
+                in
+                metadata_ref := metadata)
           in
 
           let time_us_z3 =
             time_us_float (fun () ->
-                let f = Boolean.parse ftext in
+                let f =
+                  Boolean.parse ftext
+                in
                 ignore (solve_z3_only f))
           in
 
-          let was_backend_used = false
+          let was_backend_used =
+            !metadata_ref.Solve.was_backend_used
           in
 
           Printf.printf
             "INSERT INTO benchmarks (trial_num, formula_id, formula, was_backend_used,\
              time_us_blue3, time_us_z3) VALUES (%d, %d, '%s', '%s', %.6f, %.6f);\n"
-            trial_num formula_id formula_sql (Bool.to_string was_backend_used) 
-            time_us_blue3 time_us_z3);
+            trial_num
+            formula_id
+            formula_sql
+            (Bool.to_string was_backend_used)
+            time_us_blue3
+            time_us_z3);
 
       aux (trial_num + 1)
     end
   in
+
   aux 0
 
-
-let () = sanity_check ()
+let () =
+  benchmark 5

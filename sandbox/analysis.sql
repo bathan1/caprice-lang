@@ -13,6 +13,19 @@ SELECT COUNT(*) FROM benchmarks WHERE was_backend_used = 'false';
 .print "### How many formulas had to be deferred to z3?"
 SELECT COUNT(*) FROM benchmarks WHERE was_backend_used = 'true';
 
+.print "### Top 5 fastest blue3-only cases"
+SELECT
+  trial_num,
+  formula_id,
+  formula,
+  ROUND(time_us_blue3, 2) || 'μs' AS time_us_blue3,
+  ROUND(time_us_z3, 2) || 'μs' AS time_us_z3,
+  ROUND(time_us_blue3 - time_us_z3, 2) || 'μs' AS slower_by
+FROM benchmarks b
+WHERE was_backend_used = 'false'
+ORDER BY b.time_us_blue3 ASC
+LIMIT 5;
+
 .print "### On average, how much slower were the deferred cases than just calling z3 by itself?"
 SELECT
   COUNT(*) AS num_deferred_cases,

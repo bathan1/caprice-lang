@@ -1,8 +1,15 @@
 type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
 
-type 'k rewriter = (bool, 'k) Formula.t -> (bool, 'k) Formula.t
-
 type 'k simplifier = 'k solver -> 'k solver
+
+type metadata =
+  { was_backend_used : bool }
+
+type 'k solver_with_metadata =
+  (bool, 'k) Formula.t -> 'k Solution.t * metadata
+
+type 'k simplifier_with_metadata =
+  'k solver_with_metadata -> 'k solver_with_metadata
 
 module type SOLVABLE = sig
   include Formula.S
@@ -202,11 +209,13 @@ let rec propagate_constants : 'k simplifier = fun solve expr ->
   | _ ->
     solve expr
 
-let linearize next expr =
-  next (Integer.linearize expr)
-
-let drop_redundant_ineqs next expr =
-  next (Integer.drop_redundant_ineqs expr)
+let linearize next expr = next (Integer.linearize expr)
+let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)
+let contains_unsolvable_binop formula =
+  Formula.contains_binop Times formula
+  || Formula.contains_binop Divide formula
+  || Formula.contains_binop Modulus formula
+  || Formula.contains_binop Plus formula
 
 let blue3_solve formula =
   cdcl_T
@@ -215,12 +224,6 @@ let blue3_solve formula =
       (module Idl : Theory.THEORY);
     ])
     formula
-
-let contains_unsolvable_binop formula =
-  Formula.contains_binop Times formula
-  || Formula.contains_binop Divide formula
-  || Formula.contains_binop Modulus formula
-  || Formula.contains_binop Plus formula
 
 let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
   if contains_unsolvable_binop formula then next formula
@@ -233,9 +236,52 @@ let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t)
       if num_cases > threshold then next formula
       else
         match blue3_solve formula' with
-        | Solution.Unknown ->
-          next formula
+        | Solution.Unknown -> next formula
         | solution -> solution
+
+let blue3_with_metadata
+    ~(threshold : int)
+    (next : 'k solver_with_metadata)
+    (formula : (bool, 'k) Formula.t)
+  : 'k Solution.t * metadata =
+  if contains_unsolvable_binop formula then
+    next formula
+  else
+    match formula with
+    | Const_bool true ->
+        Solution.Sat Model.empty, { was_backend_used = false }
+
+    | Const_bool false ->
+        Solution.Unsat, { was_backend_used = false }
+
+    | _ ->
+        let formula', num_cases = Idl.split_cases formula in
+        if num_cases > threshold then
+          next formula
+        else
+          match blue3_solve formula' with
+          | Solution.Unknown ->
+              next formula
+
+          | solution ->
+              solution, { was_backend_used = false }
+
+let with_metadata (simplifier : 'k simplifier)
+  : 'k simplifier_with_metadata =
+  fun next formula ->
+    let metadata = ref { was_backend_used = false } in
+
+    let next_plain formula =
+      let solution, metadata' = next formula in
+      metadata := metadata';
+      solution
+    in
+
+    let solution =
+      simplifier next_plain formula
+    in
+
+    solution, !metadata
 
 (*
   Right-associative simplifier composition.
@@ -253,6 +299,12 @@ let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
 let ( @@> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
   fun f g -> fun solve -> f (g solve)
 
+let ( @@>> )
+  : 'k simplifier_with_metadata ->
+    'k simplifier_with_metadata ->
+    'k simplifier_with_metadata =
+  fun f g -> fun solve -> f (g solve)
+
 (** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   (* let ascii_key k = Symbol.AsciiSymbol.to_string @@ Model.uid_from_key k in *)
@@ -263,3 +315,17 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     @@> blue3 ~threshold:6
   in
   pipeline (direct_solve (module Oracle))
+
+let main_solve_with_metadata (module Oracle : SOLVABLE)
+  : 'k solver_with_metadata =
+  let pipeline =
+    with_metadata linearize
+    @@>> with_metadata implied_concretization
+    @@>> with_metadata drop_redundant_ineqs
+    @@>> blue3_with_metadata ~threshold:6
+  in
+
+  pipeline
+    (fun formula ->
+       direct_solve (module Oracle) formula,
+       { was_backend_used = true })
