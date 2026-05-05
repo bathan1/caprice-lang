@@ -26,6 +26,7 @@ let cdcl_T ~(t : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solut
   let propositional = Connector.abstract conn smt_clauses in
   let rec loop conn sat_formula =
     match Sat.Cdcl.cdcl sat_formula with
+    (* ((not (I34 = 30)) || (I34 = 2)) ^ ((I34 = 30) || (not (I34 = 2))) *)
     | None ->
       Solution.Unsat
     | Some model ->

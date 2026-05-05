@@ -76,10 +76,6 @@ end = struct
       | Key (B _) as f -> Some f
       | Not _ as f -> Some f
       | And _ as f -> Some f
-
-      | Binop (Or, _, _) as f -> Some f
-      | Binop (Iff, _, _) as f -> Some f
-
       | Binop (Less_than, _, _) as f -> Some f
       | Binop (Less_than_eq, _, _) as f -> Some f
       | Binop (Equal, _, _) as f -> Some f
@@ -91,6 +87,10 @@ end = struct
       begin match x, y with
       | Const_bool true, _ | _, Const_bool true -> Const_bool true
       | Const_bool false, e | e, Const_bool false -> e
+      | And clauses, e ->
+        and_ (List.map (fun c -> binop Or c e) clauses)
+      | e, And clauses ->
+        and_ (List.map (fun c -> binop Or e c) clauses)
       | e1, e2 -> Binop (Or, e1, e2)
       end
     | Equal ->
@@ -166,12 +166,10 @@ end = struct
 
   and iff (x : (bool, 'k) t) (y : (bool, 'k) t) : (bool, 'k) t =
     match x, y with
-    | Const_bool true, e
-    | e, Const_bool true -> e
-    | Const_bool false, e
-    | e, Const_bool false -> not_ e
+    | Const_bool true, e | e, Const_bool true -> e
+    | Const_bool false, e | e, Const_bool false -> not_ e
     | e1, e2 when equal e1 e2 -> true_
-    | e1, e2 -> Binop (Iff, e1, e2)
+    | e1, e2 -> and_ [ or_ [not_ e1; e2] ; or_ [e1; not_ e2] ]
 
   and or_ (ls : (bool, 'k) t list) : (bool, 'k) t =
     match ls with
@@ -194,10 +192,7 @@ end = struct
       (* not (e1 <= e2) = (e2 < e1) *)
       Binop (Less_than, e2, e1)
     | Binop (Or, e1, e2) -> and_ [ not_ e1 ; not_ e2 ] (* it's easier in general to work with "and" *)
-    | Binop (Iff, p, q) ->
-      and_ [ or_ [p; q]
-           ; or_ [not_ p; not_ q]
-           ]
+    | And es -> or_ (List.map not_ es)
     | _ -> Not e
 
   and and_ (e_ls : (bool, 'k) t list) : (bool, 'k) t =
