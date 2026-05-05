@@ -54,8 +54,10 @@ end)
 let parse_stripped (input : string) : Lang.Ast.statement_with_pos list * Lang.Ast.pos_span list =
   let module Ignore = Param.Make_ignore_refine () in
   let module Stripped_parser = Parser.Make (Ignore) in
-  let buf = Lexing.from_string input in
-  let stmts = handle_parse_error buf @@ fun () ->
-    Stripped_parser.prog_with_pos Lexer.token buf
+  let module Stripped_parse = Make (struct
+      type result = Lang.Ast.program_with_pos
+      let entry_point = Stripped_parser.prog_with_pos
+    end)
   in
+  let stmts = Stripped_parse.parse_string input in
   stmts, Ignore.positions ()
