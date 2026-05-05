@@ -26,11 +26,23 @@ module ValueMap = struct
     | Some Int v -> Some v
     | _ -> None
 
+  (** [find_int key map] unwraps the int value of KEY in MAP if it exists or throws *)
+  let find_int (key : key) (map : map) : int =
+    match find_int_opt key map with
+    | Some v -> v
+    | _ -> failwith (Printf.sprintf "No int value in MAP for KEY") 
+
   (** [find_bool_opt key map] unwraps the bool value of KEY in MAP if it exists. *)
   let find_bool_opt (key : key) (map : map) : bool option =
     match Uid.Map.find_opt key map with
     | Some Bool v -> Some v
     | _ -> None
+
+  (** [find_bool key map] unwraps the bool value of KEY in MAP if it exists or throws *)
+  let find_bool (key : key) (map : map) : bool =
+    match find_bool_opt key map with
+    | Some v -> v
+    | _ -> failwith (Printf.sprintf "No int value in MAP for KEY")
 
 (** [find_symbol_opt key map] returns KEY's uid [value] in MAP *)
   let find_symbol_opt : type a k. (a, k) Symbol.t -> map -> a option = fun key map ->

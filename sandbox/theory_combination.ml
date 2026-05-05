@@ -1,6 +1,11 @@
 open Smt
 
-let input = "(a <= 100) ^ (a = b) ^ (b = c) ^ (not (c = 100))"
+let input = "(not (a = b)) ^ (a = c) ^ (a <= 20) ^ (b <= 20)"
+
+let theories = [
+  (module Euf : Theory.THEORY) ;
+  (module Idl : Theory.THEORY) ;
+]
 
 let theory_combination () =
   let formula = Boolean.parse input in
@@ -19,6 +24,7 @@ let theory_combination () =
 
   let euf_solvable = List.filter Euf.accepts (List.flatten smt_formula) in
   let idl_solvable = List.filter Idl.accepts (List.flatten smt_formula) in
+  let formula = List.flatten smt_formula in
 
   let () = 
     Printf.printf "EUF accepts:\n";
@@ -35,8 +41,17 @@ let theory_combination () =
     let shared_vars =
       Theory.find_shared_variables ~accepts:[Euf.accepts ; Idl.accepts] smt_formula
     in
-    Printf.printf "Shared variables are: ";
+    Printf.printf "Shared variables are:\n";
     List.iter (Printer.print_shared ~uid:Symbol.AsciiSymbol.to_string) shared_vars
+
+  in
+
+  let () =
+    let t_solutions = List.map (fun (module T : Theory.THEORY) ->
+      let solvable = List.filter T.accepts formula in
+      T.solve solvable) theories
+    in
+    List.iter (Printer.print_t_solution ~key:Model.ascii_key) t_solutions;
   in
 
   ()

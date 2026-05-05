@@ -359,12 +359,8 @@ let choose_int_value forbidden =
   loop 0
 
 let choose_bool_value forbidden =
-  if not (List.mem false forbidden) then
-    Some false
-  else if not (List.mem true forbidden) then
-    Some true
-  else
-    None
+  if not (List.mem false forbidden) then false
+  else true
 
 let eq_lit_of_theory_lit
   (lit : 'k Theory.literal)
@@ -402,7 +398,7 @@ let class_bool_value uf root =
        | _ -> None)
 
 let model_from_uf eq_lits uf =
-  let bindings =
+  let preliminary =
     Hashtbl.fold
       (fun term _ acc ->
         match term with
@@ -410,40 +406,56 @@ let model_from_uf eq_lits uf =
             let root = UF.find uf term in
             let value =
               match class_int_value uf root with
-              | Some i ->
-                  i
+              | Some i -> i
               | None ->
                   root
                   |> forbidden_int_values eq_lits uf
                   |> choose_int_value
             in
             Model.ValueMap.add_int uid value acc
-
         | Theory.Shared.Bool_var uid ->
             let root = UF.find uf term in
             let value =
               match class_bool_value uf root with
-              | Some b ->
-                  b
+              | Some i -> i
               | None ->
-                  begin match
-                    root
-                    |> forbidden_bool_values eq_lits uf
-                    |> choose_bool_value
-                  with
-                  | Some b -> b
-                  | None -> false
-                  end
+                  root
+                  |> forbidden_bool_values eq_lits uf
+                  |> choose_bool_value
             in
             Model.ValueMap.add_bool uid value acc
-
-        | Int_const _
-        | Bool_const _ ->
-            acc)
+        | _ -> acc)
       uf.UF.parent
       Uid.Map.empty
   in
-  Model.from_value_map bindings
+
+  let final =
+  List.fold_left
+    (fun acc eq_lit ->
+      match eq_lit with
+      | Neq (l, r, _) ->
+          begin match l, r with
+          | Theory.Shared.Int_var luid, Theory.Shared.Int_var ruid ->
+              let lv = Model.ValueMap.find_int luid acc in
+              let rv = Model.ValueMap.find_int ruid acc in
+
+              if lv = rv then
+                let forbidden =
+                  lv :: forbidden_int_values eq_lits uf (UF.find uf r)
+                in
+                Model.ValueMap.add_int ruid (choose_int_value forbidden) acc
+              else
+                acc
+          | _ ->
+              acc
+          end
+      | Eq _ ->
+          acc)
+    preliminary
+    eq_lits
+  in
+
+  Model.from_value_map final
 
 let terms_of_uf (uf : UF.t) : Theory.Shared.t list =
   Hashtbl.fold
