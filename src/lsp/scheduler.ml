@@ -19,10 +19,11 @@ let round_robin (fs : work_item list) : unit =
   let run_q = Queue.of_seq (List.to_seq fs) in
   let cancelled : (Lang.Ast.pos_span, unit) Hashtbl.t = Hashtbl.create 16 in
   let is_cancelled span = Hashtbl.mem cancelled span in
-  let enqueue span k =
-    let task () = Effect.Deep.continue k () in
-    Queue.push { span ; task } run_q
+  let enqueue item = Queue.push item run_q in
+  let resume span k =
+    enqueue { span ; task = fun () -> Effect.Deep.continue k () }
   in
+  let cancel s = Hashtbl.replace cancelled s () in
   let rec dequeue () =
     begin match Queue.take_opt run_q with
     | None -> ()
@@ -34,13 +35,9 @@ let round_robin (fs : work_item list) : unit =
       in
       begin match r with
       | Done -> dequeue ()
-      | Cont k -> enqueue span k; dequeue ()
-      | Spawn children ->
-        List.iter (fun c -> Queue.push c run_q) children;
-        dequeue ()
-      | Cancel_peers s ->
-        Hashtbl.replace cancelled s ();
-        dequeue ()
+      | Cont k -> resume span k; dequeue ()
+      | Spawn children -> List.iter enqueue children; dequeue ()
+      | Cancel_peers s -> cancel s; dequeue ()
       end
     end
   in
