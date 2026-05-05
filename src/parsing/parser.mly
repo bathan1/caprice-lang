@@ -1,10 +1,11 @@
 %{
+  open Lang
   open Ast
-  open Ast.Tools
   open Binop
+  open Tools
 %}
 
-%parameter<Param : Parser_param.PARAM>
+%parameter<Param : Param.S>
 
 /*
  * Precedences and associativities.  Lower precedences come first.

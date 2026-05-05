@@ -1,27 +1,13 @@
 
-(ocamllex caprice_lexer)
-
-(menhir
- (modules caprice_tokens)
- (flags --only-tokens)
- (explain false))
-
-(menhir
- (modules caprice_tokens caprice_parser)
- (merge_into caprice_parser)
- (flags --external-tokens Caprice_tokens))
-
 (library
  (name lang)
  (public_name caprice.lang)
  (synopsis "Caprice Language Definition")
- (modules (:standard))
  (libraries
   ; internal
   utils
   ; external
   baby
-  cmdliner
  )
  (instrumentation (backend landmarks --auto))
 )

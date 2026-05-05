@@ -6,7 +6,8 @@ let splay_check ~options pgm =
 let normal_check ~options pgm =
   M.begin_ceval ~print_outcome:false ~options:{ options with splay = Never_splay } pgm
 
-let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span) pgm stripped_pgm : Scheduler.r =
+let handle_fallback ~options ~refinement_positions (span : Lang.Ast.pos_span)
+  pgm stripped_pgm : Scheduler.r =
   let refinement_positions = List.filter
     (fun (p : Lang.Ast.pos_span) -> p.begins.pos_cnum <= span.ends.pos_cnum)
     refinement_positions
@@ -73,8 +74,8 @@ let find_baseline_error ~options stmts_with_pos =
 
 let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_packet) =
   try
-    let stmts_with_pos = Lang.Parser.Positioned.parse_string packet.full_text in
-    let stripped_stmts, refinement_positions = Lang.Parser.parse_stripped packet.full_text in
+    let stmts_with_pos = Parsing.Parse.Positioned.parse_string packet.full_text in
+    let stripped_stmts, refinement_positions = Parsing.Parse.parse_stripped packet.full_text in
     let stmts_to_check, stripped_to_check =
       match find_baseline_error ~options stmts_with_pos with
       | None -> stmts_with_pos, stripped_stmts
@@ -93,7 +94,7 @@ let run_typecheck ~(options : Concolic.Options.t) (packet : Protocol.checker_pac
       ceval_many ~options ~refinement_positions pgms stripped_pgms
     end
   with
-  | Lang.Parser.Parse_error (_exn, line, col, tok) ->
+  | Parsing.Parse.Parse_error (_exn, line, col, tok) ->
     Printf.printf "parse_error:%d:%d:%s\n%!" line col tok
   | exn ->
     Printf.printf "error:%s\n%!" (Printexc.to_string exn)

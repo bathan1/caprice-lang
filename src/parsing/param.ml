@@ -1,8 +1,10 @@
-module type PARAM = sig
+open Lang
+
+module type S = sig
   val make_refinement : Ident.t -> tau:Ast.t -> predicate:Ast.t -> Ast.pos_span -> Ast.t
 end
 
-module Standard : PARAM = struct
+module Standard : S = struct
   let make_refinement var ~tau ~predicate _pos =
     Ast.ETypeRefine { var ; tau ; predicate }
 end

@@ -1,0 +1,25 @@
+(ocamllex lexer)
+
+(menhir
+ (modules tokens)
+ (flags --only-tokens)
+ (explain false))
+
+(menhir
+ (modules tokens parser)
+ (merge_into parser)
+ (flags --external-tokens Tokens))
+
+(library
+ (name parsing)
+ (public_name caprice.parsing)
+ (synopsis "Caprice parser")
+ (flags (:standard -w -67))
+ (libraries
+  ; internal
+  lang
+  ; external
+  cmdliner
+ )
+ (instrumentation (backend landmarks --auto))
+)

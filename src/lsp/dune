@@ -5,4 +5,5 @@
   concolic
   grammar
   lang
+  parsing
   yojson))
