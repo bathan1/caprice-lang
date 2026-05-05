@@ -179,9 +179,9 @@ let rec propagate_equalities
   in
   let new_eqs =
     theories
-    |> List.concat_map (fun (module T : THEORY) ->
-        let local_lits = List.filter T.accepts lits in
-        T.implied_equalities local_lits)
+    |> List.concat_map (fun (module TheorySolver : THEORY) ->
+        let local_lits = List.filter TheorySolver.accepts lits in
+        TheorySolver.implied_equalities local_lits)
     |> dedup_pairs
   in
   let unseen =
@@ -209,9 +209,9 @@ let rec propagate_equalities
 
 let find_disequality_conflict theories lits known_eqs =
   theories
-  |> List.find_map (fun (module T : THEORY) ->
-       let local_lits = List.filter T.accepts lits in
-       T.disequalities local_lits
+  |> List.find_map (fun (module TheorySolver : THEORY) ->
+       let local_lits = List.filter TheorySolver.accepts lits in
+       TheorySolver.disequalities local_lits
        |> List.find_map (fun (l, r, original_lit) ->
             if List.mem (normalize_pair (l, r)) known_eqs then
               Some original_lit
@@ -222,9 +222,9 @@ let solve_each (theories : (module THEORY) list) (assumptions : 'k assumption li
   let lits = assumption_lits assumptions in
   let rec loop models = function
     | [] -> Theory_sat (List.fold_left Model.merge Model.empty models)
-    | (_i, (module T : THEORY)) :: rest ->
-      let local_lits = List.filter T.accepts lits in
-      match T.solve local_lits with
+    | (_i, (module TheorySolver : THEORY)) :: rest ->
+      let local_lits = List.filter TheorySolver.accepts lits in
+      match TheorySolver.solve local_lits with
       | Theory_sat model -> loop (model :: models) rest
       | Theory_unsat core ->
         let explained = explain_core assumptions core
@@ -250,18 +250,10 @@ let combine (theories : (module THEORY) list) : 'k t_solver =
       end
     | ts -> ts
 
-(** [find_shared_variables ~accepts formula] finds the shared variables between the 
-    subformulae that each accept callback in ACCEPTS returns [true] for in FORMULA *)
-let find_shared_variables
-  ~(accepts : ('k literal -> bool) list)
-  (formula : 'k literal list list)
+let find_shared_terms
+    ~(accepts : ('k literal -> bool) list)
+    (formula : 'k literal list list)
   : Shared.t list =
-  let is_variable = function
-    | Shared.Int_var _
-    | Shared.Bool_var _ -> true
-    | Shared.Int_const _
-    | Shared.Bool_const _ -> false
-  in
   let shared_terms_from_lit (lit : 'k literal) =
     let shared_terms_from_atom : type a. a atom -> Shared.t list =
       function
@@ -276,12 +268,13 @@ let find_shared_variables
     | Pos atom
     | Neg atom -> shared_terms_from_atom atom
   in
+
   let lits = List.flatten formula in
+
   let terms_for accepts_one =
     lits
     |> List.filter accepts_one
     |> List.concat_map shared_terms_from_lit
-    |> List.filter is_variable
     |> SharedSet.of_list
   in
 
@@ -297,16 +290,30 @@ let find_shared_variables
       set
       acc
   in
+
   let term_sets = List.map terms_for accepts in
-  let counts =
-    List.fold_left count_term_occ SharedMap.empty term_sets
-  in
+  let counts = List.fold_left count_term_occ SharedMap.empty term_sets in
+
   counts
   |> SharedMap.to_seq
-  |> Seq.filter_map
-       (fun (term, count) ->
-         if count >= 2 then Some term else None)
+  |> Seq.filter_map (fun (term, count) ->
+       if count >= 2 then Some term else None)
   |> List.of_seq
+
+(** [find_shared_variables ~accepts formula] finds the shared variables between the 
+    subformulae that each accept callback in ACCEPTS returns [true] for in FORMULA *)
+let find_shared_variables
+    ~(accepts : ('k literal -> bool) list)
+    (formula : 'k literal list list)
+  : Shared.t list =
+  let is_variable = function
+    | Shared.Int_var _
+    | Shared.Bool_var _ -> true
+    | Shared.Int_const _
+    | Shared.Bool_const _ -> false
+  in
+  find_shared_terms ~accepts formula
+  |> List.filter is_variable
 
 let interface_equalities
   ~(accepts : ('k literal -> bool) list)

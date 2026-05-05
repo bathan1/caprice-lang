@@ -20,30 +20,12 @@ end
 let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   X.solve (Formula.transform (module X) e)
 
-let _cdcl_T ~(t : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
-  let conn = Connector.make () in
-  let smt_clauses = Theory.from_smt_formula (Formula.clauses_from formula) in
-  let propositional = Connector.abstract conn smt_clauses in
-  let rec loop conn sat_formula =
-    match Sat.Cdcl.cdcl sat_formula with
-    | None -> Solution.Unsat
-    | Some model ->
-        let smt_lits = Connector.literals_from_model conn model in
-        match t smt_lits with
-        | Theory_sat model -> Solution.Sat model
-        | Theory_unsat core ->
-            let learned = Connector.theory_learn conn core in
-            loop conn (Sat.Formula.conjoin1 sat_formula learned)
-
-  in
-  loop conn propositional
-
 let cdcl_T
-  ~(ts : (module Theory.THEORY) list)
+  ~(theories : (module Theory.THEORY) list)
   (formula : (bool, 'k) Formula.t)
   : 'k Solution.t =
   let accepts =
-    List.map (fun (module T : Theory.THEORY) -> T.accepts) ts
+    List.map (fun (module TheorySolver : Theory.THEORY) -> TheorySolver.accepts) theories
   in
 
   let conn = Connector.make () in
@@ -53,7 +35,7 @@ let cdcl_T
   in
 
   let propositional =
-    Connector.abstract conn smt_clauses
+    Connector.abstract smt_clauses conn
   in
 
   let interface_eqs =
@@ -66,7 +48,7 @@ let cdcl_T
     interface_eqs
     |> List.map (fun lit ->
       let sat_lit =
-        Connector.abstract_literal conn lit
+        Connector.abstract_literal lit conn
       in
       [ sat_lit; Sat.Formula.negate sat_lit ])
   in
@@ -85,7 +67,7 @@ let cdcl_T
 
     | Some model ->
       let smt_lits =
-        Connector.literals_from_model conn model
+        Connector.literals_from_model model conn
       in
       let t_solutions =
         List.mapi
@@ -94,7 +76,7 @@ let cdcl_T
               List.filter T.accepts smt_lits
             in
             T.solve accepted)
-          ts
+          theories
       in
 
       let cores =
@@ -123,7 +105,7 @@ let cdcl_T
             List.fold_left
               (fun acc core ->
                 let learned =
-                  Connector.theory_learn conn core
+                  Connector.theory_learn core conn
                 in
                 Sat.Formula.conjoin1 acc learned)
               sat_formula
@@ -241,7 +223,7 @@ let contains_unsolvable_binop formula =
 
 let blue3_solve formula =
   cdcl_T
-    ~ts:[
+    ~theories:[
       (module Euf : Theory.THEORY);
       (module Idl : Theory.THEORY);
     ]

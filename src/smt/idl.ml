@@ -445,8 +445,6 @@ let disequalities
 let accepts : 'k Theory.literal -> bool =
   let accepts_atom : type k. k Theory.atom -> bool =
     function
-    | Theory.Predicate (Binop.Equal, left, right) ->
-        Option.is_some (find_diff_opt Binop.Equal left right)
     | Theory.Predicate (Binop.Less_than, left, right) ->
         Option.is_some (find_diff_opt Binop.Less_than left right)
     | Theory.Predicate (Binop.Less_than_eq, left, right) ->

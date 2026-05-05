@@ -82,11 +82,15 @@ let pp_literal ~(uid : Uid.t -> string) fmt (lit : literal) : unit =
   Format.fprintf fmt "%s%s" prefix (uid (key_from_lit lit))
 
 let pp_clause ~(uid : Uid.t -> string) fmt (clause : literal list) : unit =
-  Format.fprintf fmt "(@[%a@])"
-    (Format.pp_print_list
-       ~pp_sep:(fun fmt () -> Format.fprintf fmt " v@ ")
-       (pp_literal ~uid))
-    clause
+  match clause with
+  | [lit] ->
+      Format.fprintf fmt "@[%a@]" (pp_literal ~uid) lit
+  | _ ->
+      Format.fprintf fmt "(@[%a@])"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " v@ ")
+           (pp_literal ~uid))
+        clause
 
 let pp_formula ~(uid : Uid.t -> string) fmt (form : t) : unit =
   if is_tautology form then

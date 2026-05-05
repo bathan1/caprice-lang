@@ -19,11 +19,26 @@ let pp_literal ~key fmt (lit : 'k literal) : unit =
       Format.fprintf fmt "not (%a)" (pp_atom ~key) atom
 
 let pp_clause ~key fmt (clause : 'k literal list) : unit =
-  Format.fprintf fmt "(@[%a@])"
+  match clause with
+  | [lit] ->
+      Format.fprintf fmt "@[%a@]" (pp_literal ~key) lit
+
+  | _ ->
+      Format.fprintf fmt "(@[%a@])"
+        (Format.pp_print_list
+           ~pp_sep:(fun fmt () -> Format.fprintf fmt " v@ ")
+           (pp_literal ~key))
+        clause
+
+let pp_delim_literals ?(delim = "\n") ~key fmt (lits : 'k literal list) : unit =
+  Format.fprintf fmt "@[%a@]"
     (Format.pp_print_list
-       ~pp_sep:(fun fmt () -> Format.fprintf fmt " v@ ")
+       ~pp_sep:(fun fmt () -> Format.fprintf fmt "%s" delim)
        (pp_literal ~key))
-    clause
+    lits
+
+let print_delim_literals ?delim ~key (lits : 'k literal list) : unit =
+  Format.printf "%a@." (pp_delim_literals ?delim ~key) lits
 
 let pp_unit_literals ~key fmt (lits : 'k literal list) : unit =
   Format.fprintf fmt "@[%a@]"
@@ -50,6 +65,19 @@ let pp_t_solution
       Format.fprintf fmt "(T) SAT %s" (Model.to_string ~key model)
   | Theory_unsat core_clause ->
       Format.fprintf fmt "(T) UNSAT %a" (pp_clause ~key) core_clause
+
+let pp_shared ~uid fmt (var : Shared.t) =
+  let value =
+    match var with
+    | Int_const v -> Int.to_string v
+    | Bool_const v -> Bool.to_string v
+    | Int_var uid_v
+    | Bool_var uid_v -> uid uid_v
+  in
+  Format.fprintf fmt "%s" value
+
+let print_shared ~uid (var : Shared.t) =
+  Format.printf "%a@." (pp_shared ~uid) var
 
 let print_atom ~key atom =
   Format.printf "%a@." (pp_atom ~key) atom
