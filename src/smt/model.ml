@@ -13,36 +13,57 @@ type value =
   | Bool of bool
   | Int of int
 
+(** [Uid.t] Map with additional helpers for working with plain bool and int values *)
 module ValueMap = struct
   include Uid.Map
   type binding = key * value
   type map = value Uid.Map.t
   type t = map
 
-  let add_bool (key : key) (bool_value : bool) (map : map) : map =
-    add key (Bool bool_value) map
-
-  let add_int (key : key) (int_value : int) (map : map) : map =
-    add key (Int int_value) map
-
+  (** [find_int_opt key map] unwraps the int value of KEY in MAP if it exists. *)
   let find_int_opt (key : key) (map : map) : int option =
     match Uid.Map.find_opt key map with
     | Some Int v -> Some v
     | _ -> None
 
+  (** [find_bool_opt key map] unwraps the bool value of KEY in MAP if it exists. *)
   let find_bool_opt (key : key) (map : map) : bool option =
     match Uid.Map.find_opt key map with
     | Some Bool v -> Some v
     | _ -> None
 
+(** [find_symbol_opt key map] returns KEY's uid [value] in MAP *)
   let find_symbol_opt : type a k. (a, k) Symbol.t -> map -> a option = fun key map ->
     match key with
     | B k -> find_bool_opt k map
     | I k -> find_int_opt k map
 
-end
+  (** [add_bool key bool_value map] is the next map with BOOL_VALUE set for KEY *)
+  let add_bool (key : key) (bool_value : bool) (map : map) : map =
+    add key (Bool bool_value) map
 
-type value_map = value Uid.Map.t
+  (** [add_int key int_value map] is the next map with INT_VALUE set for KEY *)
+  let add_int (key : key) (int_value : int) (map : map) : map =
+    add key (Int int_value) map
+
+  (** [add_int_checked key int_value map] is the next map with INT_VALUE set for KEY 
+      if KEY has been mapped to INT_VALUE. If it has or the binding doesn't exist,
+      then the [Some] next map state is returned otherwise then it returns [None] *)
+  let add_int_checked (key : key) (int_value : int) (map : map) : map option =
+    match find_int_opt key map with
+    | None -> Some (add_int key int_value map)
+    | Some old when old = int_value -> Some map
+    | Some _ -> None
+
+  (** [add_bool_checked key int_value map] is the next map with BOOL_VALUE set for KEY 
+      if KEY has been mapped to BOOL_VALUE. If it has or the binding doesn't exist,
+      then the [Some] next map state is returned otherwise then it returns [None] *)
+  let add_bool_checked key bool_value (map : map) : map option =
+    match find_bool_opt key map with
+    | None -> Some (add_bool key bool_value map)
+    | Some old when Bool.equal old bool_value -> Some map
+    | Some _ -> None
+end
 
 type 'k t =
   { value : 'a. ('a, 'k) Symbol.t -> 'a option
@@ -94,9 +115,8 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
 
     This prints:
 
-    {["From local: { a => hello; b => world }"]}
-*)
-let from_value_map (map : value_map) : 'k t =
+    {["From local: { a => hello; b => world }"]} *)
+let from_value_map (map : ValueMap.t) : 'k t =
   let domain =
     map
     |> Uid.Map.to_list
@@ -160,8 +180,11 @@ let to_string
   | [] -> "{\n}"
   | _ -> "{\n" ^ String.concat ",\n" entries ^ "\n}"
 
-let int_key_to_string k = k
-  |> uid_from_key
-  |> Utils.Uid.to_int
-  |> Int.to_string
-  |> Printf.sprintf "<%s>"
+let ascii_key = function
+  | Bool_key x
+  | Int_key x -> Symbol.AsciiSymbol.to_string x
+
+let prefix_key =
+  function
+  | Bool_key x -> "B" ^ (Int.to_string @@ Uid.to_int x)
+  | Int_key x -> "I" ^ (Int.to_string @@ Uid.to_int x)

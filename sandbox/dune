@@ -1,4 +1,19 @@
 (executable
- (name script)
- (libraries smt overlays)
+ (name main)
+ (modules main)
+ (libraries smt overlays sandbox)
 )
+
+(library
+ (name sandbox)
+ (public_name caprice.sandbox)
+ (modules :standard \ main)
+ (libraries
+  utils
+  sat
+  smt
+  overlays
+  baby)
+ (synopsis "sandbox module for caprice")
+ (instrumentation
+  (backend landmarks --auto)))

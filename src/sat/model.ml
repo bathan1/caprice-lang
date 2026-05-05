@@ -37,5 +37,5 @@ let rec use (model : literal list) ~(form : Formula.t) : Formula.t =
 let is_tautology (model : literal list) ~(form : Formula.t) : bool =
   Formula.is_tautology (use model ~form)
 
-let pp_model ppf (m : literal list) =
-  List.iter (Format.fprintf ppf "%a " pp_literal) m
+let pp_model ~uid fmt (m : literal list) =
+  List.iter (Format.fprintf fmt "%a " (pp_literal ~uid)) m

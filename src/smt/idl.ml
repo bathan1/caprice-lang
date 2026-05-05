@@ -1,11 +1,10 @@
 open Utils
-exception Graph_disconnected of int
 
-type var =
+type node =
   | Symbol_key of Uid.t
   | Z0
 
-type diff_constraint = { x : var ; y : var ; c : int }
+type diff_constraint = { x : node ; y : node ; c : int }
 
 type diff =
   | Ineq of diff_constraint
@@ -45,6 +44,7 @@ let diff_of_leq left right : diff_constraint option =
     else Some { x = Z0; y = Z0; c = -1 }
   | _ ->
     None
+
 let find_diff_opt
   : type a. (a * a * bool) Binop.t ->
     (a, 'k) Formula.t ->
@@ -52,9 +52,7 @@ let find_diff_opt
     diff option =
   fun binop left right ->
     match binop with
-    | Less_than_eq ->
-      diff_of_leq left right |> Option.map ineq
-
+    | Less_than_eq -> Option.map ineq @@ diff_of_leq left right
     | Less_than ->
       (* left < right  ===  left <= right - 1 *)
       begin
@@ -136,10 +134,10 @@ let map_uid_indices (constraints : diff_constraint list) : int Uid.Map.t =
   |> Uid.Map.of_list
 
 let edges_from_constraint
-    (source : 'k Theory.literal)
-    ({ x; y; c } : diff_constraint)
-    ~(nodes : int)
-    ~(to_index : int Uid.Map.t)
+  (source : 'k Theory.literal)
+  ({ x; y; c } : diff_constraint)
+  ~(nodes : int)
+  ~(to_index : int Uid.Map.t)
   : 'k edge list =
   let get_index uid = Uid.Map.find uid to_index in
   match x, y with
@@ -200,35 +198,48 @@ let to_constraint_graph (formula : 'k Theory.literal list)
   in
   ~nodes, ~edges, ~index
 
-let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
-  let distance =
-    Array.init nodes (fun i -> if i = src then Some 0 else None)
-  in
-  let predecessor : 'k edge option array =
-    Array.init nodes (fun _ -> None)
-  in
-
-  let relax_edge edge =
-    match distance.(edge.from_), distance.(edge.to_) with
-    | None, _ ->
-      ()
-
-    | Some du, None ->
+let relax_distance (acc : int option array * 'k edge option array * bool) (edge : 'k edge)
+  : int option array * 'k edge option array * bool =
+  let distance, predecessor, is_updated = acc in
+  match distance.(edge.from_), distance.(edge.to_) with
+  | None, _ -> acc
+  | Some du, None ->
       distance.(edge.to_) <- Some (du + edge.weight);
-      predecessor.(edge.to_) <- Some edge
-
-    | Some du, Some dv ->
+      predecessor.(edge.to_) <- Some edge;
+      distance, predecessor, true
+  | Some du, Some dv ->
       if du + edge.weight < dv then (
         distance.(edge.to_) <- Some (du + edge.weight);
-        predecessor.(edge.to_) <- Some edge
-      )
-  in
+        predecessor.(edge.to_) <- Some edge;
+        distance, predecessor, true
+      ) else distance, predecessor, is_updated
 
-  for _ = 1 to nodes - 1 do
-    Array.iter relax_edge edges
-  done;
+let relax_distances (nodes : int) (edges : 'k edge array) (acc : int option array * 'k edge option array) (i : int)
+  : [ `Continue of int option array * 'k edge option array
+    | `Stop of int option array * 'k edge option array
+    ] =
+  if i = nodes - 1 then `Stop acc
+  else
+    let distance, predecessor = acc in
+    let distance', predecessor', is_updated =
+      Array.fold_left relax_distance (distance, predecessor, false) edges
+    in
+    if is_updated then `Continue (distance', predecessor')
+    else `Stop (distance', predecessor')
 
-  let find_cycle_edge () =
+let find_shortest_paths ~(src : int) (nodes : int) (edges : 'k edge array)
+  : int option array * 'k edge option array =
+  let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
+  let predecessor : 'k edge option array = Array.init nodes (fun _ -> None) in
+  let vertices = Array.init nodes Fun.id in
+  Array_utils.fold_left_until (relax_distances nodes edges) (distance, predecessor) vertices
+
+let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array)
+  : [ `Negative_cycle of 'k edge list
+    | `No_negative_cycle of int array * 'k edge option array
+    ] =
+  let distance, predecessor = find_shortest_paths ~src nodes edges in
+  let cycle_edge =
     Array.find_opt
       (fun edge ->
         match distance.(edge.from_), distance.(edge.to_) with
@@ -236,16 +247,14 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
         | _ -> false)
       edges
   in
-
-  match find_cycle_edge () with
+  match cycle_edge with
   | None ->
     `No_negative_cycle
-      ( Array.map (Option.value ~default:Int.max_int) distance
-      , predecessor )
+      (Array.map (Option.value ~default:Int.max_int) distance
+      , predecessor)
   | Some edge ->
     (* This edge proves a negative cycle, so include it in the predecessor graph. *)
     predecessor.(edge.to_) <- Some edge;
-
     let rec move_back vertex n =
       if n = 0 then vertex
       else
@@ -253,9 +262,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
         | None -> vertex
         | Some edge -> move_back edge.from_ (n - 1)
     in
-
     let start = move_back edge.to_ nodes in
-
     let rec collect curr acc =
       match predecessor.(curr) with
       | None ->
@@ -272,7 +279,6 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array) =
         else
           collect edge.from_ (edge :: acc)
     in
-
     `Negative_cycle (collect start [])
 
 (** [solve formula] finds the tightest upper bounds of each integer variable in FORMULA
@@ -362,38 +368,14 @@ let split_cases (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
   in
   split formula
 
-let partition (formula : 'k Theory.literal list) : 'k Theory.literal list * 'k Theory.literal list =
-  let owns_lit : 'k Theory.literal -> bool =
-    let is_plain_term : type a k. (a, k) Formula.t -> bool =
-      function
-      | Formula.Key _ -> true
-      | Formula.Const_int _ -> true
-      | Formula.Const_bool _ -> true
-      | _ -> false
-    in
-    function
-    | Theory.Pos (Theory.Predicate (Less_than, l, r)) -> is_plain_term l && is_plain_term r
-    | Theory.Neg (Theory.Predicate (Less_than_eq, l, r)) -> is_plain_term l && is_plain_term r
-    | _ -> false
-  in
-  List.fold_left (fun (solvable, unsolvable) lit ->
-    if owns_lit lit then
-      lit :: solvable, unsolvable
-    else
-      solvable, lit :: unsolvable)
-    ([], [])
-    formula
-
-let shared_from_var (v : var) : Theory.Shared.t =
+let shared_from_var (v : node) : Theory.Shared.t =
   match v with
   | Symbol_key uid -> Theory.Shared.Int_var uid
   | Z0 -> Theory.Shared.Int_const 0
 
 let canonical_shared_pair (l, r) =
-  if Theory.Shared.compare l r <= 0 then
-    (l, r)
-  else
-    (r, l)
+  if Theory.Shared.compare l r <= 0 then (l, r)
+  else (r, l)
 
 module SharedPair = struct
   type t = Theory.Shared.t * Theory.Shared.t
@@ -403,7 +385,6 @@ module SharedPair = struct
     | 0 -> Theory.Shared.compare r1 r2
     | n -> n
 end
-
 module SharedPairSet = Set.Make (SharedPair)
 
 let dedup_shared_pairs pairs =
@@ -414,7 +395,7 @@ let dedup_shared_pairs pairs =
        SharedPairSet.empty
   |> SharedPairSet.elements
 
-let equal_var (a : var) (b : var) : bool =
+let equal_var (a : node) (b : node) : bool =
   match a, b with
   | Z0, Z0 -> true
   | Symbol_key x, Symbol_key y -> Uid.equal x y
@@ -461,33 +442,20 @@ let disequalities
        else
          None)
 
-let owns : 'k Theory.literal -> bool =
-  let owns_atom : type k. k Theory.atom -> bool =
+let accepts : 'k Theory.literal -> bool =
+  let accepts_atom : type k. k Theory.atom -> bool =
     function
-    | Theory.Bool_key _ ->
-        false
-
     | Theory.Predicate (Binop.Equal, left, right) ->
         Option.is_some (find_diff_opt Binop.Equal left right)
-
     | Theory.Predicate (Binop.Less_than, left, right) ->
         Option.is_some (find_diff_opt Binop.Less_than left right)
-
     | Theory.Predicate (Binop.Less_than_eq, left, right) ->
         Option.is_some (find_diff_opt Binop.Less_than_eq left right)
-
-    | Theory.Predicate _ ->
-        false
+    | Theory.Predicate _ -> false
+    | Theory.Bool_key _ -> false
   in
 
   function
-  | Theory.Pos atom ->
-      owns_atom atom
-
-  (* not (x = y) is disequality, not a single IDL constraint.
-     It should be split earlier into x <= y - 1 OR y <= x - 1. *)
-  | Theory.Neg (Theory.Predicate (Binop.Equal, _, _)) ->
-      false
-
-  | Theory.Neg atom ->
-      owns_atom atom
+  | Theory.Neg (Theory.Predicate (Binop.Equal, _, _)) -> false
+  | Theory.Neg atom -> accepts_atom atom
+  | Theory.Pos atom -> accepts_atom atom

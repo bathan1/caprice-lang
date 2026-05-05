@@ -50,12 +50,3 @@ module AsciiSymbol = struct
     |> String.of_char
 end
 
-let pp_symbol (type a)
-  (fmt : Format.formatter)
-  (symbol : (a, 'k) t)
-  : unit =
-  match symbol with
-  | I uid ->
-    Format.fprintf fmt "%s" (AsciiSymbol.to_string uid)
-  | B uid ->
-    Format.fprintf fmt "%s" (AsciiSymbol.to_string uid)

@@ -47,3 +47,26 @@ let theory_learn (conn : 'k t) (core : 'k Theory.literal list) : Sat.Formula.lit
   core
   |> List.map (abstract_literal conn)
   |> List.map Sat.Formula.negate
+
+let literal_from_sat
+  (conn : 'k t)
+  (lit : Sat.Formula.literal)
+  : 'k Theory.literal =
+  match lit with
+  | Sat.Formula.Pos atom ->
+      Theory.Pos (Hashtbl.find conn.from_sat atom)
+
+  | Sat.Formula.Neg atom ->
+      Theory.Neg (Hashtbl.find conn.from_sat atom)
+
+let clause_from_sat
+  (conn : 'k t)
+  (clause : Sat.Formula.literal list)
+  : 'k Theory.literal list =
+  List.map (literal_from_sat conn) clause
+
+let from_sat_formula
+  (conn : 'k t)
+  (sat_formula : Sat.Formula.t)
+  : 'k Theory.literal list list =
+  List.map (clause_from_sat conn) sat_formula

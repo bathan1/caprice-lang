@@ -8,14 +8,14 @@ type next =
   | Conflict of literal list
   | Implication of literal list * literal
 
-let pp_next fd (next : next) : unit =
+let pp_next ~uid fd (next : next) : unit =
   match next with
   | Decide ->
       Format.fprintf fd "Decide"
   | Conflict clause ->
-      Format.fprintf fd "Conflict (%a)" pp_clause clause
+      Format.fprintf fd "Conflict (%a)" (pp_clause ~uid) clause
   | Implication (clause, lit) ->
-      Format.fprintf fd "Implication (%a, %a)" pp_clause clause pp_literal lit
+      Format.fprintf fd "Implication (%a, %a)" (pp_clause ~uid) clause (pp_literal ~uid) lit
 
 (** [analyze_conflict conflict trail level] returns the first (minimum) unique-implication-point cut
     of decision level LEVEL that directs to the CONFLICT clause based on the TRAIL state *)

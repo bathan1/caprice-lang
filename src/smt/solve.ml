@@ -20,59 +20,136 @@ end
 let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   X.solve (Formula.transform (module X) e)
 
-let cdcl_T ~(t : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
+let _cdcl_T ~(t : 'k Theory.t_solver) (formula : (bool, 'k) Formula.t) : 'k Solution.t =
   let conn = Connector.make () in
   let smt_clauses = Theory.from_smt_formula (Formula.clauses_from formula) in
   let propositional = Connector.abstract conn smt_clauses in
   let rec loop conn sat_formula =
     match Sat.Cdcl.cdcl sat_formula with
-    (* ((not (I34 = 30)) || (I34 = 2)) ^ ((I34 = 30) || (not (I34 = 2))) *)
-    | None ->
-      Solution.Unsat
+    | None -> Solution.Unsat
     | Some model ->
-      let smt_lits = Connector.literals_from_model conn model in
-      match t smt_lits with
-      | Theory_unknown -> Solution.Unknown
-      | Theory_sat model -> Solution.Sat model
-      | Theory_unsat core ->
-        let learned =
-          Connector.theory_learn conn core
-        in
-        loop conn (Sat.Formula.conjoin1 sat_formula learned)
+        let smt_lits = Connector.literals_from_model conn model in
+        match t smt_lits with
+        | Theory_sat model -> Solution.Sat model
+        | Theory_unsat core ->
+            let learned = Connector.theory_learn conn core in
+            loop conn (Sat.Formula.conjoin1 sat_formula learned)
+
   in
   loop conn propositional
 
-let add_int_checked k i acc =
-  match Model.ValueMap.find_int_opt k acc with
-  | None -> Some (Model.ValueMap.add_int k i acc)
-  | Some old when old = i -> Some acc
-  | Some _ -> None
+let cdcl_T
+  ~(ts : (module Theory.THEORY) list)
+  (formula : (bool, 'k) Formula.t)
+  : 'k Solution.t =
+  let accepts =
+    List.map (fun (module T : Theory.THEORY) -> T.accepts) ts
+  in
 
-let add_bool_checked k b acc =
-  match Model.ValueMap.find_bool_opt k acc with
-  | None -> Some (Model.ValueMap.add_bool k b acc)
-  | Some old when Bool.equal old b -> Some acc
-  | Some _ -> None
+  let conn = Connector.make () in
+
+  let smt_clauses =
+    Theory.from_smt_formula (Formula.clauses_from formula)
+  in
+
+  let propositional =
+    Connector.abstract conn smt_clauses
+  in
+
+  let interface_eqs =
+    Theory.interface
+      ~accepts
+      smt_clauses
+  in
+
+  let interface_tautologies =
+    interface_eqs
+    |> List.map (fun lit ->
+      let sat_lit =
+        Connector.abstract_literal conn lit
+      in
+      [ sat_lit; Sat.Formula.negate sat_lit ])
+  in
+
+  let propositional =
+    List.fold_left
+      Sat.Formula.conjoin1
+      propositional
+      interface_tautologies
+  in
+
+  let rec loop conn sat_formula =
+    match Sat.Cdcl.cdcl sat_formula with
+    | None ->
+      Solution.Unsat
+
+    | Some model ->
+      let smt_lits =
+        Connector.literals_from_model conn model
+      in
+      let t_solutions =
+        List.mapi
+          (fun _i (module T : Theory.THEORY) ->
+            let accepted =
+              List.filter T.accepts smt_lits
+            in
+            T.solve accepted)
+          ts
+      in
+
+      let cores =
+        Theory.find_unsat_cores t_solutions
+      in
+
+      begin match cores with
+        | [] ->
+          let arrangement =
+            smt_lits
+            |> List.filter Theory.is_positive_interface_equality
+          in
+          let models =
+            t_solutions
+            |> List.filter_map (function
+              | Theory.Theory_sat model -> Some model
+              | _ -> None)
+          in
+          let merged =
+            Euf.merge_models ~arrangement ~models
+            |> Euf.to_model
+          in
+          Solution.Sat merged
+        | cores ->
+          let sat_formula' =
+            List.fold_left
+              (fun acc core ->
+                let learned =
+                  Connector.theory_learn conn core
+                in
+                Sat.Formula.conjoin1 acc learned)
+              sat_formula
+              cores
+          in
+          loop conn sat_formula'
+        end
+  in
+
+  loop conn propositional
 
 let rec collect_concrete
-    (acc : Model.value_map)
+    (acc : Model.ValueMap.t)
     (f : (bool, 'k) Formula.t)
-  : Model.value_map option =
+  : Model.ValueMap.t option =
   match f with
   | Binop (Equal, Key (I k), Const_int i)
   | Binop (Equal, Const_int i, Key (I k)) ->
-      add_int_checked k i acc
-
+      Model.ValueMap.add_int_checked k i acc
   | Binop (Equal, Key (B k), Const_bool b)
   | Binop (Equal, Const_bool b, Key (B k)) ->
-      add_bool_checked k b acc
-
+      Model.ValueMap.add_bool_checked k b acc
   | Key (B k) ->
-      add_bool_checked k true acc
-
+      Model.ValueMap.add_bool_checked k true acc
   | Not (Key (B k)) ->
-      add_bool_checked k false acc
-
+      Model.ValueMap.add_bool_checked k false acc
   | And ls ->
       List.fold_left
         (fun acc_opt f ->
@@ -81,14 +158,21 @@ let rec collect_concrete
           | Some acc -> collect_concrete acc f)
         (Some acc)
         ls
-  | _ ->
-      Some acc
+  | _ -> Some acc
 
-let implied_concretization : 'k simplifier = fun solve expr ->
+(** [implied_concretization next expr] first attempts to solve EXPR with a 
+    few heuristics, and then calls the solver NEXT.
+
+    This simply special-cases on some common formulas. It also extracts out
+    constant assignments (variable = constant).
+
+    As more simplifiers are added, we could instead name this after implied
+    concretization. *)
+let implied_concretization : 'k simplifier = fun next expr ->
   let open Utils in
   let module ValueMap = Model.ValueMap in
   match collect_concrete Uid.Map.empty expr with
-  | None -> Solution.Unsat
+  | None -> Solution.Unsat (* because a variable can't be equal to more than 2 *)
   | Some value_map ->
     let rec sub_concrete_key : type a. (a, 'k) Formula.t  -> (a, 'k) Formula.t =
       fun f ->
@@ -145,70 +229,7 @@ let implied_concretization : 'k simplifier = fun solve expr ->
     | Const_bool true -> Solution.Sat (Model.from_value_map value_map)
     | Const_bool false -> Solution.Unsat
     | _ ->
-    solve simplified
-
-(*
-  First attempts to solve with a few heuristics, and then calls the solver.
-  This simply special-cases on some common formulas. It also extracts out
-  constant assignments (variable = constant).
-
-  As more simplifiers are added, we could instead name this after implied
-  concretization.
-*)
-let rec propagate_constants : 'k simplifier = fun solve expr ->
-  let assign i k = Solution.Sat (Model.singleton i k) in
-  (* Hand-write a lot of special cases for single formulas *)
-  match expr with
-  | Const_bool false -> Unsat
-  | Const_bool true -> Sat Model.empty
-  | Key k ->
-    assign true k
-  | Not Key k ->
-    assign false k
-  | Not (Binop (Equal, Key k, Const_int i)) ->
-    assign (if i = 0 then 1 else 0) k
-  | Binop ((Equal | Less_than_eq), Key (I _ as k), Const_int i)
-  | Binop ((Equal | Less_than_eq), Const_int i, Key (I _ as k)) ->
-    assign i k
-  | Binop (Less_than, Key k, Const_int i) ->
-    assign (i - 1) k
-  | Binop (Less_than, Const_int i, Key k) ->
-    assign (i + 1) k
-  | Binop (Less_than, Key (I _ as k), Key (I _ as k'))
-  | Binop (Less_than_eq, Key (I _ as k), Key (I _ as k')) ->
-    Solution.merge (assign 0 k) (assign 1 k')
-  | Binop (Equal, Key k, Key k') ->
-    begin match k, k' with
-    | I _, I _ -> Solution.merge (assign 0 k) (assign 0 k')
-    | B _, B _ -> Solution.merge (assign true k) (assign true k')
-    end
-  | Not Binop (Equal, Key k, Key k') ->
-    begin match k, k' with
-    | I _, I _ -> Solution.merge (assign 0 k) (assign 1 k')
-    | B _, B _ -> Solution.merge (assign true k) (assign false k')
-    end
-  | And e_ls ->
-    (*
-      If there is any (key = int) formula, then we can subst it through, for it
-      is an "implied concretization".
-
-      This idea originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
-      from Section 3.3, paragraph _Constraint Set Simplification_.
-    *)
-    let find (e : ('a, 'k) Formula.t) : (const:int * (int, 'k) Symbol.t) option =
-      match e with
-      | Binop (Equal, Key k, Const_int const) -> Some (~const, k)
-      | _ -> None
-    in
-    begin match List.find_map find e_ls with
-    | Some (~const, k) ->
-      let reduced_expr = Formula.and_ (List.map (Formula.subst const k) e_ls) in
-      Solution.merge (propagate_constants solve reduced_expr) (assign const k)
-    | None ->
-      solve expr
-    end
-  | _ ->
-    solve expr
+    next simplified
 
 let linearize next expr = next (Integer.linearize expr)
 let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)
@@ -220,10 +241,10 @@ let contains_unsolvable_binop formula =
 
 let blue3_solve formula =
   cdcl_T
-    ~t:(Theory.combine [
+    ~ts:[
       (module Euf : Theory.THEORY);
       (module Idl : Theory.THEORY);
-    ])
+    ]
     formula
 
 let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
@@ -241,9 +262,9 @@ let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t)
         | solution -> solution
 
 let blue3_with_metadata
-    ~(threshold : int)
-    (next : 'k solver_with_metadata)
-    (formula : (bool, 'k) Formula.t)
+  ~(threshold : int)
+  (next : 'k solver_with_metadata)
+  (formula : (bool, 'k) Formula.t)
   : 'k Solution.t * metadata =
   if contains_unsolvable_binop formula then
     next formula

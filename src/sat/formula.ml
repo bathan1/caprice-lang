@@ -73,22 +73,36 @@ let to_string (formula : literal list list) : string =
       i + 1
     ) ("", 0) formula))
 
-let pp_literal fd (lit : literal) : unit =
-  Format.fprintf fd "%s%d" (match lit with | Pos _ -> "" | Neg _ -> "~") (Uid.to_int (key_from_lit lit))
+let pp_literal ~(uid : Uid.t -> string) fmt (lit : literal) : unit =
+  let prefix =
+    match lit with
+    | Pos _ -> ""
+    | Neg _ -> "~"
+  in
+  Format.fprintf fmt "%s%s" prefix (uid (key_from_lit lit))
 
-let pp_clause fd (clause : literal list) : unit =
-  let n = List.length clause in 
-  List.iteri
-    (fun i lit -> 
-      if i < n - 1 then Format.fprintf fd "(%a) " pp_literal lit
-      else Format.fprintf fd "(%a)" pp_literal lit)
+let pp_clause ~(uid : Uid.t -> string) fmt (clause : literal list) : unit =
+  Format.fprintf fmt "(@[%a@])"
+    (Format.pp_print_list
+       ~pp_sep:(fun fmt () -> Format.fprintf fmt " v@ ")
+       (pp_literal ~uid))
     clause
 
-let pp_formula fd (form : t) : unit =
-  let n = List.length form in
-  if (is_tautology form) then Format.fprintf fd "true"
-  else List.iteri 
-    (fun i clause ->
-      if i < n - 1 then (Format.fprintf fd "(%a) " pp_clause) clause
-      else (Format.fprintf fd "(%a)" pp_clause) clause)
-    form
+let pp_formula ~(uid : Uid.t -> string) fmt (form : t) : unit =
+  if is_tautology form then
+    Format.fprintf fmt "true"
+  else
+    Format.fprintf fmt "@[%a@]"
+      (Format.pp_print_list
+         ~pp_sep:(fun fmt () -> Format.fprintf fmt " ^@ ")
+         (pp_clause ~uid))
+      form
+
+let print_literal ~uid lit =
+  Format.printf "%a@." (pp_literal ~uid) lit
+
+let print_clause ~uid clause =
+  Format.printf "%a@." (pp_clause ~uid) clause
+
+let print_formula ~uid form =
+  Format.printf "%a@." (pp_formula ~uid) form
