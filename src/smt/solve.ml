@@ -20,103 +20,6 @@ end
 let direct_solve (module X : SOLVABLE) : 'k solver = fun e ->
   X.solve (Formula.transform (module X) e)
 
-let cdcl_T
-  ~(theories : (module Theory.THEORY) list)
-  (formula : (bool, 'k) Formula.t)
-  : 'k Solution.t =
-  let accepts =
-    List.map (fun (module TheorySolver : Theory.THEORY) -> TheorySolver.accepts) theories
-  in
-
-  let conn = Connector.make () in
-
-  let smt_clauses =
-    Theory.from_smt_formula (Formula.clauses_from formula)
-  in
-
-  let propositional =
-    Connector.abstract smt_clauses conn
-  in
-
-  let interface_eqs =
-    Theory.interface
-      ~accepts
-      smt_clauses
-  in
-
-  let interface_tautologies =
-    interface_eqs
-    |> List.map (fun lit ->
-      let sat_lit =
-        Connector.abstract_literal lit conn
-      in
-      [ sat_lit; Sat.Formula.negate sat_lit ])
-  in
-
-  let propositional =
-    List.fold_left
-      Sat.Formula.conjoin1
-      propositional
-      interface_tautologies
-  in
-
-  let rec loop conn sat_formula =
-    match Sat.Cdcl.cdcl sat_formula with
-    | None ->
-      Solution.Unsat
-
-    | Some model ->
-      let smt_lits =
-        Connector.literals_from_model model conn
-      in
-      let t_solutions =
-        List.mapi
-          (fun _i (module T : Theory.THEORY) ->
-            let accepted =
-              List.filter T.accepts smt_lits
-            in
-            T.solve accepted)
-          theories
-      in
-
-      let cores =
-        Theory.find_unsat_cores t_solutions
-      in
-
-      begin match cores with
-        | [] ->
-          let arrangement =
-            smt_lits
-            |> List.filter Theory.is_positive_interface_equality
-          in
-          let models =
-            t_solutions
-            |> List.filter_map (function
-              | Theory.Theory_sat model -> Some model
-              | _ -> None)
-          in
-          let merged =
-            Euf.merge_models ~arrangement ~models
-            |> Euf.to_model
-          in
-          Solution.Sat merged
-        | cores ->
-          let sat_formula' =
-            List.fold_left
-              (fun acc core ->
-                let learned =
-                  Connector.theory_learn core conn
-                in
-                Sat.Formula.conjoin1 acc learned)
-              sat_formula
-              cores
-          in
-          loop conn sat_formula'
-        end
-  in
-
-  loop conn propositional
-
 let rec collect_concrete
     (acc : Model.ValueMap.t)
     (f : (bool, 'k) Formula.t)
@@ -221,13 +124,42 @@ let contains_unsolvable_binop formula =
   || Formula.contains_binop Modulus formula
   || Formula.contains_binop Plus formula
 
-let blue3_solve formula =
-  cdcl_T
-    ~theories:[
-      (module Euf : Theory.THEORY);
-      (module Idl : Theory.THEORY);
-    ]
-    formula
+let prefix_uid uid = Int.to_string @@ Utils.Uid.to_int uid
+
+let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
+  : 'k Solution.t =
+  let smt_clauses =
+    Theory.from_smt_formula (Formula.clauses_from formula)
+  in
+  let conn = Connector.make () in
+
+  let propositional =
+    Connector.abstract smt_clauses conn
+  in
+  let rec loop conn sat_formula =
+    match Sat.Cdcl.cdcl sat_formula with
+    | None ->
+      Solution.Unsat
+    | Some model ->
+      let smt_lits =
+        Connector.literals_from_model model conn
+      in
+      match theory smt_lits with
+      | Theory_unsat core ->
+        let learned = Connector.theory_learn core conn in
+        let sat_formula' = Sat.Formula.conjoin1 sat_formula learned in
+        loop conn sat_formula'
+      | Theory_sat model -> Solution.Sat model
+  in
+  loop conn propositional
+
+let theories = [
+  (module Euf : Theory.THEORY);
+  (module Idl : Theory.THEORY);
+]
+let euf_idl_solver expr = Theory.combine theories expr
+
+let blue3_solve formula = cdcl_T ~theory:euf_idl_solver formula
 
 let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
   if contains_unsolvable_binop formula then next formula

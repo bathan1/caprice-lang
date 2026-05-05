@@ -1,5 +1,10 @@
 open Utils
 
+let tag = "IDL"
+(** This solves satisfiability of difference constraints
+    in polynomial time relative to the number of edges (differences) 
+    and nodes (variables) via the Bellman Ford algorithm. *)
+
 type node =
   | Symbol_key of Uid.t
   | Z0
@@ -305,7 +310,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array)
           printf "UNSAT\n"
     ]}
 *)
-let solve (formula : 'k Theory.literal list) : 'k Theory.t_solution =
+let solve (formula : 'k Theory.literal list) : 'k Theory.theory_solution =
   let ~nodes, ~edges, ~index = to_constraint_graph formula in
   match bellman_ford nodes edges ~src:0 with
   | `Negative_cycle cycle_edges ->
@@ -445,12 +450,14 @@ let disequalities
 let accepts : 'k Theory.literal -> bool =
   let accepts_atom : type k. k Theory.atom -> bool =
     function
-    | Theory.Predicate (Binop.Less_than, left, right) ->
-        Option.is_some (find_diff_opt Binop.Less_than left right)
-    | Theory.Predicate (Binop.Less_than_eq, left, right) ->
-        Option.is_some (find_diff_opt Binop.Less_than_eq left right)
-    | Theory.Predicate _ -> false
-    | Theory.Bool_key _ -> false
+    | Predicate (Less_than, left, right) ->
+        Option.is_some (find_diff_opt Less_than left right)
+    | Predicate (Equal, left, right) ->
+        Option.is_some (find_diff_opt Equal left right)
+    | Predicate (Less_than_eq, left, right) ->
+        Option.is_some (find_diff_opt Less_than_eq left right)
+    | Predicate _ -> false
+    | Bool_key _ -> false
   in
 
   function

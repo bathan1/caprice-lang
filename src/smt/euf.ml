@@ -1,5 +1,23 @@
 open Utils
 
+let tag = "EUF"
+(** EUF, or Equality of Uninterpreted Functions, handles solving if 
+    an equivalence graph is satisfiable. Since there are no functions
+    in the Formula type, this effectively solves for satisfiability
+    of equality clauses, e.g. [a = b ^ a = c ^ c != b] *)
+
+type 'k eq_lit =
+  | Eq of Theory.Shared.t * Theory.Shared.t * 'k Theory.literal
+  | Neq of Theory.Shared.t * Theory.Shared.t * 'k Theory.literal
+
+let int_value_of_term = function
+  | Theory.Shared.Int_const i -> Some i
+  | _ -> None
+
+let bool_value_of_term = function
+  | Theory.Shared.Bool_const b -> Some b
+  | _ -> None
+
 module UF = struct
   type t =
     { parent : (Theory.Shared.t, Theory.Shared.t) Hashtbl.t
@@ -67,190 +85,6 @@ module UF = struct
     |> List.of_seq
 end
 
-type merged_model =
-  { uf : UF.t
-  ; values : Model.value Theory.SharedMap.t
-  }
-
-let find_merged_opt
-    (model : merged_model)
-    (shared : Theory.Shared.t)
-  : Model.value option =
-  let rep = UF.find model.uf shared in
-  Theory.SharedMap.find_opt rep model.values
-
-let value_of_const : Theory.Shared.t -> Model.value option =
-  function
-  | Theory.Shared.Int_const i -> Some (Model.Int i)
-  | Theory.Shared.Bool_const b -> Some (Model.Bool b)
-  | Theory.Shared.Int_var _
-  | Theory.Shared.Bool_var _ -> None
-
-let find_shared_opt
-    (model : 'k Model.t)
-    (shared : Theory.Shared.t)
-  : Model.value option =
-  match shared with
-  | Theory.Shared.Int_var uid ->
-    model.value (I uid)
-    |> Option.map (fun v -> Model.Int v)
-  | Theory.Shared.Bool_var uid -> 
-    model.value (B uid)
-    |> Option.map (fun v -> Model.Bool v)
-  | Theory.Shared.Int_const i ->
-      Some (Int i)
-  | Theory.Shared.Bool_const b ->
-      Some (Bool b)
-
-let value_from_models
-    ~(models : 'k Model.t list)
-    (members : Theory.Shared.t list)
-  : Model.value option =
-  members
-  |> List.find_map (fun shared ->
-       models
-       |> List.find_map (fun model ->
-            find_shared_opt model shared))
-
-let merge_models
-    ~(arrangement : 'k Theory.literal list)
-    ~(models : 'k Model.t list)
-  : merged_model =
-  let uf = UF.create () in
-
-  (* Add every variable appearing in every theory model as a singleton UF class. *)
-  List.iter
-    (fun (model : 'k Model.t) ->
-      List.iter
-        (fun key ->
-          let shared =
-            match key with
-            | Model.Int_key uid -> Theory.Shared.Int_var uid
-            | Model.Bool_key uid -> Theory.Shared.Bool_var uid
-          in
-          UF.add uf shared)
-        model.domain)
-    models;
-
-  (* Union positive interface equalities from SAT's guessed arrangement. *)
-  List.iter
-    (function
-      | Theory.Pos (Theory.Predicate (Binop.Equal, left, right)) ->
-          begin match
-            Theory.Shared.from_formula left,
-            Theory.Shared.from_formula right
-          with
-          | Some x, Some y ->
-              UF.union uf x y
-          | _ ->
-              ()
-          end
-
-      | _ ->
-          ())
-    arrangement;
-
-  let value_of_const = function
-    | Theory.Shared.Int_const i -> Some (Model.Int i)
-    | Theory.Shared.Bool_const b -> Some (Model.Bool b)
-    | Theory.Shared.Int_var _
-    | Theory.Shared.Bool_var _ -> None
-  in
-
-  let value_from_model
-      (model : 'k Model.t)
-      (shared : Theory.Shared.t)
-    : Model.value option =
-    match shared with
-    | Theory.Shared.Int_var uid -> (
-        match model.value (Symbol.I uid) with
-        | Some i -> Some (Model.Int i)
-        | None -> None)
-
-    | Theory.Shared.Bool_var uid -> (
-        match model.value (Symbol.B uid) with
-        | Some b -> Some (Model.Bool b)
-        | None -> None)
-
-    | Theory.Shared.Int_const i ->
-        Some (Model.Int i)
-
-    | Theory.Shared.Bool_const b ->
-        Some (Model.Bool b)
-  in
-
-  let value_from_models
-      (members : Theory.Shared.t list)
-    : Model.value option =
-    members
-    |> List.find_map (fun shared ->
-         models
-         |> List.find_map (fun model ->
-              value_from_model model shared))
-  in
-
-  let values =
-    UF.classes uf
-    |> List.fold_left
-         (fun acc members ->
-           match members with
-           | [] ->
-               acc
-
-           | hd :: _ ->
-               let rep = UF.find uf hd in
-
-               let chosen =
-                 match List.find_map value_of_const members with
-                 | Some value -> Some value
-                 | None -> value_from_models members
-               in
-
-               match chosen with
-               | Some value ->
-                   Theory.SharedMap.add rep value acc
-               | None ->
-                   acc)
-         Theory.SharedMap.empty
-  in
-
-  { uf; values }
-
-let to_model (merged : merged_model) : 'k Model.t =
-  let value_map =
-    UF.classes merged.uf
-    |> List.fold_left
-         (fun acc members ->
-           match members with
-           | [] ->
-               acc
-
-           | hd :: _ ->
-               let rep = UF.find merged.uf hd in
-
-               begin match Theory.SharedMap.find_opt rep merged.values with
-               | None ->
-                   acc
-
-               | Some value ->
-                   List.fold_left
-                     (fun acc member ->
-                       match member with
-                       | Theory.Shared.Int_var uid
-                       | Theory.Shared.Bool_var uid ->
-                           Model.ValueMap.add uid value acc
-
-                       | Theory.Shared.Int_const _
-                       | Theory.Shared.Bool_const _ ->
-                           acc)
-                     acc
-                     members
-               end)
-         Model.ValueMap.empty
-  in
-
-  Model.from_value_map value_map
-
 let accepts : 'k Theory.literal -> bool =
   let is_euf_term : type a k. (a, k) Formula.t -> bool =
     function
@@ -266,55 +100,6 @@ let accepts : 'k Theory.literal -> bool =
   function
   | Theory.Pos atom
   | Theory.Neg atom -> accepts_atom atom
-
-let constant_conflict uf =
-  let classes =
-    Hashtbl.fold
-      (fun term _ acc ->
-        let root = UF.find uf term in
-        let old =
-          match Theory.SharedMap.find_opt root acc with
-          | Some xs -> xs
-          | None -> []
-        in
-        Theory.SharedMap.add root (term :: old) acc)
-      uf.UF.parent
-      Theory.SharedMap.empty
-  in
-  Theory.SharedMap.to_seq classes
-  |> Seq.find_map
-    (fun (_root, terms) ->
-      let int_consts =
-        terms
-        |> List.filter_map (function
-            | Theory.Shared.Int_const i -> Some i
-            | _ -> None)
-        |> List.sort_uniq Int.compare
-      in
-      let bool_consts =
-        terms
-        |> List.filter_map (function
-            | Theory.Shared.Bool_const b -> Some b
-            | _ -> None)
-        |> List.sort_uniq Bool.compare
-      in
-
-      match int_consts, bool_consts with
-      | _ :: _ :: _, _ -> Some ()
-      | _, _ :: _ :: _ -> Some ()
-      | _ -> None)
-
-type 'k eq_lit =
-  | Eq of Theory.Shared.t * Theory.Shared.t * 'k Theory.literal
-  | Neq of Theory.Shared.t * Theory.Shared.t * 'k Theory.literal
-
-let int_value_of_term = function
-  | Theory.Shared.Int_const i -> Some i
-  | _ -> None
-
-let bool_value_of_term = function
-  | Theory.Shared.Bool_const b -> Some b
-  | _ -> None
 
 let root_equal uf root term =
   Theory.Shared.compare root (UF.find uf term) = 0
@@ -398,37 +183,34 @@ let class_bool_value uf root =
        | _ -> None)
 
 let model_from_uf eq_lits uf =
-  let preliminary =
-    Hashtbl.fold
-      (fun term _ acc ->
-        match term with
-        | Theory.Shared.Int_var uid ->
-            let root = UF.find uf term in
-            let value =
-              match class_int_value uf root with
-              | Some i -> i
-              | None ->
-                  root
-                  |> forbidden_int_values eq_lits uf
-                  |> choose_int_value
-            in
-            Model.ValueMap.add_int uid value acc
-        | Theory.Shared.Bool_var uid ->
-            let root = UF.find uf term in
-            let value =
-              match class_bool_value uf root with
-              | Some i -> i
-              | None ->
-                  root
-                  |> forbidden_bool_values eq_lits uf
-                  |> choose_bool_value
-            in
-            Model.ValueMap.add_bool uid value acc
-        | _ -> acc)
-      uf.UF.parent
-      Uid.Map.empty
+  let build_model term _ acc =
+    match term with
+    | Theory.Shared.Int_var uid ->
+        let root = UF.find uf term in
+        let value =
+          match class_int_value uf root with
+          | Some i -> i
+          | None ->
+              root
+              |> forbidden_int_values eq_lits uf
+              |> choose_int_value
+        in
+        Model.ValueMap.add_int uid value acc
+    | Theory.Shared.Bool_var uid ->
+        let root = UF.find uf term in
+        let value =
+          match class_bool_value uf root with
+          | Some i -> i
+          | None ->
+              root
+              |> forbidden_bool_values eq_lits uf
+              |> choose_bool_value
+        in
+        Model.ValueMap.add_bool uid value acc
+    | _ -> acc
   in
-
+  let preliminary = Hashtbl.fold build_model uf.UF.parent Uid.Map.empty
+  in
   let final =
   List.fold_left
     (fun acc eq_lit ->
@@ -457,7 +239,7 @@ let model_from_uf eq_lits uf =
 
   Model.from_value_map final
 
-let terms_of_uf (uf : UF.t) : Theory.Shared.t list =
+let terms_from_uf (uf : UF.t) : Theory.Shared.t list =
   Hashtbl.fold
     (fun term _ acc -> term :: acc)
     uf.UF.parent
@@ -474,7 +256,7 @@ let all_pairs xs =
 
 let implied_equalities_from_uf (uf : UF.t) : (Theory.Shared.t * Theory.Shared.t) list =
   uf
-  |> terms_of_uf
+  |> terms_from_uf
   |> all_pairs
   |> List.filter (fun (l, r) -> UF.same uf l r)
 
@@ -511,12 +293,48 @@ let disequalities (formula : 'k Theory.literal list)
   : (Theory.Shared.t * Theory.Shared.t * 'k Theory.literal) list =
   disequalities_from_lits @@ List.filter_map eq_lit_of_theory_lit formula
 
-let solve (formula : 'k Theory.literal list) : 'k Theory.t_solution =
+let constant_conflict uf =
+  let classes =
+    Hashtbl.fold
+      (fun term _ acc ->
+        let root = UF.find uf term in
+        let old =
+          match Theory.SharedMap.find_opt root acc with
+          | Some xs -> xs
+          | None -> []
+        in
+        Theory.SharedMap.add root (term :: old) acc)
+      uf.UF.parent
+      Theory.SharedMap.empty
+  in
+  Theory.SharedMap.to_seq classes
+  |> Seq.find_map
+    (fun (_root, terms) ->
+      let int_consts =
+        terms
+        |> List.filter_map (function
+            | Theory.Shared.Int_const i -> Some i
+            | _ -> None)
+        |> List.sort_uniq Int.compare
+      in
+      let bool_consts =
+        terms
+        |> List.filter_map (function
+            | Theory.Shared.Bool_const b -> Some b
+            | _ -> None)
+        |> List.sort_uniq Bool.compare
+      in
+
+      match int_consts, bool_consts with
+      | _ :: _ :: _, _ -> Some ()
+      | _, _ :: _ :: _ -> Some ()
+      | _ -> None)
+
+let solve (formula : 'k Theory.literal list) : 'k Theory.theory_solution =
   let eq_lits = List.filter_map eq_lit_of_theory_lit formula in
   let uf = uf_from_eq_lits eq_lits in
   match constant_conflict uf with
-  | Some () ->
-      Theory.Theory_unsat formula
+  | Some () -> Theory.Theory_unsat formula
   | None ->
     begin match List.find_opt
       (function

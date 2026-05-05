@@ -3,6 +3,7 @@
 [@@@ocaml.warning "-32"]
 
 open Smt
+open Sandbox
 
 module AsciiSymbol = Symbol.AsciiSymbol
 
@@ -211,7 +212,10 @@ let sanity_check () =
     List.iter print_failure failures
     end
 
+
 let () =
-  let _fstr = "(a <= 100) ^ (a = b) ^ (b = c)"
-  in
-  Sandbox.Theory_combination.theory_combination ();
+  let f = Boolean.parse "(a = b) ^ (a <= 5) ^ (4 <= b) ^ (not (b = 6))" in
+  let theory_formula = Theory.from_smt_formula @@ Formula.clauses_from f in
+  let as_unit_literal_ls = List.flatten theory_formula in
+  let solution = Solve.euf_idl_solver as_unit_literal_ls in
+  Theory.print_theory_solution solution ~key:Model.ascii_key;

@@ -1,4 +1,5 @@
 module IntSet = Utils.Iterables.IntSet
+open Smt
 
 let stringify x = x |> Char.chr |> String.of_char
 
