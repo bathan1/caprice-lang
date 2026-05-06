@@ -15,6 +15,7 @@ type 'k theory_solution =
       by the parent ['k] formula key *)
   | Theory_sat of 'k Model.t
   | Theory_unsat of 'k literal list
+  | Theory_split of 'k literal list list
 
 type 'k theory_solver = 'k literal list -> 'k theory_solution
 (** A ['k theory_solver] accepts a list implied to be in a conjunction and returns its domain specific ['k t_solution] *)
@@ -131,6 +132,7 @@ let pp_theory_solution
       Format.fprintf fmt "(T) SAT %s" (Model.to_string ~key model)
   | Theory_unsat core_lits ->
       Format.fprintf fmt "(T) UNSAT %a" (pp_unit_literals ~key) core_lits
+  | Theory_split split -> Format.fprintf fmt "(T) SPLIT %a" (pp_formula ~key) split
 
 let pp_shared ~uid fmt (var : Shared.t) =
   let value =
@@ -167,6 +169,7 @@ let to_solution (theory : 'k theory_solution) : 'k Solution.t =
   match theory with
   | Theory_unsat _ -> Unsat
   | Theory_sat model -> Sat model
+  | Theory_split _ -> Unknown
 
 let from_smt_atom (atom : (bool, 'k) Formula.t) : 'k atom =
   match atom with
@@ -182,20 +185,24 @@ let from_smt_literal (lit : (bool, 'k) Formula.t) : 'k literal =
   | Formula.Not inner -> Neg (from_smt_atom inner)
   | inner -> Pos (from_smt_atom inner)
 
-let from_smt_clause (clause : (bool, 'k) Formula.t list) : 'k literal list =
+(** [from_smt_clause_like clause] maps each element in CLAUSE to their corresponding
+    theory [literal]. This is just a [List.map] over a formula list and doesn't 
+    care whether the list is meant to be interpreted as a disjunction or a conjunction 
+    of unit clauses. That interpretation is up to the caller. *)
+let from_smt_clause_like (clause : (bool, 'k) Formula.t list) : 'k literal list =
   List.map from_smt_literal clause
 
 let from_smt_formula (form : (bool, 'k) Formula.t list) : 'k literal list list =
   form
   |> List.map Formula.disjuncts_from_clause
-  |> List.map from_smt_clause
+  |> List.map from_smt_clause_like
 
 (** [find_unsat_cores t_solutions] filters for Theory_unsat solutions over T_SOLUTIONS and maps out their conflict clause *)
 let find_unsat_cores (t_solutions : 'k theory_solution list) =
   List.filter_map
     (function
       | Theory_unsat core -> Some core
-      | Theory_sat _ -> None)
+      | _ -> None)
     t_solutions
 
 let eq_lit_from_shared_pair : type k.
@@ -420,6 +427,7 @@ let solve_each
       | Theory_unsat core ->
         let explained = explain_core assumptions core
         in Theory_unsat explained
+      | _ -> failwith "unreachable"
   in
   theories
   |> List.mapi (fun i theory -> i, theory)

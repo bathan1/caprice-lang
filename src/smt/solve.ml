@@ -116,30 +116,28 @@ let implied_concretization : 'k simplifier = fun next expr ->
     | _ ->
     next simplified
 
-let linearize next expr = next (Integer.linearize expr)
-let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)
 let contains_unsolvable_binop formula =
   Formula.contains_binop Times formula
   || Formula.contains_binop Divide formula
   || Formula.contains_binop Modulus formula
   || Formula.contains_binop Plus formula
 
-let prefix_uid uid = Int.to_string @@ Utils.Uid.to_int uid
+let linearize next expr = 
+  next (Integer.linearize expr)
+let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)
 
 let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
   : 'k Solution.t =
-  let smt_clauses =
-    Theory.from_smt_formula (Formula.clauses_from formula)
-  in
   let conn = Connector.make () in
-
   let propositional =
-    Connector.abstract smt_clauses conn
+    formula
+    |> Formula.clauses_from
+    |> Theory.from_smt_formula
+    |> fun formula -> Connector.abstract formula conn
   in
   let rec loop conn sat_formula =
     match Sat.Cdcl.cdcl sat_formula with
-    | None ->
-      Solution.Unsat
+    | None -> Solution.Unsat
     | Some model ->
       let smt_lits =
         Connector.literals_from_model model conn
@@ -150,30 +148,31 @@ let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
         let sat_formula' = Sat.Formula.conjoin1 sat_formula learned in
         loop conn sat_formula'
       | Theory_sat model -> Solution.Sat model
+      | Theory_split clauses ->
+        let sat_formula' =
+          List.fold_left
+            (fun acc clause ->
+              let sat_clause = Connector.abstract_clause clause conn in
+              Sat.Formula.conjoin1 acc sat_clause)
+            sat_formula
+            clauses
+        in
+        loop conn sat_formula'
   in
   loop conn propositional
 
-let theories = [
-  (module Euf : Theory.THEORY);
-  (module Idl : Theory.THEORY);
-]
-let euf_idl_solver expr = Theory.combine theories expr
+let blue3_solve formula = cdcl_T ~theory:Idl.solve_diff_logic formula
 
-let blue3_solve formula = cdcl_T ~theory:euf_idl_solver formula
-
-let blue3 ~(threshold : int) (next : 'k solver) (formula : (bool, 'k) Formula.t) =
+let blue3 (next : 'k solver) (formula : (bool, 'k) Formula.t) =
   if contains_unsolvable_binop formula then next formula
   else
     match formula with
     | Const_bool true -> Solution.Sat Model.empty
     | Const_bool false -> Solution.Unsat
     | _ ->
-      let formula', num_cases = Idl.split_cases formula in
-      if num_cases > threshold then next formula
-      else
-        match blue3_solve formula' with
-        | Solution.Unknown -> next formula
-        | solution -> solution
+      match blue3_solve formula with
+      | Solution.Unknown -> next formula
+      | solution -> solution
 
 let blue3_with_metadata
   ~(threshold : int)
@@ -248,7 +247,7 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     linearize
     @@> implied_concretization
     @@> drop_redundant_ineqs
-    @@> blue3 ~threshold:6
+    @@> blue3
   in
   pipeline (direct_solve (module Oracle))
 

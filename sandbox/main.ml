@@ -214,8 +214,4 @@ let sanity_check () =
 
 
 let () =
-  let f = Boolean.parse "(a = b) ^ (a <= 5) ^ (4 <= b) ^ (not (b = 6))" in
-  let theory_formula = Theory.from_smt_formula @@ Formula.clauses_from f in
-  let as_unit_literal_ls = List.flatten theory_formula in
-  let solution = Solve.euf_idl_solver as_unit_literal_ls in
-  Theory.print_theory_solution solution ~key:Model.ascii_key;
+  Sandbox.Benchmark.benchmark 10

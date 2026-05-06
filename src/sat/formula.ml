@@ -110,3 +110,8 @@ let print_clause ~uid clause =
 
 let print_formula ~uid form =
   Format.printf "%a@." (pp_formula ~uid) form
+
+let uid_to_int_string (uid : Uid.t) : string =
+  uid
+  |> Uid.to_int
+  |> Int.to_string

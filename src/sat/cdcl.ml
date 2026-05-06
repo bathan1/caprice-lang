@@ -88,7 +88,7 @@ let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : literal li
       backtrack_learn backtrack_level conflict trail form
   | Implication (clause, lit) ->
     let entry =
-      { Trail.level; lit; reason = Propagated clause }
+      { Trail.level ; lit ; reason = Propagated clause }
     in
     bcp level (entry :: trail) form
   end

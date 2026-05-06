@@ -85,13 +85,12 @@ module UF = struct
     |> List.of_seq
 end
 
+let is_euf_term : type a k. (a, k) Formula.t -> bool =
+  function
+  | Formula.Key (Symbol.I _) -> true
+  | _ -> false
+
 let accepts : 'k Theory.literal -> bool =
-  let is_euf_term : type a k. (a, k) Formula.t -> bool =
-    function
-    | Formula.Key (Symbol.I _) -> true
-    | Formula.Const_int _ -> true
-    | _ -> false
-  in
   let accepts_atom : 'k Theory.atom -> bool =
     function
     | Theory.Predicate (Binop.Equal, l, r) -> is_euf_term l && is_euf_term r
@@ -147,16 +146,18 @@ let choose_bool_value forbidden =
   if not (List.mem false forbidden) then false
   else true
 
-let eq_lit_of_theory_lit
+let eq_literal_from_theory
   (lit : 'k Theory.literal)
   : 'k eq_lit option =
   match lit with
-  | Theory.Pos (Theory.Predicate (Binop.Equal, left, right)) ->
+  | Theory.Pos (Theory.Predicate (Binop.Equal, left, right))
+    when is_euf_term left && is_euf_term right ->
     begin match Theory.Shared.from_formula left, Theory.Shared.from_formula right with
     | Some l, Some r -> Some (Eq (l, r, lit))
     | _ -> None
     end
-  | Theory.Neg (Theory.Predicate (Binop.Equal, left, right)) ->
+  | Theory.Neg (Theory.Predicate (Binop.Equal, left, right))
+    when is_euf_term left && is_euf_term right ->
     begin match Theory.Shared.from_formula left, Theory.Shared.from_formula right with
     | Some l, Some r -> Some (Neq (l, r, lit))
     | _ -> None
@@ -282,7 +283,7 @@ let uf_from_eq_lits (eq_lits : 'k eq_lit list) : UF.t =
   uf
 
 let implied_equalities (formula : 'k Theory.literal list) : (Theory.Shared.t * Theory.Shared.t) list =
-  let eq_lits = List.filter_map eq_lit_of_theory_lit formula in
+  let eq_lits = List.filter_map eq_literal_from_theory formula in
   if List.length eq_lits <> List.length formula then
     []
   else
@@ -291,7 +292,7 @@ let implied_equalities (formula : 'k Theory.literal list) : (Theory.Shared.t * T
 
 let disequalities (formula : 'k Theory.literal list)
   : (Theory.Shared.t * Theory.Shared.t * 'k Theory.literal) list =
-  disequalities_from_lits @@ List.filter_map eq_lit_of_theory_lit formula
+  disequalities_from_lits @@ List.filter_map eq_literal_from_theory formula
 
 let constant_conflict uf =
   let classes =
@@ -331,7 +332,7 @@ let constant_conflict uf =
       | _ -> None)
 
 let solve (formula : 'k Theory.literal list) : 'k Theory.theory_solution =
-  let eq_lits = List.filter_map eq_lit_of_theory_lit formula in
+  let eq_lits = List.filter_map eq_literal_from_theory formula in
   let uf = uf_from_eq_lits eq_lits in
   match constant_conflict uf with
   | Some () -> Theory.Theory_unsat formula

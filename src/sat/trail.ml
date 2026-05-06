@@ -80,3 +80,4 @@ let find_reason (lits : literal list) (trail : t list) : literal list =
     with [level > BACKTRACK_LEVEL] are popped *)
 let backtrack (backtrack_level : int) (trail : t list) : t list =
   List.filter (fun { level; _ } -> level <= backtrack_level) trail
+

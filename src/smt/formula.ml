@@ -70,18 +70,6 @@ end = struct
   let rec binop
     : type a b c. (a * a * b, c) Binop.c -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
     = fun op x y ->
-    let as_bool : type a k. (a, k) t -> (bool, k) t option =
-      function
-      | Const_bool _ as f -> Some f
-      | Key (B _) as f -> Some f
-      | Not _ as f -> Some f
-      | And _ as f -> Some f
-      | Binop (Less_than, _, _) as f -> Some f
-      | Binop (Less_than_eq, _, _) as f -> Some f
-      | Binop (Equal, _, _) as f -> Some f
-
-      | _ -> None
-    in
     match op with
     | Or ->
       begin match x, y with
@@ -94,6 +82,17 @@ end = struct
       | e1, e2 -> Binop (Or, e1, e2)
       end
     | Equal ->
+      let as_bool : type a k. (a, k) t -> (bool, k) t option =
+        function
+        | Const_bool _ as f -> Some f
+        | Key (B _) as f -> Some f
+        | Not _ as f -> Some f
+        | And _ as f -> Some f
+        | Binop (Less_than, _, _) as f -> Some f
+        | Binop (Less_than_eq, _, _) as f -> Some f
+        | Binop (Equal, _, _) as f -> Some f
+        | _ -> None
+      in
       begin match as_bool x, as_bool y with
       | Some bx, Some by -> iff bx by
       | _ ->
