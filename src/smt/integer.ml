@@ -18,18 +18,18 @@ let sub_affine a b =
   | Const _, Var_plus_const (_, _) -> None
   | Var_plus_const _, Var_plus_const _ -> None
 
-let rec affine_from_formula
+let rec affine_from_formula_opt
   : type a k. (a, k) Formula.t -> affine option =
   function
   | Const_int c -> Some (Const c)
   | Key (I x) -> Some (Var_plus_const (x, 0))
   | Binop (Plus, left, right) ->
-    begin match affine_from_formula left, affine_from_formula right with
+    begin match affine_from_formula_opt left, affine_from_formula_opt right with
     | Some l, Some r -> add_affine l r
     | _ -> None
     end
   | Binop (Minus, left, right) ->
-    begin match affine_from_formula left, affine_from_formula right with
+    begin match affine_from_formula_opt left, affine_from_formula_opt right with
     | Some l, Some r -> sub_affine l r
     | _ -> None
     end
@@ -65,30 +65,6 @@ let formula_from_affine_comparison
             (Formula.symbol (I x)))
     | Const c1, Const c2 -> Some (Formula.binop binop (Formula.const_int c1) (Formula.const_int c2))
     | Var_plus_const _, Var_plus_const _ -> None
-
-module IntSet = Iterables.IntSet
-
-(** [int_symbol uid] is an int symbol with UID wrapped over a [Formula.Key] *)
-let int_symbol (uid : Uid.t) = Formula.symbol (I uid)
-
-(** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula. *)
-let rec linearize (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
-  match formula with
-  | Formula.Binop
-    (((Equal | Less_than | Less_than_eq) as binop),
-      left,
-      right) ->
-    begin match affine_from_formula left, affine_from_formula right with
-    | Some l, Some r ->
-        begin match formula_from_affine_comparison binop l r with
-        | Some formula' -> formula'
-        | None -> formula
-        end
-    | _ -> formula
-    end
-  | Formula.And ls -> Formula.and_ (List.map linearize ls)
-  | Formula.Not f -> Formula.not_ (linearize f)
-  | f -> f
 
 type int_constraint = 
   { lower : int
@@ -244,7 +220,29 @@ let prune_redundant (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t
   |> List.concat_map bound_to_formula_clauses
   |> fun rewritten -> rewritten @ other_clauses
 
-(** [drop_redundant_ineqs formula] is FORMULA with redundant inequalities / disequalties dropped. *)
+let reflect_int_opt : type a k. (a, k) Formula.t -> (int, k) Formula.t option = fun term ->
+  term
+  |> affine_from_formula_opt
+  |> Option.map formula_from_affine
+
+let rec linearize (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
+  match formula with
+  | Formula.Binop
+    (((Equal | Less_than | Less_than_eq) as binop),
+      left,
+      right) ->
+    begin match affine_from_formula_opt left, affine_from_formula_opt right with
+    | Some l, Some r ->
+        begin match formula_from_affine_comparison binop l r with
+        | Some formula' -> formula'
+        | None -> formula
+        end
+    | _ -> formula
+    end
+  | Formula.And ls -> Formula.and_ (List.map linearize ls)
+  | Formula.Not f -> Formula.not_ (linearize f)
+  | f -> f
+
 let drop_redundant_ineqs (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
   formula
   |> Formula.clauses_from

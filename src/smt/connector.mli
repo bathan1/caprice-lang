@@ -8,6 +8,9 @@ val cdcl_T : theory:'k Theory.theory_solver -> (bool, 'k) Formula.t -> 'k Soluti
     "simple" CDCL (T) loop from the 
     {{: https://theory.stanford.edu/~nikolaj/programmingz3.html#sec-cdclt } Programming Z3} docs.
 
+    It uses the {{: https://people.eecs.berkeley.edu/~sseshia/pubdir/SMT-BookChapter.pdf } case splitting on demand heuristic}
+    to append the disjunction cases that the CDCL boolean loop should decide on.
+
     One of the reasons it is "simple" because it waits for [Sat.Cdcl.cdcl] 
     to spit out a *full* satisfying boolean assignment before checking 
     for (T) Satisfiability.

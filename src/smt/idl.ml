@@ -43,7 +43,7 @@ type 'k edge =
 type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
 
 let diff_from_leq left right : diff_constraint option =
-  match Integer.affine_from_formula left, Integer.affine_from_formula right with
+  match Integer.affine_from_formula_opt left, Integer.affine_from_formula_opt right with
   | Some (Var_plus_const (x, kx)), Some (Var_plus_const (y, ky)) ->
     Some { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
   | Some (Var_plus_const (x, kx)), Some (Const c) ->
@@ -308,15 +308,10 @@ let split_to_theory_clause ((~lower, ~upper, ~eq): 'k split_neq_case) : 'k Theor
 
 let find_split_opt (lit : 'k Theory.literal)
   : 'k split_neq_case option =
-  let as_int : type a k. (a, k) Formula.t -> (int, k) Formula.t option = fun term ->
-    term
-    |> Integer.affine_from_formula
-    |> Option.map Integer.formula_from_affine
-  in
   let one = Formula.const_int 1 in
   match lit with
   | Neg Predicate (Equal, x, y) ->
-    begin match as_int x, as_int y with
+    begin match Integer.reflect_int_opt x, Integer.reflect_int_opt y with
     | Some x', Some y' ->
         let lower = Theory.Predicate (Less_than_eq, x', (Formula.minus y' one)) in
         let upper = Theory.Predicate (Less_than_eq, (Formula.plus y' one), x') in
@@ -348,30 +343,7 @@ let resolve_splits lits =
     lits
     ([], [])
 
-(** [solve formula] finds the tightest upper bounds of each integer variable in FORMULA
-
-    {[
-    open Smt
-
-    module AsciiSymbol = Symbol.AsciiSymbol
-
-    let () =
-      let key c = Formula.symbol (AsciiSymbol.make_int c) in
-      in
-      let formula = Formula.and_ [
-        Formula.binop Less_than_eq (key 'a') (Formula.const_int 2);
-        Formula.binop Greater_than (key 'b') (key 'a');
-      ] 
-      in
-      match Integer.solve_diff formula with
-      | Solution.Sat model ->
-          (* Access a (tight) upper bound: model.value (I 0) -> int option *)
-          printf "SAT: upper bound on x = %d\n"
-            (Option.value_exn (model.value (I 0)))
-      | Unsat ->
-          printf "UNSAT\n"
-    ]}
-*)
+(** [solve_diff_logic formula] finds the tightest upper bounds of each integer variable in FORMULA *)
 let solve_diff_logic (lits : 'k Theory.literal list) : 'k Theory.theory_solution =
   let lits', remaining_splits = resolve_splits lits in
   match remaining_splits with
