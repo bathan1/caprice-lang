@@ -1,15 +1,13 @@
+(** IDL stands for Integer Difference Logic and it solves satisfiability
+    of difference constraints in polynomial time relative to the number of edges
+    (differences) and nodes (variables) via the Bellman Ford algorithm. *)
 open Utils
-
-let tag = "IDL"
-(** This solves satisfiability of difference constraints
-    in polynomial time relative to the number of edges (differences) 
-    and nodes (variables) via the Bellman Ford algorithm. *)
 
 type node =
   | Symbol_key of Uid.t
   | Z0
 
-let node_equal n1 n2 =
+let nodes_equal n1 n2 =
   match n1, n2 with
   | Z0, Z0 -> true
   | Symbol_key u1, Symbol_key u2 -> Uid.equal u1 u2
@@ -22,15 +20,12 @@ type diff_constraint_literal =
   | Eq of diff_constraint * diff_constraint
 (** Encodes the difference [x - y <= c] *)
 
-let diff_constraint_equal l1 l2 =
+let diff_constraints_equal l1 l2 =
   match l1, l2 with
   | c1, c2 when c1.c = c2.c
-    && node_equal c1.x c2.x
-    && node_equal c1.y c2.y -> true
+    && nodes_equal c1.x c2.x
+    && nodes_equal c1.y c2.y -> true
   | _ -> false
-
-let ineq cst = Ineq cst
-let eq cst1 cst2 = Eq (cst1, cst2)
 
 type 'k diff_atom = { source : 'k Theory.literal ; diff : diff_constraint }
 
@@ -44,12 +39,10 @@ type 'k edge =
   ; weight : int
   ; source : 'k Theory.literal option
   }
-let edge_to_string edge =
-  Printf.sprintf "(%d, %d, %d)" edge.from_ edge.to_ edge.weight
 
 type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
 
-let diff_of_leq left right : diff_constraint option =
+let diff_from_leq left right : diff_constraint option =
   match Integer.affine_from_formula left, Integer.affine_from_formula right with
   | Some (Var_plus_const (x, kx)), Some (Var_plus_const (y, ky)) ->
     Some { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
@@ -60,34 +53,32 @@ let diff_of_leq left right : diff_constraint option =
   | Some (Const c1), Some (Const c2) ->
     if c1 <= c2 then Some { x = Z0; y = Z0; c = 0 }
     else Some { x = Z0; y = Z0; c = -1 }
-  | _ ->
-    None
+  | _ -> None
 
 let find_diff_opt
   : type a. (a * a * bool) Binop.t ->
     (a, 'k) Formula.t ->
     (a, 'k) Formula.t ->
     diff_constraint_literal option =
+  let ineq cst = Ineq cst in
+  let eq cst1 cst2 = Eq (cst1, cst2) in
   fun binop left right ->
     match binop with
-    | Less_than_eq -> Option.map ineq @@ diff_of_leq left right
+    | Less_than_eq -> Option.map ineq @@ diff_from_leq left right
     | Less_than ->
       (* left < right  ===  left <= right - 1 *)
       begin
-        match diff_of_leq left right with
+        match diff_from_leq left right with
         | None -> None
         | Some d -> Some (ineq { d with c = d.c - 1 })
       end
-
     | Equal ->
       begin
-        match diff_of_leq left right, diff_of_leq right left with
+        match diff_from_leq left right, diff_from_leq right left with
         | Some d1, Some d2 -> Some (eq d1 d2)
         | _ -> None
       end
-
-    | _ ->
-      None
+    | _ -> None
 
 let find_diff 
   : type a. (a * a * bool) Binop.t -> (a, 'k) Formula.t -> (a , 'k) Formula.t -> diff_constraint_literal =
@@ -121,7 +112,7 @@ let from_theory_literal (lit : 'k Theory.literal) : 'k diff_literal list =
     |> mk_atom lit
     |> List.map (fun atom -> Neg atom)
 
-let decode_literal (lit : 'k diff_literal) : 'k diff_atom =
+let atom_from_literal (lit : 'k diff_literal) : 'k diff_atom =
   match lit with
   | Pos (_ as atom) -> atom
   | Neg { source ; diff = { x ; y ; c } } ->
@@ -134,7 +125,7 @@ let collect_constraints (formula : 'k Theory.literal list)
   : 'k diff_atom list =
   formula
   |> List.concat_map from_theory_literal
-  |> List.map decode_literal
+  |> List.map atom_from_literal
 
 let read_constraint_keys ({ x ; y ; _ } : diff_constraint) : Uid.t list =
   match x, y with
@@ -244,6 +235,8 @@ let relax_distances (nodes : int) (edges : 'k edge array) (acc : int option arra
     if is_updated then `Continue (distance', predecessor')
     else `Stop (distance', predecessor')
 
+(** [find_shortest_paths ~src nodes edges] runs the actual relaxation proc to 
+    find the shortest distances from SRC to every other node in the graph (NODES, EDGES) *)
 let find_shortest_paths ~(src : int) (nodes : int) (edges : 'k edge array)
   : int option array * 'k edge option array =
   let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
@@ -303,11 +296,11 @@ type 'k split_neq_case = lower:'k Theory.literal * upper:'k Theory.literal * eq:
 
 let literal_has_same_diff l1 l2 =
   match from_theory_literal l1, from_theory_literal l2 with
-  | [Pos a], [Pos b] -> diff_constraint_equal a.diff b.diff
+  | [Pos a], [Pos b] -> diff_constraints_equal a.diff b.diff
   | [Neg a], [Neg b] ->
-      let a' = decode_literal (Neg a) in
-      let b' = decode_literal (Neg b) in
-      diff_constraint_equal a'.diff b'.diff
+      let a' = atom_from_literal (Neg a) in
+      let b' = atom_from_literal (Neg b) in
+      diff_constraints_equal a'.diff b'.diff
   | _ -> false
 
 let split_to_theory_clause ((~lower, ~upper, ~eq): 'k split_neq_case) : 'k Theory.literal list =
@@ -404,134 +397,3 @@ let solve_diff_logic (lits : 'k Theory.literal list) : 'k Theory.theory_solution
       in
       let model = Model.from_value_map local_model in
       Theory_sat model
-
-let split_cases (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
-  let one = Formula.const_int 1 in
-  let rec split (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t * int =
-    match formula with
-    | Formula.Not (Formula.Binop (Equal, x, y)) ->
-      begin match Integer.affine_from_formula x, Integer.affine_from_formula y with
-      | Some ax, Some ay ->
-        let x' = Integer.formula_from_affine ax in
-        let y' = Integer.formula_from_affine ay in
-        (* x != y  ==>  x <= y - 1 OR x >= y + 1 *)
-        let leq =
-          Formula.binop
-            Less_than_eq
-            x'
-            (Formula.minus y' one)
-        in
-        let geq =
-          Formula.binop
-            Greater_than_eq
-            x'
-            (Formula.plus y' one)
-        in
-        Formula.binop Or leq geq, 1
-      | _ -> formula, 0
-      end
-    | And ls ->
-      let ls', count =
-        List.fold_left
-          (fun (acc, count) f ->
-            let f', n = split f in
-            (f' :: acc, count + n))
-          ([], 0)
-          ls
-      in
-      Formula.and_ (List.rev ls'), count
-    | _ -> formula, 0
-  in
-  split formula
-
-let shared_from_var (v : node) : Theory.Shared.t =
-  match v with
-  | Symbol_key uid -> Theory.Shared.Int_var uid
-  | Z0 -> Theory.Shared.Int_const 0
-
-let canonical_shared_pair (l, r) =
-  if Theory.Shared.compare l r <= 0 then (l, r)
-  else (r, l)
-
-module SharedPair = struct
-  type t = Theory.Shared.t * Theory.Shared.t
-
-  let compare (l1, r1) (l2, r2) =
-    match Theory.Shared.compare l1 l2 with
-    | 0 -> Theory.Shared.compare r1 r2
-    | n -> n
-end
-module SharedPairSet = Set.Make (SharedPair)
-
-let dedup_shared_pairs pairs =
-  pairs
-  |> List.fold_left
-       (fun set pair ->
-         SharedPairSet.add (canonical_shared_pair pair) set)
-       SharedPairSet.empty
-  |> SharedPairSet.elements
-
-let equal_var (a : node) (b : node) : bool =
-  match a, b with
-  | Z0, Z0 -> true
-  | Symbol_key x, Symbol_key y -> Uid.equal x y
-  | _ -> false
-
-let implied_equalities
-    (formula : 'k Theory.literal list)
-  : (Theory.Shared.t * Theory.Shared.t) list =
-  let constraints =
-    formula
-    |> collect_constraints
-    |> List.map (fun { diff; _ } -> diff)
-  in
-
-  let has_zero_bound x y =
-    List.exists
-      (fun ({ x = x'; y = y'; c } : diff_constraint) ->
-         c = 0 && equal_var x x' && equal_var y y')
-      constraints
-  in
-
-  constraints
-  |> List.filter_map (fun ({ x; y; c } : diff_constraint) ->
-       if c = 0
-          && not (equal_var x y)
-          && has_zero_bound y x
-       then
-         Some (shared_from_var x, shared_from_var y)
-       else
-         None)
-  |> dedup_shared_pairs
-
-let disequalities
-    (formula : 'k Theory.literal list)
-  : (Theory.Shared.t * Theory.Shared.t * 'k Theory.literal) list =
-  formula
-  |> collect_constraints
-  |> List.filter_map (fun { diff = { x; y; c }; source } ->
-       if c < 0 && not (equal_var x y) then
-         Some
-           ( shared_from_var x
-           , shared_from_var y
-           , source )
-       else
-         None)
-
-let accepts : 'k Theory.literal -> bool =
-  let accepts_atom : type k. k Theory.atom -> bool =
-    function
-    | Predicate (Less_than, left, right) ->
-        Option.is_some (find_diff_opt Less_than left right)
-    | Predicate (Equal, left, right) ->
-        Option.is_some (find_diff_opt Equal left right)
-    | Predicate (Less_than_eq, left, right) ->
-        Option.is_some (find_diff_opt Less_than_eq left right)
-    | Predicate _ -> false
-    | Bool_key _ -> false
-  in
-
-  function
-  | Theory.Neg (Theory.Predicate (Binop.Equal, _, _)) -> false
-  | Theory.Neg atom -> accepts_atom atom
-  | Theory.Pos atom -> accepts_atom atom

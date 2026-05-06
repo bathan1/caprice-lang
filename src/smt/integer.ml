@@ -154,7 +154,7 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
       | Some bound, None | None, Some bound -> bound :: neq_formulas
       | Some lb, Some ub -> lb :: ub :: neq_formulas
 
-(** [prune clauses] drops redundant inequalities and neqs from CLAUSES
+(** [prune_redundant clauses] drops redundant inequalities and neqs from CLAUSES
 
     For example, (a >= 2) ^ (a != 1) would turn into (a >= 2)
     because (a != 1) is implied by (a >= 2).
@@ -175,7 +175,7 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
       Printf.printf "%s\n" (Formula.to_string pruned_formula)
       (* "(a >= 2)" *)
     ]} *)
-let prune (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t list =
+let prune_redundant (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t list =
   let find_or_default key map =
     match Uid.Map.find_opt key map with
     | Some v -> v
@@ -248,5 +248,5 @@ let prune (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t list =
 let drop_redundant_ineqs (formula : (bool, 'k) Formula.t) : (bool, 'k) Formula.t =
   formula
   |> Formula.clauses_from
-  |> prune
+  |> prune_redundant
   |> Formula.and_

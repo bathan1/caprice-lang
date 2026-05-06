@@ -6,7 +6,7 @@ type metadata =
   { was_backend_used : bool }
 
 type 'k solver_with_metadata =
-  (bool, 'k) Formula.t -> 'k Solution.t * metadata
+  (bool, 'k) Formula.t -> 'k Solution.t * metadata:metadata
 
 type 'k simplifier_with_metadata =
   'k solver_with_metadata -> 'k solver_with_metadata
@@ -124,82 +124,20 @@ let contains_unsolvable_binop formula =
 
 let linearize next expr = 
   next (Integer.linearize expr)
+
 let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)
 
-let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
-  : 'k Solution.t =
-  let conn = Connector.make () in
-  let propositional =
-    formula
-    |> Formula.clauses_from
-    |> Theory.from_smt_formula
-    |> fun formula -> Connector.abstract formula conn
-  in
-  let rec loop conn sat_formula =
-    match Sat.Cdcl.cdcl sat_formula with
-    | None -> Solution.Unsat
-    | Some model ->
-      let smt_lits =
-        Connector.literals_from_model model conn
-      in
-      match theory smt_lits with
-      | Theory_unsat core ->
-        let learned = Connector.theory_learn core conn in
-        let sat_formula' = Sat.Formula.conjoin1 sat_formula learned in
-        loop conn sat_formula'
-      | Theory_sat model -> Solution.Sat model
-      | Theory_split clauses ->
-        let sat_formula' =
-          List.fold_left
-            (fun acc clause ->
-              let sat_clause = Connector.abstract_clause clause conn in
-              Sat.Formula.conjoin1 acc sat_clause)
-            sat_formula
-            clauses
-        in
-        loop conn sat_formula'
-  in
-  loop conn propositional
-
-let blue3_solve formula = cdcl_T ~theory:Idl.solve_diff_logic formula
-
 let blue3 (next : 'k solver) (formula : (bool, 'k) Formula.t) =
+  let solve formula = Connector.cdcl_T ~theory:Idl.solve_diff_logic formula in
   if contains_unsolvable_binop formula then next formula
   else
     match formula with
     | Const_bool true -> Solution.Sat Model.empty
     | Const_bool false -> Solution.Unsat
     | _ ->
-      match blue3_solve formula with
+      match solve formula with
       | Solution.Unknown -> next formula
       | solution -> solution
-
-let blue3_with_metadata
-  ~(threshold : int)
-  (next : 'k solver_with_metadata)
-  (formula : (bool, 'k) Formula.t)
-  : 'k Solution.t * metadata =
-  if contains_unsolvable_binop formula then
-    next formula
-  else
-    match formula with
-    | Const_bool true ->
-        Solution.Sat Model.empty, { was_backend_used = false }
-
-    | Const_bool false ->
-        Solution.Unsat, { was_backend_used = false }
-
-    | _ ->
-        let formula', num_cases = Idl.split_cases formula in
-        if num_cases > threshold then
-          next formula
-        else
-          match blue3_solve formula' with
-          | Solution.Unknown ->
-              next formula
-
-          | solution ->
-              solution, { was_backend_used = false }
 
 let with_metadata (simplifier : 'k simplifier)
   : 'k simplifier_with_metadata =
@@ -207,7 +145,7 @@ let with_metadata (simplifier : 'k simplifier)
     let metadata = ref { was_backend_used = false } in
 
     let next_plain formula =
-      let solution, metadata' = next formula in
+      let solution, ~metadata:metadata' = next formula in
       metadata := metadata';
       solution
     in
@@ -216,7 +154,7 @@ let with_metadata (simplifier : 'k simplifier)
       simplifier next_plain formula
     in
 
-    solution, !metadata
+    solution, ~metadata:!metadata
 
 (*
   Right-associative simplifier composition.
@@ -240,9 +178,7 @@ let ( @@>> )
     'k simplifier_with_metadata =
   fun f g -> fun solve -> f (g solve)
 
-(** TODO: Replace direct_solve with concolic/loop.ml *)
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
-  (* let ascii_key k = Symbol.AsciiSymbol.to_string @@ Model.uid_from_key k in *)
   let pipeline =
     linearize
     @@> implied_concretization
@@ -257,10 +193,10 @@ let main_solve_with_metadata (module Oracle : SOLVABLE)
     with_metadata linearize
     @@>> with_metadata implied_concretization
     @@>> with_metadata drop_redundant_ineqs
-    @@>> blue3_with_metadata ~threshold:6
+    @@>> with_metadata blue3
   in
 
   pipeline
     (fun formula ->
        direct_solve (module Oracle) formula,
-       { was_backend_used = true })
+       ~metadata:{ was_backend_used = true })

@@ -55,7 +55,7 @@ let benchmark num_trials =
 
           let time_us_blue3 =
             time_us_float (fun () ->
-                let _solution, metadata =
+                let _solution, ~metadata =
                   main_solve_with_metadata f
                 in
                 metadata_ref := metadata)

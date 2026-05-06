@@ -387,6 +387,7 @@ let rec disjuncts_from_clause
     (clause : (bool, 'k) t)
   : (bool, 'k) t list =
   match clause with
+  | And _ -> failwith "\n[disjuncts_from_clause]: CNF can't have an And inside a clause!"
   | Binop (Or, left, right) ->
       disjuncts_from_clause left @ disjuncts_from_clause right
   | lit ->

@@ -77,32 +77,33 @@ let theory_learn (core : 'k Theory.literal list) (conn : 'k t) : Sat.Formula.lit
   |> List.map (fun lit -> abstract_literal lit conn)
   |> List.map Sat.Formula.negate
 
-let literal_from_sat
-  (lit : Sat.Formula.literal)
-  (conn : 'k t)
-  : 'k Theory.literal =
-  match lit with
-  | Sat.Formula.Pos atom ->
-      Theory.Pos (Hashtbl.find conn.from_sat atom)
+let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
+  : 'k Solution.t =
+  let conn = make () in
+  let propositional = abstract (Theory.from_smt_formula formula) conn in
+  let rec loop conn sat_formula =
+    match Sat.Cdcl.cdcl sat_formula with
+    | None -> Solution.Unsat
+    | Some model ->
+      let smt_lits =
+        literals_from_model model conn
+      in
+      match theory smt_lits with
+      | Theory_unsat core ->
+        let learned = theory_learn core conn in
+        let sat_formula' = Sat.Formula.conjoin1 sat_formula learned in
+        loop conn sat_formula'
+      | Theory_sat model -> Solution.Sat model
+      | Theory_split clauses ->
+        let sat_formula' =
+          List.fold_left
+            (fun acc clause ->
+              let sat_clause = abstract_clause clause conn in
+              Sat.Formula.conjoin1 acc sat_clause)
+            sat_formula
+            clauses
+        in
+        loop conn sat_formula'
+  in
+  loop conn propositional
 
-  | Sat.Formula.Neg atom ->
-      Theory.Neg (Hashtbl.find conn.from_sat atom)
-
-let clause_from_sat
-  (clause : Sat.Formula.literal list)
-  (conn : 'k t)
-  : 'k Theory.literal list =
-  List.map (fun lit -> literal_from_sat lit conn) clause
-
-let from_sat_formula
-  (sat_formula : Sat.Formula.t)
-  (conn : 'k t)
-  : 'k Theory.literal list list =
-  List.map (fun clause -> clause_from_sat clause conn) sat_formula
-
-(* let literals_for_theory *)
-(*   ~(theory : (module Theory.THEORY)) *)
-(*   (model : Sat.Formula.literal list) *)
-(*   (conn : 'k t) *)
-(*   : 'k Theory.literal list = *)
-(*   List.filter () *)
