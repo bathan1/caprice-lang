@@ -45,7 +45,7 @@ let rec collect_concrete
         ls
   | _ -> Some acc
 
-(** [implied_concretization next expr] first attempts to solve EXPR with a 
+(** [implied_concretization next expr] first attempts to solve EXPR with a
     few heuristics, and then calls the solver NEXT.
 
     This simply special-cases on some common formulas. It also extracts out
@@ -67,7 +67,7 @@ let implied_concretization : 'k simplifier = fun next expr ->
         | Some iv -> Formula.const_int iv
         | None -> Formula.symbol (I key)
         end
-      | Key (B key) -> 
+      | Key (B key) ->
         begin
         match ValueMap.find_bool_opt key value_map with
         | Some iv -> Formula.const_bool iv
@@ -122,7 +122,7 @@ let contains_unsolvable_binop formula =
   || Formula.contains_binop Modulus formula
   || Formula.contains_binop Plus formula
 
-let linearize next expr = 
+let linearize next expr =
   next (Integer.linearize expr)
 
 let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)

@@ -80,13 +80,13 @@ let find_diff_opt
       end
     | _ -> None
 
-let find_diff 
+let find_diff
   : type a. (a * a * bool) Binop.t -> (a, 'k) Formula.t -> (a , 'k) Formula.t -> diff_constraint_literal =
-  fun binop left right -> 
+  fun binop left right ->
     match find_diff_opt binop left right with
-    | None -> failwith 
-    (Printf.sprintf "\n[Idl.find_diff] No diff atom found in smt-atom: %s" 
-        (Formula.to_string 
+    | None -> failwith
+    (Printf.sprintf "\n[Idl.find_diff] No diff atom found in smt-atom: %s"
+        (Formula.to_string
           ~key:Model.prefix_key
           (Formula.binop binop left right)))
     | Some diff -> diff
@@ -103,7 +103,7 @@ let mk_atom (source : 'k Theory.literal) (atom : 'k Theory.atom) : 'k diff_atom 
 
 let from_theory_literal (lit : 'k Theory.literal) : 'k diff_literal list =
   match lit with
-  | Pos theory_atom -> 
+  | Pos theory_atom ->
     theory_atom
     |> mk_atom lit
     |> List.map (fun atom -> Pos atom)
@@ -175,7 +175,7 @@ let to_graph
       edges_from_constraint source diff ~nodes ~to_index:key_to_index)
   in
   let dummy_root_edges =
-    List.init (nodes - 1) 
+    List.init (nodes - 1)
       (fun i ->
         { from_ = 0
         ; to_ = i + 1
@@ -198,11 +198,11 @@ let to_constraint_graph (formula : 'k Theory.literal list)
   : 'k constraint_graph
   =
   let constraints = collect_constraints formula in
-  let diffs = List.map 
-    (fun { diff ; _} -> diff) constraints 
+  let diffs = List.map
+    (fun { diff ; _} -> diff) constraints
   in
   let index = map_uid_indices diffs in
-  let ~nodes, ~edges = to_graph constraints index 
+  let ~nodes, ~edges = to_graph constraints index
   in
   ~nodes, ~edges, ~index
 
@@ -235,7 +235,7 @@ let relax_distances (nodes : int) (edges : 'k edge array) (acc : int option arra
     if is_updated then `Continue (distance', predecessor')
     else `Stop (distance', predecessor')
 
-(** [find_shortest_paths ~src nodes edges] runs the actual relaxation proc to 
+(** [find_shortest_paths ~src nodes edges] runs the actual relaxation proc to
     find the shortest distances from SRC to every other node in the graph (NODES, EDGES) *)
 let find_shortest_paths ~(src : int) (nodes : int) (edges : 'k edge array)
   : int option array * 'k edge option array =

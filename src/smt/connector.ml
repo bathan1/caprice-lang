@@ -36,8 +36,8 @@ let abstract_literal
     (conn : 'k t)
   : Sat.Formula.literal =
   match lit with
-  | Neg smt_atom -> Sat.Formula.Neg (abstract_atom ?uid smt_atom conn)
-  | Pos smt_atom -> Sat.Formula.Pos (abstract_atom ?uid smt_atom conn)
+  | Neg smt_atom -> Sat.Formula.neg (abstract_atom ?uid smt_atom conn)
+  | Pos smt_atom -> Sat.Formula.pos (abstract_atom ?uid smt_atom conn)
 
 let abstract_clause
     ?uid
@@ -91,7 +91,7 @@ let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
       match theory smt_lits with
       | Theory_unsat core ->
         let learned = theory_learn core conn in
-        let sat_formula' = Sat.Formula.conjoin1 sat_formula learned in
+        let sat_formula' = Sat.Formula.conjoin1 learned sat_formula in
         loop conn sat_formula'
       | Theory_sat model -> Solution.Sat model
       | Theory_split clauses ->
@@ -99,7 +99,7 @@ let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
           List.fold_left
             (fun acc clause ->
               let sat_clause = abstract_clause clause conn in
-              Sat.Formula.conjoin1 acc sat_clause)
+              Sat.Formula.conjoin1 sat_clause acc)
             sat_formula
             clauses
         in

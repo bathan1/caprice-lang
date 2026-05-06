@@ -27,7 +27,7 @@ let pp_trail ~uid fmt (trail : t list) : unit =
 
 (** [find_opt lit trail] returns the entry from TRAIL with LIT *)
 let find_opt (lit : literal) (trail : t list) : t option =
-  List.find_opt (fun entry -> key_from_lit entry.lit = key_from_lit lit) trail
+  List.find_opt (fun entry -> atom_from_literal entry.lit = atom_from_literal lit) trail
 
 (** [find_level lit trail] returns the decision level of LIT in TRAIL or throws if LIT doesn't exist in TRAIL *)
 let find_level (lit : literal) (trail : t list) : int =

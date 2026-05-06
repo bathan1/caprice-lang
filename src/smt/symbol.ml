@@ -32,12 +32,12 @@ module Make (Key : KEY) = struct
 end
 
 (** [to_uid symbol] extracts the [Uid.t] key from SYMBOL. *)
-let to_uid (type a) (key : (a, 'k) t) = 
+let to_uid (type a) (key : (a, 'k) t) =
   match key with
   | B uid
   | I uid -> uid
 
-module AsciiSymbol = struct 
+module AsciiSymbol = struct
   include Make (struct
     type t = char
     let uid t = t |> Char.code |> Utils.Uid.of_int

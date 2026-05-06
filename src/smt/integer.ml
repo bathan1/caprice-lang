@@ -66,7 +66,7 @@ let formula_from_affine_comparison
     | Const c1, Const c2 -> Some (Formula.binop binop (Formula.const_int c1) (Formula.const_int c2))
     | Var_plus_const _, Var_plus_const _ -> None
 
-type int_constraint = 
+type int_constraint =
   { lower : int
   ; upper : int
   ; neq : int list
@@ -87,14 +87,14 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
   in
   if lower > upper
     then [Formula.const_bool false]
-  else if over_one_eq eq 
+  else if over_one_eq eq
     then [Formula.const_bool false]
   else if has_conflicting_eqs neq
     then [Formula.const_bool false]
   else
     let variable = Formula.symbol (I uid) in
     let neq_formulas =
-      neq 
+      neq
       |> List.filter (fun v -> lower <= v && v <= upper)
       |> List.map (fun v ->
         Formula.binop Not_equal variable (Formula.const_int v))
@@ -115,7 +115,7 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
         | Some lower_bound_eq, Some upper_bound_eq ->
           (lower_bound_eq + 1, upper_bound_eq - 1)
       in
-      let lower_bound = 
+      let lower_bound =
         match resolved_lower with
         | lb when lb = Int.min_int -> None
         | lb -> Some (Formula.binop Less_than_eq (Formula.const_int lb) variable)
@@ -145,7 +145,7 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_co
       let formula = Formula.and_ [
         Formula.binop Greater_than_eq (key 'a') (Formula.const_int 2);
         Formula.binop Not_equal (key 'a') (Formula.const_int 1);
-      ] 
+      ]
       in
       let pruned_formula = Integer.prune formula in
       Printf.printf "%s\n" (Formula.to_string pruned_formula)
@@ -158,11 +158,11 @@ let prune_redundant (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t
     | None ->
       { lower = Int.min_int
       ; upper = Int.max_int
-      ; neq = [] 
+      ; neq = []
       ; eq = []
       }
   in
-  let collect_bounds = 
+  let collect_bounds =
     fun (acc, other) clause ->
       match clause with
       | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
@@ -215,7 +215,7 @@ let prune_redundant (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t
   let bounds_map, other_clauses =
     List.fold_left collect_bounds (Uid.Map.empty, []) clauses
   in
-  bounds_map 
+  bounds_map
   |> Uid.Map.to_list
   |> List.concat_map bound_to_formula_clauses
   |> fun rewritten -> rewritten @ other_clauses

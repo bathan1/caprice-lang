@@ -30,7 +30,7 @@ module ValueMap = struct
   let find_int (key : key) (map : map) : int =
     match find_int_opt key map with
     | Some v -> v
-    | _ -> failwith (Printf.sprintf "No int value in MAP for KEY") 
+    | _ -> failwith (Printf.sprintf "No int value in MAP for KEY")
 
   (** [find_bool_opt key map] unwraps the bool value of KEY in MAP if it exists. *)
   let find_bool_opt (key : key) (map : map) : bool option =
@@ -58,7 +58,7 @@ module ValueMap = struct
   let add_int (key : key) (int_value : int) (map : map) : map =
     add key (Int int_value) map
 
-  (** [add_int_checked key int_value map] is the next map with INT_VALUE set for KEY 
+  (** [add_int_checked key int_value map] is the next map with INT_VALUE set for KEY
       if KEY has been mapped to INT_VALUE. If it has or the binding doesn't exist,
       then the [Some] next map state is returned otherwise then it returns [None] *)
   let add_int_checked (key : key) (int_value : int) (map : map) : map option =
@@ -67,7 +67,7 @@ module ValueMap = struct
     | Some old when old = int_value -> Some map
     | Some _ -> None
 
-  (** [add_bool_checked key int_value map] is the next map with BOOL_VALUE set for KEY 
+  (** [add_bool_checked key int_value map] is the next map with BOOL_VALUE set for KEY
       if KEY has been mapped to BOOL_VALUE. If it has or the binding doesn't exist,
       then the [Some] next map state is returned otherwise then it returns [None] *)
   let add_bool_checked key bool_value (map : map) : map option =
@@ -98,7 +98,7 @@ let singleton (type a) (a : a) (s : (a, 'k) Symbol.t) : 'k t =
     | B uid, B uid' when Uid.equal uid uid' -> Some a
     | _ -> None
   in
-  let single_key = 
+  let single_key =
     match s with
     | (I key) -> Int_key key
     | (B key) -> Bool_key key

@@ -378,8 +378,8 @@ end
 
 (** [clauses_from f] unwraps the [And] list from F if F is a conjunction or
     [[F]] if F is anything else *)
-let clauses_from (f : (bool, 'k) t) = 
-  match f with 
+let clauses_from (f : (bool, 'k) t) =
+  match f with
   | And ls -> ls
   | f -> [ f ]
 

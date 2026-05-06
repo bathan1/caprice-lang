@@ -22,8 +22,7 @@ let pp_next ~uid fd (next : next) : unit =
 let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.t list) : literal list * int =
   match List.filter (fun lit -> Trail.find_level lit trail = level) conflict with
   | [hd] ->
-    if level = 0 then
-      [], -1
+    if level = 0 then [], -1
     else
       let new_lvl =
         conflict
@@ -33,7 +32,6 @@ let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.
              0
       in
       conflict, new_lvl
-
   | current_level_lits ->
     let reason = Trail.find_reason current_level_lits trail in
     let conflict' = Formula.resolve_pair conflict reason in
@@ -45,76 +43,70 @@ let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.
     - [Decide] when there are no unit clauses after applying TRAIL to FORM
     - [Implication (unit_clause, lit)] if the resulting clause is a unit clause
     - [Conflict clause] when applying TRAIL to clause is inconsistent (i.e. substitution returns [Some] empty list) *)
-let find_next (trail : Trail.t list) (form : Formula.t) : next =
-  let substitute =
-    trail
-    |> Trail.to_model
-    |> Model.use_clause
-  in
-  let rec search_empty (clauses : Formula.t) (unit_clause : literal list) (lit : Formula.literal) : next =
+let find_next (trail : Trail.t list) (formula : Formula.formula) : next =
+  let substitute clause = Model.use_clause clause (Trail.to_model trail) in
+  let rec search_empty (clauses : Formula.formula) (unit_clause : literal list) (lit : Formula.literal) : next =
     match clauses with
     | [] -> Implication (unit_clause, lit)
     | clause :: clauses' ->
-      match substitute ~clause with
+      match substitute clause with
       | Some [] -> Conflict clause
       | _ -> search_empty clauses' unit_clause lit
   in
-  let rec search_unit (form : Formula.t) : next =
-    match form with
+  let rec search_unit (formula : Formula.formula) : next =
+    match formula with
     | [] -> Decide
     | clause :: clauses' ->
-      match substitute ~clause with
+      match substitute clause with
       | Some [] -> Conflict clause
       | Some [lit] -> search_empty clauses' clause lit
       | _ -> search_unit clauses'
   in
-  search_unit form
+  search_unit formula
 
-let rec bcp (level : int) (trail : Trail.t list) (form : Formula.t) : literal list option =
+let rec bcp (level : int) (trail : Trail.t list) (formula : Formula.formula) : literal list option =
   let model = Trail.to_model trail in
-  begin match find_next trail form with
+  begin match find_next trail formula with
   | Decide ->
-    begin match Formula.find_free_variable (List.map Formula.key_from_lit model) form with
+    begin match Formula.find_free_variable_opt (List.map Formula.atom_from_literal model) formula with
     | None -> 
-      if Model.is_tautology model ~form then Some model
+      if Model.is_tautology formula model then Some model
       else None
-    | Some x -> decide x (level + 1) trail form
+    | Some x -> decide x (level + 1) trail formula
     end
   | Conflict clause ->
     let conflict, backtrack_level = analyze_conflict level clause trail in
     if backtrack_level < 0 then 
       None (* UNSAT *)
     else
-      backtrack_learn backtrack_level conflict trail form
+      backtrack_learn backtrack_level conflict trail formula
   | Implication (clause, lit) ->
     let entry =
       { Trail.level ; lit ; reason = Propagated clause }
     in
-    bcp level (entry :: trail) form
+    bcp level (entry :: trail) formula
   end
 
 and backtrack_learn
   (backtrack_level : int)
   (conflict : literal list)
   (trail : Trail.t list)
-  (form : Formula.t)
+  (formula : Formula.formula)
   : literal list option =
-  let trail' =
-    Trail.backtrack backtrack_level trail
+  let trail' = Trail.backtrack backtrack_level trail in
+  let formula' =
+    Formula.conjoin1 conflict formula
   in
-  let form' =
-    Formula.conjoin1 form conflict
-  in
-  bcp backtrack_level trail' form'
+  bcp backtrack_level trail' formula'
 
 and decide 
   (x : Uid.t) 
   (level : int)
   (trail : Trail.t list) 
-  (form : Formula.t) 
+  (form : Formula.formula) 
   : literal list option =
-  let entry = { level ; Trail.lit = Formula.Pos x ; reason = Decided } in
+  let entry = { level ; Trail.lit = Formula.pos x ; reason = Decided } in
   bcp level (entry :: trail) form
 
-let cdcl (form : Formula.t) : literal list option =
+let cdcl (form : Formula.formula) : literal list option =
   bcp 0 [] form
