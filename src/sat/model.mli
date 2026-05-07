@@ -14,10 +14,10 @@ val find : Formula.atom -> model -> Formula.literal
 (** [eval_clause clause model] evaluates the literals in CLAUSE with respect
     to its atom assignments from MODEL
 
-    If CLAUSE is empty, then this immediately returns [`Falsified] as this means 
-    we've exhausted all possible literals without finding a single match. 
+    If CLAUSE is empty, then this immediately returns [`Falsified] as this means
+    we've exhausted all possible literals without finding a single match.
 
-    Otherwise, we iterate over each [literal] in CLAUSE. If we can find 
+    Otherwise, we iterate over each [literal] in CLAUSE. If we can find
     at least one literal from MODEL that matches its value in CLAUSE,
     then we immediately return [`Satisfied] (since 1 [true] results in the
     whole clause becoming [true]).

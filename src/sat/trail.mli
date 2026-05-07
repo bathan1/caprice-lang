@@ -8,9 +8,9 @@
     will have it so that [a] is added to the trail as [Propagated [a]]
     and likewise for [b].
 
-    Once there are no more unit propagations to be made, the loop needs to 
+    Once there are no more unit propagations to be made, the loop needs to
     {b decide} on a truth value for a disjunctive prop, in which case
-    the [Decided] reason should be added to the trail. 
+    the [Decided] reason should be added to the trail.
 
     Continuing with our working example, after we unit propagate, we are left with:
 
@@ -47,7 +47,7 @@ type trail = step list
 (** [to_model trail] derives the boolean MODEL from TRAIL *)
 val to_model : trail -> Model.model
 
-(** [analyze_conflict ~conflict level trail] returns the resolved learned clause derived 
+(** [analyze_conflict ~conflict level trail] returns the resolved learned clause derived
     from CONFLICT and the next highest decision level after LEVEL from a literal
     pointed to by both CONFLICT and TRAIL
 *)

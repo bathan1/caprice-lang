@@ -39,7 +39,7 @@ let resolve_pair clause1 clause2 =
   let l1, l2 = List_utils.find_pair
     (fun lit1 lit2 -> lit1 = negate lit2)
     clause1 clause2
-  in 
+  in
   disjoin (List_utils.remove1 l1 clause1) (List_utils.remove1 l2 clause2)
 
 let pp_literal ~(uid : Uid.t -> string) fmt (lit : literal) : unit =

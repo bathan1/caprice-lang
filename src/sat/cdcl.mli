@@ -1,6 +1,6 @@
 (* Boolean SAT solver loop core *)
 
-(** [next] is the message type that indicates the next step 
+(** [next] is the message type that indicates the next step
     the main loop should propagate onto a solver state [t] *)
 type next =
   | Decide

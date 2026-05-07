@@ -51,7 +51,7 @@ let find_reason_opt (lits : literal list) (trail : step list) : literal list opt
       | _ -> None)
       lits
 
-(** [find_propagated_reason lits trail] returns the first literal in LITS that exists in TRAIL *and* has 
+(** [find_propagated_reason lits trail] returns the first literal in LITS that exists in TRAIL *and* has
     [reason = Propagated] if it exists otherwise it throws *)
 let find_reason (lits : literal list) (trail : step list) : literal list =
   match find_reason_opt lits trail with
