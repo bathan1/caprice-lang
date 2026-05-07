@@ -16,22 +16,7 @@ type clause = literal list
 (** A 2d list of literals encodes a CNF formula, where the list elements
     should be interpreted to be in a conjunction. Each list element is
     a clause, and inside each clause are literals that should
-    be interpreted to be in a disjunction.
-
-    Consider this cnf formula:
-
-    {[
-      open Utils
-      open Sat
-
-      let () =
-        let my_formula : Formula.cnf = [
-          [ Pos (Uid.of_int (Char.code 'a'))
-          ; Pos (Uid.of_int (Char.code 'b'))
-          ];
-          [ Neg (Uid.of_int (Char.code 'c')) ]
-        ]
-    ]} *)
+    be interpreted to be in a disjunction. *)
 type formula = literal list list
 
 (** [pos atom] is the positive asserted ATOM literal *)
@@ -45,9 +30,6 @@ val negate : literal -> literal
 
 (** [atom_from_literal lit] is the atom unwrapped from LIT *)
 val atom_from_literal : literal -> atom
-
-(** [is_tautology formula] returns true when FORMULA is empty. *)
-val is_tautology : formula -> bool
 
 (** [find_free_variable exclude formula] finds the first atom left-to-right
     from FORMULA's clauses that is not a member of EXCLUDE *)

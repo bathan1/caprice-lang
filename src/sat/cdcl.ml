@@ -1,9 +1,9 @@
 open Utils
 open Formula
 
-type next =
 (** [next] is the message type that indicates the next step 
     the main loop should propagate onto a solver state [t] *)
+type next =
   | Decide
   | Conflict of literal list
   | Implication of literal list * literal
@@ -17,7 +17,7 @@ let pp_next ~uid fd (next : next) : unit =
   | Implication (clause, lit) ->
       Format.fprintf fd "Implication (%a, %a)" (pp_clause ~uid) clause (pp_literal ~uid) lit
 
-(** [analyze_conflict conflict trail level] returns the first (minimum) unique-implication-point cut
+(** [analyze_conflict level conflict trail] returns the first (minimum) unique-implication-point cut
     of decision level LEVEL that directs to the CONFLICT clause based on the TRAIL state *)
 let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.t list) : literal list * int =
   match List.filter (fun lit -> Trail.find_level lit trail = level) conflict with
@@ -44,13 +44,13 @@ let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.
     - [Implication (unit_clause, lit)] if the resulting clause is a unit clause
     - [Conflict clause] when applying TRAIL to clause is inconsistent (i.e. substitution returns [Some] empty list) *)
 let find_next (trail : Trail.t list) (formula : Formula.formula) : next =
-  let substitute clause = Model.use_clause clause (Trail.to_model trail) in
+  let substitute clause = Model.eval_clause clause (Trail.to_model trail) in
   let rec search_empty (clauses : Formula.formula) (unit_clause : literal list) (lit : Formula.literal) : next =
     match clauses with
     | [] -> Implication (unit_clause, lit)
     | clause :: clauses' ->
       match substitute clause with
-      | Some [] -> Conflict clause
+      | `Falsified -> Conflict clause
       | _ -> search_empty clauses' unit_clause lit
   in
   let rec search_unit (formula : Formula.formula) : next =
@@ -58,8 +58,8 @@ let find_next (trail : Trail.t list) (formula : Formula.formula) : next =
     | [] -> Decide
     | clause :: clauses' ->
       match substitute clause with
-      | Some [] -> Conflict clause
-      | Some [lit] -> search_empty clauses' clause lit
+      | `Falsified -> Conflict clause
+      | `Undecided [lit] -> search_empty clauses' clause lit
       | _ -> search_unit clauses'
   in
   search_unit formula
@@ -108,5 +108,5 @@ and decide
   let entry = { level ; Trail.lit = Formula.pos x ; reason = Decided } in
   bcp level (entry :: trail) form
 
-let cdcl (form : Formula.formula) : literal list option =
-  bcp 0 [] form
+let cdcl (formula : Formula.formula) : literal list option =
+  bcp 0 [] formula

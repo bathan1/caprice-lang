@@ -26,8 +26,6 @@ let find_free_variable_opt exclude formula : atom option =
   |> List.find_opt (fun lit -> not (List.mem (atom_from_literal lit) exclude))
   |> Option.map atom_from_literal
 
-let is_tautology (form : formula) : bool = form = []
-
 let disjoin (clause1 : literal list) (clause2 : literal list) : literal list =
   List.fold_right
     (fun lit clause2 ->
@@ -64,7 +62,7 @@ let pp_clause ~(uid : Uid.t -> string) fmt (clause : literal list) : unit =
         clause
 
 let pp_formula ~(uid : Uid.t -> string) fmt (form : formula) : unit =
-  if is_tautology form then
+  if form = [] then
     Format.fprintf fmt "true"
   else
     Format.fprintf fmt "@[%a@]"

@@ -54,13 +54,10 @@ let abstract
   List.map (fun clause -> abstract_clause ?uid clause conn) formula
 
 let mk_literal (sat_model : Sat.Formula.literal list) (sat_atom : Sat.Formula.atom) (conn : 'k t) : 'k Theory.literal =
-  match Hashtbl.find_opt conn.from_sat sat_atom with
-  | None -> failwith "unknown SAT atom"
-  | Some smt_atom ->
-    match Sat.Model.value_opt sat_atom sat_model with
-    | None -> failwith "SAT atom unassigned"
-    | Some Pos _ -> Pos smt_atom
-    | Some Neg _ -> Neg smt_atom
+  let smt_atom = Hashtbl.find conn.from_sat sat_atom in
+  match Sat.Model.find sat_atom sat_model with
+  | Pos _ -> Pos smt_atom
+  | Neg _ -> Neg smt_atom
 
 let literals_from_model
   (sat_model : Sat.Formula.literal list)
