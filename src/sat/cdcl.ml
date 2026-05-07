@@ -1,8 +1,5 @@
-open Utils
 open Formula
 
-(** [next] is the message type that indicates the next step 
-    the main loop should propagate onto a solver state [t] *)
 type next =
   | Decide
   | Conflict of literal list
@@ -17,69 +14,72 @@ let pp_next ~uid fd (next : next) : unit =
   | Implication (clause, lit) ->
       Format.fprintf fd "Implication (%a, %a)" (pp_clause ~uid) clause (pp_literal ~uid) lit
 
-(** [analyze_conflict level conflict trail] returns the first (minimum) unique-implication-point cut
-    of decision level LEVEL that directs to the CONFLICT clause based on the TRAIL state *)
-let rec analyze_conflict (level : int) (conflict : literal list) (trail : Trail.t list) : literal list * int =
-  match List.filter (fun lit -> Trail.find_level lit trail = level) conflict with
-  | [hd] ->
-    if level = 0 then [], -1
-    else
-      let new_lvl =
-        conflict
-        |> List_utils.remove1 hd
-        |> List.fold_left
-             (fun lvl' lit -> max lvl' (Trail.find_level lit trail))
-             0
-      in
-      conflict, new_lvl
-  | current_level_lits ->
-    let reason = Trail.find_reason current_level_lits trail in
-    let conflict' = Formula.resolve_pair conflict reason in
-    analyze_conflict level conflict' trail
-
-(** [find_next trail form] iterates over the clauses from FORM and for each clause,
+(** [find_next formula trail] iterates over the clauses from FORMULA and for each clause,
     subs in the literal values from TRAIL, and returns the [next] step based on
-    the resulting substituted clause. The step step will be...
+    the resulting substituted clause. The step will be...
     - [Decide] when there are no unit clauses after applying TRAIL to FORM
-    - [Implication (unit_clause, lit)] if the resulting clause is a unit clause
-    - [Conflict clause] when applying TRAIL to clause is inconsistent (i.e. substitution returns [Some] empty list) *)
-let find_next (trail : Trail.t list) (formula : Formula.formula) : next =
-  let substitute clause = Model.eval_clause clause (Trail.to_model trail) in
-  let rec search_empty (clauses : Formula.formula) (unit_clause : literal list) (lit : Formula.literal) : next =
+    - [Implication (clause, lit)]
+    - [Conflict clause] when applying TRAIL to clause is inconsistent (i.e. substitution returns [Some] empty list)
+*)
+let find_next formula trail =
+  let model = Trail.to_model trail in
+  let rec search_empty
+    (clauses : Formula.formula)
+    (reason_clause : literal list)
+    (lit : Formula.literal)
+    : next =
     match clauses with
-    | [] -> Implication (unit_clause, lit)
+    | [] -> Implication (reason_clause, lit)
     | clause :: clauses' ->
-      match substitute clause with
+      match Model.eval_clause clause model with
       | `Falsified -> Conflict clause
-      | _ -> search_empty clauses' unit_clause lit
+      | _ -> search_empty clauses' reason_clause lit
   in
   let rec search_unit (formula : Formula.formula) : next =
     match formula with
     | [] -> Decide
     | clause :: clauses' ->
-      match substitute clause with
+      match Model.eval_clause clause model with
       | `Falsified -> Conflict clause
       | `Undecided [lit] -> search_empty clauses' clause lit
       | _ -> search_unit clauses'
   in
   search_unit formula
 
-let rec bcp (level : int) (trail : Trail.t list) (formula : Formula.formula) : literal list option =
-  let model = Trail.to_model trail in
-  begin match find_next trail formula with
+(** [bcp level trail formula] is the Boolean Constraint Propagation decision proc that searches
+    for a satisfying truth table assignment for the given FORMULA STATE, bookkeeping LEVEL and TRAIL states
+    per call
+
+    Each call to bcp will either...
+    - {b Implicate} a unit literal along with its reason clause
+    - {b Decide} on a literal when there are no propagations left
+    - Find a {b conflict clause} and return UNSAT if LEVEL is 0,
+      or backtrack to some previous level < LEVEL and adds the
+      learned conflict clauses to the FORMULA state
+*)
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : literal list option =
+  begin match find_next formula trail with
   | Decide ->
+    let model = Trail.to_model trail in
     begin match Formula.find_free_variable_opt (List.map Formula.atom_from_literal model) formula with
-    | None -> 
+    | None ->
       if Model.is_tautology formula model then Some model
       else None
-    | Some x -> decide x (level + 1) trail formula
+    | Some x ->
+      let lit = Formula.pos x in
+      let decision_lvl = level + 1 in
+      let trail' = Trail.decide lit decision_lvl trail in
+      bcp decision_lvl trail' formula
     end
   | Conflict clause ->
-    let conflict, backtrack_level = analyze_conflict level clause trail in
-    if backtrack_level < 0 then 
+    let conflict, backtrack_level = Trail.analyze_conflict ~conflict:clause level trail in
+    if backtrack_level < 0 then
       None (* UNSAT *)
     else
-      backtrack_learn backtrack_level conflict trail formula
+      let trail', formula' =
+        Trail.backtrack_learn ~conflict backtrack_level trail formula
+      in
+      bcp backtrack_level trail' formula'
   | Implication (clause, lit) ->
     let entry =
       { Trail.level ; lit ; reason = Propagated clause }
@@ -87,26 +87,4 @@ let rec bcp (level : int) (trail : Trail.t list) (formula : Formula.formula) : l
     bcp level (entry :: trail) formula
   end
 
-and backtrack_learn
-  (backtrack_level : int)
-  (conflict : literal list)
-  (trail : Trail.t list)
-  (formula : Formula.formula)
-  : literal list option =
-  let trail' = Trail.backtrack backtrack_level trail in
-  let formula' =
-    Formula.conjoin1 conflict formula
-  in
-  bcp backtrack_level trail' formula'
-
-and decide 
-  (x : Uid.t) 
-  (level : int)
-  (trail : Trail.t list) 
-  (form : Formula.formula) 
-  : literal list option =
-  let entry = { level ; Trail.lit = Formula.pos x ; reason = Decided } in
-  bcp level (entry :: trail) form
-
-let cdcl (formula : Formula.formula) : literal list option =
-  bcp 0 [] formula
+let cdcl formula = bcp 0 [] formula

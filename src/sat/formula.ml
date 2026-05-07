@@ -70,4 +70,3 @@ let pp_formula ~(uid : Uid.t -> string) fmt (form : formula) : unit =
          ~pp_sep:(fun fmt () -> Format.fprintf fmt " ^@ ")
          (pp_clause ~uid))
       form
-

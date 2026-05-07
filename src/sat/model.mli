@@ -45,7 +45,7 @@ val eval_clause : Formula.clause -> model ->
   ]
 
 (** [is_tautology formula model] returns true if substituting the literals from
-  MODEL satisfies every clause in FORMULA, reducing it to the empty formula. *)
+  MODEL satisfies every clause in FORMULA, reducing it to the empty formula *)
 val is_tautology : Formula.formula -> model -> bool
 
 val pp_model : uid:(Utils.Uid.t -> string) -> Format.formatter -> model -> unit
