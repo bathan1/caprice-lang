@@ -2,21 +2,16 @@
    the Theory layer. It is responsible for mapping the propositional
    SAT formula atoms with those from the SMT formula. *)
 
-(** [cdcl_T ~theory formula] runs the non-incremental CDCL (T) loop
-    using a single theory solver THEORY against FORMULA, or the so-called
-    "simple" CDCL (T) loop from the
-    {{: https://theory.stanford.edu/~nikolaj/programmingz3.html#sec-cdclt } Programming Z3} docs.
+open Utils
 
-    It uses the {{: https://people.eecs.berkeley.edu/~sseshia/pubdir/SMT-BookChapter.pdf } case splitting on demand heuristic}
-    to append the disjunction cases that the CDCL boolean loop should decide on.
+type 'k t
 
-    One of the reasons it is "simple" because it waits for [Sat.Cdcl.cdcl]
-    to spit out a *full* satisfying boolean assignment before checking
-    for (T) Satisfiability.
+val make : int -> 'k t
 
-    A more optimized solver would check for (T) Satisfiability at each decision
-    made by the core CDCL boolean solver so it can cut off bad branches earlier,
-    but at the time of writing, that functionality doesn't seem to be necessary.
+val abstract : ?uid:(int -> Uid.t) -> 'k Theory.formula -> 'k t -> Sat.Formula.formula
 
-    Maybe by somebody else in the future... *)
-val cdcl_T : theory:'k Theory.theory_solver -> (bool, 'k) Formula.t -> 'k Solution.t
+val abstract_clause : ?uid:(int -> Uid.t) -> 'k Theory.clause -> 'k t -> Sat.Formula.clause
+
+val make_theory_literals : Sat.Model.model -> 'k t -> 'k Theory.literal list
+
+val theory_learn : 'k Theory.core -> 'k t -> Sat.Formula.clause

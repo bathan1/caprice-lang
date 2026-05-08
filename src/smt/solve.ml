@@ -172,31 +172,13 @@ let implied_concretization : 'k simplifier = fun next expr ->
     | _ ->
     next simplified
 
-let contains_unsolvable_binop formula =
-  Formula.contains_binop Times formula
-  || Formula.contains_binop Divide formula
-  || Formula.contains_binop Modulus formula
-  || Formula.contains_binop Plus formula
-
 let linearize next expr =
   next (Integer.linearize expr)
 
 let drop_redundant_ineqs next expr =
   next (Integer.drop_redundant_ineqs expr)
 
-let blue3 (next : 'k solver) (formula : (bool, 'k) Formula.t) =
-  let solve formula = Connector.cdcl_T ~theory:Idl.solve_diff_logic formula in
-  if contains_unsolvable_binop formula then next formula
-  else
-    match formula with
-    | Const_bool true -> Solution.Sat Model.empty
-    | Const_bool false -> Solution.Unsat
-    | _ ->
-      match solve formula with
-      | Solution.Unknown -> next formula
-      | solution -> solution
-
-let with_metadata (simplifier : 'k simplifier)
+let add_metadata (simplifier : 'k simplifier)
   : 'k simplifier_meta =
   fun next formula ->
     let metadata = ref { was_backend_used = false } in
@@ -237,17 +219,17 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     linearize
     @> implied_concretization
     @> drop_redundant_ineqs
-    @> blue3
+    @> Blue3.blue3 ~solver:Idl.solve_diff_logic
   in
   pipeline (direct_solve (module Oracle))
 
 let main_solve_with_metadata (module Oracle : SOLVABLE)
   : 'k solver_meta =
   let pipeline =
-    with_metadata linearize
-    @@> with_metadata implied_concretization
-    @@> with_metadata drop_redundant_ineqs
-    @@> with_metadata blue3
+    add_metadata linearize
+    @@> add_metadata implied_concretization
+    @@> add_metadata drop_redundant_ineqs
+    @@> add_metadata (Blue3.blue3 ~solver:Idl.solve_diff_logic)
   in
 
   pipeline

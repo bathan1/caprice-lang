@@ -174,8 +174,8 @@ let literal_has_same_diff l1 l2 =
       diffs_equal a'.diff b'.diff
   | _ -> false
 
-let split_to_theory_clause ((~lower, ~upper, ~eq): 'k split_neq_case) : 'k Theory.literal list =
-  [ lower ; upper ; eq ]
+let split_to_theory_clause ((~lower, ~upper, ~eq): 'k split_neq_case) : 'k Theory.clause =
+  Theory.clause [ lower ; upper ; eq ]
 
 let find_split_opt (lit : 'k Theory.literal)
   : 'k split_neq_case option =
@@ -214,13 +214,13 @@ let resolve_splits lits =
     lits
     ([], [])
 
-(** [solve_diff_logic formula] finds the tightest upper bounds of each integer variable in FORMULA *)
-let solve_diff_logic (unit_clauses : 'k Theory.literal list) : 'k Theory.theory_solution =
-  let lits', remaining_splits = resolve_splits unit_clauses in
+(** [solve_diff_logic literals] finds the tightest upper bounds of each integer variable in LITERALS *)
+let solve_diff_logic (literals : 'k Theory.literal list) : 'k Theory.theory_solution =
+  let lits, remaining_splits = resolve_splits literals in
   match remaining_splits with
-  | _ :: _ as splits -> Theory_split splits
+  | _ :: _ as splits -> Theory.split splits
   | [] ->
-    let { nodes; edges; sources; index } = to_graph lits' in
+    let { nodes; edges; sources; index } = to_graph lits in
     match Bellman_ford.bellman_ford nodes edges ~src:(nodes - 1) with
     | `Negative_cycle edge_indices ->
       let core =
@@ -228,7 +228,7 @@ let solve_diff_logic (unit_clauses : 'k Theory.literal list) : 'k Theory.theory_
         |> List.filter_map (fun i -> sources.(i))
         |> List.sort_uniq compare
       in
-      Theory_unsat core
+      Theory.unsat core
     | `No_negative_cycle distances ->
       let z0_dist = distances.(0) in
       let local_model =
@@ -238,4 +238,4 @@ let solve_diff_logic (unit_clauses : 'k Theory.literal list) : 'k Theory.theory_
           index
       in
       let model = Model.from_value_map local_model in
-      Theory_sat model
+      Theory.sat model

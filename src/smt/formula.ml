@@ -393,14 +393,18 @@ let rec disjuncts_from_clause
   | lit ->
       [ lit ]
 
-let rec contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
- fun target -> function
-  | Not formula -> contains_binop target formula
+let rec contains_binops : type a k. _ Binop.t list -> (a, k) t -> bool =
+ fun targets -> function
+  | Not formula -> contains_binops targets formula
   | Binop (op, l, r) ->
-      Binop.poly_equal op target || contains_binop target l
-      || contains_binop target r
-  | And ls -> List.exists (contains_binop target) ls
+      List.exists (fun target -> Binop.poly_equal op target) targets
+      || contains_binops targets l
+      || contains_binops targets r
+  | And ls -> List.exists (contains_binops targets) ls
   | _ -> false
+
+let contains_binop : type a k. _ Binop.t -> (a, k) t -> bool =
+  fun target -> contains_binops [target]
 
 let to_string : type a. key:(Model.key -> string) -> (a, 'k) t -> string =
  fun ~key formula ->

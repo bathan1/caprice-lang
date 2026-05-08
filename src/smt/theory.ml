@@ -4,16 +4,32 @@ type 'k atom =
   | Predicate : ('a * 'a * bool) Binop.t * ('a, 'k) Formula.t * ('a, 'k) Formula.t -> 'k atom
 
 type 'k literal =
-(** A ['k literal] is either an SMT ['k atom] or the negation NEG of the atom *)
   | Pos of 'k atom
   | Neg of 'k atom
 
+type 'k clause = Clause of 'k literal list
+
+let clause lits = Clause lits
+
+type 'k core = Core of 'k literal list
+
+type 'k formula = 'k clause list
+
 type 'k theory_solution =
-  (** A ['k theory_solution] is a domain specific theory solution 'instantiated'
-      by the parent ['k] formula key *)
+  | Theory_unknown
   | Theory_sat of 'k Model.t
-  | Theory_unsat of 'k literal list
-  | Theory_split of 'k literal list list
+  | Theory_unsat of 'k core
+  | Theory_split of 'k formula
+
+let sat (model : 'k Model.t)
+  : 'k theory_solution = Theory_sat model
+
+let unsat (core : 'k literal list)
+  : 'k theory_solution = Theory_unsat (Core core)
+
+let unknown = Theory_unknown
+
+let split (formula : 'k formula) = Theory_split formula
 
 type 'k theory_solver = 'k literal list -> 'k theory_solution
 (** A ['k theory_solver] accepts a list implied to be in a conjunction and returns its domain specific ['k t_solution] *)
@@ -32,14 +48,14 @@ let from_smt_literal (lit : (bool, 'k) Formula.t) : 'k literal =
   | Formula.Not inner -> Neg (from_smt_atom inner)
   | inner -> Pos (from_smt_atom inner)
 
-let from_smt_clause_like (clause : (bool, 'k) Formula.t list) : 'k literal list =
-  List.map from_smt_literal clause
+let from_smt_clause (clause : (bool, 'k) Formula.t list) : 'k clause =
+  Clause (List.map from_smt_literal clause)
 
-let from_smt_formula (form : (bool, 'k) Formula.t) : 'k literal list list =
+let from_smt_formula (form : (bool, 'k) Formula.t) : 'k formula =
   form
   |> Formula.clauses_from
   |> List.map Formula.disjuncts_from_clause
-  |> List.map from_smt_clause_like
+  |> List.map from_smt_clause
 
 let pp_atom ~key fmt (atom : 'k atom) : unit =
   match atom with
@@ -59,7 +75,7 @@ let pp_literal ~key fmt (lit : 'k literal) : unit =
   | Neg atom ->
       Format.fprintf fmt "(not %a)" (pp_atom ~key) atom
 
-let pp_clause ~key fmt (clause : 'k literal list) : unit =
+let pp_clause ~key fmt (Clause clause: 'k clause) : unit =
   match clause with
   | [Pos _ as lit]
   | [Neg _ as lit] ->
@@ -85,7 +101,7 @@ let pp_unit_literals ~key fmt (lits : 'k literal list) : unit =
        (pp_literal ~key))
     lits
 
-let pp_formula ~key fmt (formula : 'k literal list list) : unit =
+let pp_formula ~key fmt (formula : 'k formula) : unit =
   Format.fprintf fmt "@[%a@]"
     (Format.pp_print_list
        ~pp_sep:(fun fmt () -> Format.fprintf fmt " ^@ ")
@@ -99,8 +115,9 @@ let pp_theory_solution
   (solution : k theory_solution)
   : unit =
   match solution with
+  | Theory_unknown -> Format.fprintf fmt "(T) UNKNOWN"
   | Theory_sat model ->
-      Format.fprintf fmt "(T) SAT %s" (Model.to_string ~key model)
-  | Theory_unsat core_lits ->
-      Format.fprintf fmt "(T) UNSAT %a" (pp_unit_literals ~key) core_lits
+    Format.fprintf fmt "(T) SAT %s" (Model.to_string ~key model)
+  | Theory_unsat Core core_lits ->
+    Format.fprintf fmt "(T) UNSAT %a" (pp_unit_literals ~key) core_lits
   | Theory_split split -> Format.fprintf fmt "(T) SPLIT %a" (pp_formula ~key) split

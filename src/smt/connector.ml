@@ -6,9 +6,9 @@ type 'k t =
   ; mutable count : int
   }
 
-let make () =
-  { to_sat = Hashtbl.create 64
-  ; from_sat = Hashtbl.create 64
+let make n =
+  { to_sat = Hashtbl.create n
+  ; from_sat = Hashtbl.create n
   ; count = 0
   }
 
@@ -41,14 +41,14 @@ let abstract_literal
 
 let abstract_clause
     ?uid
-    (clause : 'k Theory.literal list)
+    (Clause clause : 'k Theory.clause)
     (conn : 'k t)
   : Sat.Formula.literal list =
   List.map (fun lit -> abstract_literal ?uid lit conn) clause
 
 let abstract
     ?uid
-    (formula : 'k Theory.literal list list)
+    (formula : 'k Theory.formula)
     (conn : 'k t)
   : Sat.Formula.literal list list =
   List.map (fun clause -> abstract_clause ?uid clause conn) formula
@@ -59,7 +59,7 @@ let mk_literal (sat_model : Sat.Formula.literal list) (sat_atom : Sat.Formula.at
   | Pos _ -> Pos smt_atom
   | Neg _ -> Neg smt_atom
 
-let literals_from_model
+let make_theory_literals
   (sat_model : Sat.Formula.literal list)
   (conn : 'k t)
   : 'k Theory.literal list =
@@ -69,38 +69,7 @@ let literals_from_model
      | Sat.Formula.Neg sat_atom -> mk_literal sat_model sat_atom conn)
     sat_model
 
-let theory_learn (core : 'k Theory.literal list) (conn : 'k t) : Sat.Formula.literal list =
+let theory_learn (Core core : 'k Theory.core) (conn : 'k t) : Sat.Formula.literal list =
   core
   |> List.map (fun lit -> abstract_literal lit conn)
   |> List.map Sat.Formula.negate
-
-let cdcl_T ~(theory : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
-  : 'k Solution.t =
-  let conn = make () in
-  let propositional = abstract (Theory.from_smt_formula formula) conn in
-  let rec loop conn sat_formula =
-    match Sat.Cdcl.cdcl sat_formula with
-    | None -> Solution.Unsat
-    | Some model ->
-      let smt_lits =
-        literals_from_model model conn
-      in
-      match theory smt_lits with
-      | Theory_unsat core ->
-        let learned = theory_learn core conn in
-        let sat_formula' = Sat.Formula.conjoin1 learned sat_formula in
-        loop conn sat_formula'
-      | Theory_sat model -> Solution.Sat model
-      | Theory_split clauses ->
-        let sat_formula' =
-          List.fold_left
-            (fun acc clause ->
-              let sat_clause = abstract_clause clause conn in
-              Sat.Formula.conjoin1 sat_clause acc)
-            sat_formula
-            clauses
-        in
-        loop conn sat_formula'
-  in
-  loop conn propositional
-
