@@ -1,7 +1,7 @@
 (** The reason type encodes {i why} an assignment by the CDCL loop was made
 
     The CDCL loop advances via {b propagatation} when there are unit clauses
-    to force truth values for.
+    implied after propagation to force truth values for.
 
     The list held by [Propagated] reasons can be a singleton list in the
     unit clause case. For example [[a ^ b ^ (c v d) ^ (~c v f)]]
@@ -34,9 +34,9 @@
 
     because f was forced to be [true] because [c = true].
 *)
-type reason =
+type reason = private
   | Decided
-  | Propagated of Formula.literal list
+  | Propagated of Formula.clause
 
 (** A step of [{ level ; lit ; reason }] means the solver assigned LIT for REASON at decision LEVEL *)
 type step = { level : int ; lit : Formula.literal ; reason : reason }
@@ -47,15 +47,19 @@ type trail = step list
 (** [to_model trail] derives the boolean MODEL from TRAIL *)
 val to_model : trail -> Model.model
 
-(** [analyze_conflict ~conflict level trail] returns the resolved learned clause derived
-    from CONFLICT and the next highest decision level after LEVEL from a literal
-    pointed to by both CONFLICT and TRAIL
-*)
-val analyze_conflict : conflict:Formula.clause -> int -> trail -> Formula.clause * int
+(** [analyze_conflict ~clause level trail] returns the resolved learned clause
+    derived from CLAUSE and the next highest decision level after LEVEL
+    from a literal pointed to by both CLAUSE and TRAIL *)
+val analyze_conflict : clause:Formula.clause -> int -> trail -> Formula.clause * int
 
-(** [backtrack_learn ~conflict level trail formula] adds CONFLICT to FORMULA and filters out all steps in TRAIL > LEVEL *)
-val backtrack_learn : conflict:Formula.clause -> int -> trail -> Formula.formula -> trail * Formula.formula
+(** [backjump ~level trail] {i backtracks} the model state by removing
+    all steps in TRAIL with a [level] > LEVEL *)
+val backjump : level:int -> trail -> trail
 
-(** [decide lit level trail] prepends the step record { LIT ; LEVEL ; reason = Decided } to TRAIL...
-    so this is really just a named cons function *)
-val decide : Formula.literal -> int -> trail -> trail
+(** [decided ~lit level trail] prepends step with [reason = Decided]
+    after solver loop has {i decided} on LIT at LEVEL *)
+val decided : lit:Formula.literal -> int -> trail -> trail
+
+(** [imply ~reason level lit trail] {i implies} LIT at decision LEVEL
+    by prepending step with [reason = Propagated] to TRAIL *)
+val imply : reason:Formula.clause -> int -> Formula.literal -> trail -> trail

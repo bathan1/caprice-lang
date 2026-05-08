@@ -14,14 +14,14 @@ let pp_next ~uid fd (next : next) : unit =
   | Implication (clause, lit) ->
       Format.fprintf fd "Implication (%a, %a)" (pp_clause ~uid) clause (pp_literal ~uid) lit
 
-(** [find_next formula trail] iterates over the clauses from FORMULA and for each clause,
+(** [unit_propagate formula trail] iterates over the clauses from FORMULA and for each clause,
     subs in the literal values from TRAIL, and returns the [next] step based on
     the resulting substituted clause. The step will be...
     - [Decide] when there are no unit clauses after applying TRAIL to FORM
     - [Implication (clause, lit)]
     - [Conflict clause] when applying TRAIL to clause is inconsistent (i.e. substitution returns [Some] empty list)
 *)
-let find_next formula trail =
+let unit_propagate formula trail =
   let model = Trail.to_model trail in
   let rec search_empty
     (clauses : Formula.formula)
@@ -46,45 +46,41 @@ let find_next formula trail =
   in
   search_unit formula
 
-(** [bcp level trail formula] is the Boolean Constraint Propagation decision proc that searches
-    for a satisfying truth table assignment for the given FORMULA STATE, bookkeeping LEVEL and TRAIL states
-    per call
-
-    Each call to bcp will either...
-    - {b Implicate} a unit literal along with its reason clause
-    - {b Decide} on a literal when there are no propagations left
-    - Find a {b conflict clause} and return UNSAT if LEVEL is 0,
-      or backtrack to some previous level < LEVEL and adds the
-      learned conflict clauses to the FORMULA state
-*)
-let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : literal list option =
-  begin match find_next formula trail with
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Model.model option =
+  begin match unit_propagate formula trail with
   | Decide ->
     let model = Trail.to_model trail in
-    begin match Formula.find_free_variable_opt (List.map Formula.atom_from_literal model) formula with
+    let atoms = List.map Formula.atom_from_literal model in
+    begin match Formula.find_free_variable_opt atoms formula with
     | None ->
       if Model.is_tautology formula model then Some model
       else None
     | Some x ->
-      let lit = Formula.pos x in
-      let decision_lvl = level + 1 in
-      let trail' = Trail.decide lit decision_lvl trail in
-      bcp decision_lvl trail' formula
+        decide ~lit:(Formula.pos x) level trail formula
+        (* [Formula.pos x] is arbitrary. It doesn't matter because the
+           learned conflicts forces the loop to terminate (at some point).
+
+           Smarter heuristics could be implemented in the future... *)
     end
   | Conflict clause ->
-    let conflict, backtrack_level = Trail.analyze_conflict ~conflict:clause level trail in
-    if backtrack_level < 0 then
+    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
+    if backtrack_lvl < 0 then
       None (* UNSAT *)
     else
-      let trail', formula' =
-        Trail.backtrack_learn ~conflict backtrack_level trail formula
-      in
-      bcp backtrack_level trail' formula'
+      backtrack_learn ~level:backtrack_lvl clause' trail formula
   | Implication (clause, lit) ->
-    let entry =
-      { Trail.level ; lit ; reason = Propagated clause }
-    in
-    bcp level (entry :: trail) formula
+    let trail' = Trail.imply ~reason:clause level lit trail in
+    bcp level trail' formula
   end
+
+and backtrack_learn ~level clause trail formula =
+  let trail' = Trail.backjump ~level trail in
+  let formula' = clause :: formula in
+  bcp level trail' formula'
+
+and decide ~lit level trail =
+  let next_lvl = level + 1 in
+  let trail' = Trail.decided ~lit next_lvl trail in
+  bcp next_lvl trail'
 
 let cdcl formula = bcp 0 [] formula

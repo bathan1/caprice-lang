@@ -43,7 +43,7 @@ let find_level (lit : literal) (trail : step list) : int =
 
 (** [find_reason_opt lits trail] returns the reason clause of the
     first propagated literal from LITS in TRAIL, or throws if that doesn't exist *)
-let find_reason_opt (lits : literal list) (trail : step list) : literal list option =
+let find_reason_opt (lits : literal list) (trail : trail) : clause option =
   List.find_map
     (fun lit ->
       match find_opt lit trail with
@@ -51,9 +51,9 @@ let find_reason_opt (lits : literal list) (trail : step list) : literal list opt
       | _ -> None)
       lits
 
-(** [find_propagated_reason lits trail] returns the first literal in LITS that exists in TRAIL *and* has
-    [reason = Propagated] if it exists otherwise it throws *)
-let find_reason (lits : literal list) (trail : step list) : literal list =
+(** [find_reason lits trail] returns the first literal in LITS that exists in 
+    TRAIL *and* has [reason = Propagated] if it exists otherwise it throws *)
+let find_reason (lits : literal list) (trail : trail) : clause =
   match find_reason_opt lits trail with
   | Some clause -> clause
   | None ->
@@ -63,31 +63,28 @@ let find_reason (lits : literal list) (trail : step list) : literal list =
         (Formula.pp_clause ~uid:(fun uid -> Int.to_string @@ Utils.Uid.to_int uid)) lits
         (pp_trail ~uid:(fun uid -> Int.to_string @@ Utils.Uid.to_int uid)) trail)
 
-let rec analyze_conflict ~conflict level trail =
-  match List.filter (fun lit -> find_level lit trail = level) conflict with
+let rec analyze_conflict ~clause level trail =
+  match List.filter (fun lit -> find_level lit trail = level) clause with
   | [hd] ->
     if level = 0 then [], -1
     else
       let new_lvl =
-        conflict
+        clause
         |> List_utils.remove1 hd
         |> List.fold_left
-             (fun lvl' lit -> max lvl' (find_level lit trail))
-             0
+            (fun lvl' lit ->
+              max lvl' (find_level lit trail)) 0
       in
-      conflict, new_lvl
+      clause, new_lvl
   | current_level_lits ->
     let reason = find_reason current_level_lits trail in
-    let conflict' = Formula.resolve_pair conflict reason in
-    analyze_conflict ~conflict:conflict' level trail
+    let clause' = Formula.resolve_pair clause reason in
+    analyze_conflict ~clause:clause' level trail
 
-let backtrack_learn ~conflict backtrack_level trail formula =
-  let trail' =
-    List.filter (fun { level ; _ } -> level <= backtrack_level) trail
-  in
-  let formula' = conflict :: formula in
-  trail', formula'
+let backjump ~level:backtrack_level trail =
+  List.filter (fun { level ; _ } -> level <= backtrack_level) trail
 
-let decide lit level trail =
-  let hd = { level ; lit ; reason = Decided } in
-  hd :: trail
+let decided ~lit level trail = { level ; lit ; reason = Decided } :: trail
+
+let imply ~reason level lit trail =
+  { level ; lit ; reason = Propagated reason } :: trail
