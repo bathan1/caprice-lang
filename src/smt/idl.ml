@@ -28,14 +28,12 @@ type 'k diff_literal =
   | Pos of 'k diff_atom
   | Neg of 'k diff_atom
 
-type 'k edge =
-  { from_ : int
-  ; to_ : int
-  ; weight : int
-  ; source : 'k Theory.literal option
+type 'k constraint_graph =
+  { nodes : int
+  ; edges : Bellman_ford.edge array
+  ; sources : 'k Theory.literal option array
+  ; index : int Uid.Map.t
   }
-
-type 'k constraint_graph = nodes:int * edges:'k edge list * index:int Uid.Map.t
 
 let leq_to_diff (left : Integer.affine) (right : Integer.affine) : diff =
   match left, right with
@@ -68,7 +66,7 @@ let find_diffs
       end
     | _ -> []
 
-let make_atom (source : 'k Theory.literal) (atom : 'k Theory.atom) : 'k diff_atom list =
+let make_atoms (source : 'k Theory.literal) (atom : 'k Theory.atom) : 'k diff_atom list =
   match atom with
   | Bool_key _ -> []
   | Predicate (binop, left, right) ->
@@ -79,11 +77,11 @@ let from_theory_literal (lit : 'k Theory.literal) : 'k diff_literal list =
   match lit with
   | Pos theory_atom ->
     theory_atom
-    |> make_atom lit
+    |> make_atoms lit
     |> List.map (fun atom -> Pos atom)
   | Neg theory_atom ->
     theory_atom
-    |> make_atom lit
+    |> make_atoms lit
     |> List.map (fun atom -> Neg atom)
 
 let atom_from_literal (lit : 'k diff_literal) : 'k diff_atom =
@@ -112,21 +110,17 @@ let edges_from_constraint
   (source : 'k Theory.literal)
   ({ x; y; c } : diff)
   ~(to_index : int Uid.Map.t)
-  : 'k edge list =
+  : (Bellman_ford.edge * 'k Theory.literal option) list =
   let get_index uid = Uid.Map.find uid to_index in
+  let mk from_ to_ =
+    (from_, to_, c), Some source
+  in
   match x, y with
   | Symbol_key x, Symbol_key y ->
-    (* x - y <= c === y -> x *)
-    [{ from_ = get_index y; to_ = get_index x; weight = c; source = Some source }]
-
-  | Symbol_key x, Z0 ->
-    [{ from_ = 0; to_ = get_index x; weight = c; source = Some source }]
-
-  | Z0, Symbol_key y ->
-    [{ from_ = get_index y; to_ = 0; weight = c; source = Some source }]
-
-  | Z0, Z0 ->
-    []
+    (* x - y <= c === y -> x *) [mk (get_index y) (get_index x)]
+  | Symbol_key x, Z0 -> [mk 0 (get_index x)]
+  | Z0, Symbol_key y -> [mk (get_index y) 0]
+  | Z0, Z0 -> []
 
 (** [to_graph formula] returns the 3-tuple graph representation
     (NODES, EDGES, UID_TO_INDEX) of FORMULA, where:
@@ -137,9 +131,7 @@ let edges_from_constraint
     Index [0] is reserved for dummy root node and index [NODES - 1]
     is reserved for the special "zero constant" node.
 *)
-let to_graph
-  (formula : 'k Theory.literal list)
-  : 'k constraint_graph =
+let to_graph (formula : 'k Theory.literal list) : 'k constraint_graph =
   let constraints = collect_constraints formula in
   let index =
     constraints
@@ -148,110 +140,28 @@ let to_graph
     |> List.mapi (fun i uid -> (uid, i + 1))
     |> Uid.Map.of_list
   in
-  let edges_constraints =
-    List.concat_map (fun { diff; source } ->
+  let constraint_pairs = List.concat_map
+    (fun { diff; source } ->
       edges_from_constraint source diff ~to_index:index)
-      constraints
+    constraints
   in
-  let nodes =
-    (* Node_zero + Variable Nodes + Super Source *)
-    1 + Uid.Map.cardinal index + 1
+  let nodes = 1 + Uid.Map.cardinal index + 1 in
+  let dummy_pairs =
+    List.init (nodes - 1) (fun i ->
+      ((nodes - 1, i, 0), None))
   in
-  let dummy_root_edges =
-    List.init (nodes - 1)
-      (fun i ->
-        { from_ = nodes - 1
-        ; to_ = i
-        ; weight = 0
-        ; source = None
-        })
+  let pairs = constraint_pairs @ dummy_pairs in
+  let edges = pairs
+    |> List.map fst
+    |> Array.of_list
   in
-  let edges = edges_constraints @ dummy_root_edges in
-  ~nodes, ~edges, ~index
-
-let relax_distance (acc : int option array * 'k edge option array * bool) (edge : 'k edge)
-  : int option array * 'k edge option array * bool =
-  let distance, predecessor, is_updated = acc in
-  match distance.(edge.from_), distance.(edge.to_) with
-  | None, _ -> acc
-  | Some du, None ->
-      distance.(edge.to_) <- Some (du + edge.weight);
-      predecessor.(edge.to_) <- Some edge;
-      distance, predecessor, true
-  | Some du, Some dv ->
-      if du + edge.weight < dv then (
-        distance.(edge.to_) <- Some (du + edge.weight);
-        predecessor.(edge.to_) <- Some edge;
-        distance, predecessor, true
-      ) else distance, predecessor, is_updated
-
-let relax_distances (nodes : int) (edges : 'k edge list) (acc : int option array * 'k edge option array) (i : int)
-  : [ `Continue of int option array * 'k edge option array
-    | `Stop of int option array * 'k edge option array
-    ] =
-  if i = nodes - 1 then `Stop acc
-  else
-    let distance, predecessor = acc in
-    let distance', predecessor', is_updated =
-      List.fold_left relax_distance (distance, predecessor, false) edges
-    in
-    if is_updated then `Continue (distance', predecessor')
-    else `Stop (distance', predecessor')
-
-(** [find_shortest_paths ~src nodes edges] runs the actual relaxation proc to
-    find the shortest distances from SRC to every other node in the graph (NODES, EDGES) *)
-let find_shortest_paths ~(src : int) (nodes : int) (edges : 'k edge list)
-  : int option array * 'k edge option array =
-  let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
-  let predecessor : 'k edge option array = Array.init nodes (fun _ -> None) in
-  let vertices = Array.init nodes Fun.id in
-  Array_utils.fold_left_until (relax_distances nodes edges) (distance, predecessor) vertices
-
-let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge list)
-  : [ `Negative_cycle of 'k edge list
-    | `No_negative_cycle of int array
-    ] =
-  let distance, predecessor = find_shortest_paths ~src nodes edges in
-  let cycle_edge =
-    List.find_opt
-      (fun edge ->
-        match distance.(edge.from_), distance.(edge.to_) with
-        | Some du, Some dv -> du + edge.weight < dv
-        | _ -> false)
-      edges
+  let sources =
+    pairs
+    |> List.map snd
+    |> Array.of_list
   in
-  match cycle_edge with
-  | None ->
-    `No_negative_cycle (Array.map (Option.value ~default:Int.max_int) distance)
-  | Some edge ->
-    (* This edge proves a negative cycle, so include it in the predecessor graph. *)
-    predecessor.(edge.to_) <- Some edge;
-    let rec move_back vertex n =
-      if n = 0 then vertex
-      else
-        match predecessor.(vertex) with
-        | None -> vertex
-        | Some edge -> move_back edge.from_ (n - 1)
-    in
-    let start = move_back edge.to_ nodes in
-    let rec collect curr acc =
-      match predecessor.(curr) with
-      | None ->
-        acc
-      | Some edge ->
-        if List.exists
-          (fun e ->
-              e.from_ = edge.from_
-              && e.to_ = edge.to_
-              && e.weight = edge.weight)
-          acc
-        then
-          edge :: acc
-        else
-          collect edge.from_ (edge :: acc)
-    in
-    `Negative_cycle (collect start [])
 
+  { nodes; edges; sources; index }
 
 type 'k split_neq_case = lower:'k Theory.literal * upper:'k Theory.literal * eq:'k Theory.literal
 
@@ -310,12 +220,12 @@ let solve_diff_logic (unit_clauses : 'k Theory.literal list) : 'k Theory.theory_
   match remaining_splits with
   | _ :: _ as splits -> Theory_split splits
   | [] ->
-    let ~nodes, ~edges, ~index = to_graph lits' in
-    match bellman_ford nodes edges ~src:(nodes - 1) with
-    | `Negative_cycle cycle_edges ->
+    let { nodes; edges; sources; index } = to_graph lits' in
+    match Bellman_ford.bellman_ford nodes edges ~src:(nodes - 1) with
+    | `Negative_cycle edge_indices ->
       let core =
-        cycle_edges
-        |> List.filter_map (fun edge -> edge.source)
+        edge_indices
+        |> List.filter_map (fun i -> sources.(i))
         |> List.sort_uniq compare
       in
       Theory_unsat core
@@ -329,4 +239,3 @@ let solve_diff_logic (unit_clauses : 'k Theory.literal list) : 'k Theory.theory_
       in
       let model = Model.from_value_map local_model in
       Theory_sat model
-

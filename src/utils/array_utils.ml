@@ -1,26 +1,26 @@
-let fold_left_until
-  (f : 'acc -> 'a -> [ `Continue of 'acc | `Stop of 'acc ])
-  (init : 'acc)
-  (arr : 'a array)
-  : 'acc =
-  let rec loop (i : int) (acc : 'acc) =
-    let el = arr.(i) in
-    match f acc el with
-    | `Continue acc' -> loop (i + 1) acc'
-    | `Stop acc' -> acc'
-  in
-  loop 0 init 
-
-let fold_lefti_until
-  (f : int -> 'acc -> 'a -> [ `Continue of 'acc | `Stop of 'acc ])
-  (init : 'acc)
-  (arr : 'a array)
-  : 'acc =
-  let rec loop i acc =
-    if i >= Array.length arr then acc
+let fold_until f finish init xs =
+  let rec go acc i =
+    if i >= Array.length xs then
+      finish acc
     else
-      match f i acc arr.(i) with
-      | `Continue acc' -> loop (i + 1) acc'
-      | `Stop acc' -> acc'
+      match f acc xs.(i) with
+      | `Stop x -> x
+      | `Continue acc' -> go acc' (i + 1)
   in
-  loop 0 init
+  go init 0
+
+let foldi f init xs =
+  let acc = ref init in
+    Array.iteri (fun i x -> acc := f !acc i x) xs;
+  !acc
+
+let foldi_until f finish init xs =
+  let rec go acc i =
+    if i >= Array.length xs then
+      finish acc
+    else
+      match f acc i xs.(i) with
+      | `Stop x -> x
+      | `Continue acc' -> go acc' (i + 1)
+  in
+  go init 0
