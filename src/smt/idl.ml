@@ -108,17 +108,9 @@ let read_constraint_keys ({ x ; y ; _ } : diff) : Uid.t list =
   | Symbol_key key, Z0 | Z0, Symbol_key key -> [ key ]
   | _ -> []
 
-let map_uid_indices (constraints : diff list) : int Uid.Map.t =
-  constraints
-  |> List.concat_map read_constraint_keys
-  |> List.sort_uniq Uid.compare
-  |> List.mapi (fun i uid -> (uid, i + 1))
-  |> Uid.Map.of_list
-
 let edges_from_constraint
   (source : 'k Theory.literal)
   ({ x; y; c } : diff)
-  ~(nodes : int)
   ~(to_index : int Uid.Map.t)
   : 'k edge list =
   let get_index uid = Uid.Map.find uid to_index in
@@ -128,56 +120,53 @@ let edges_from_constraint
     [{ from_ = get_index y; to_ = get_index x; weight = c; source = Some source }]
 
   | Symbol_key x, Z0 ->
-    [{ from_ = nodes - 1; to_ = get_index x; weight = c; source = Some source }]
+    [{ from_ = 0; to_ = get_index x; weight = c; source = Some source }]
 
   | Z0, Symbol_key y ->
-    [{ from_ = get_index y; to_ = nodes - 1; weight = c; source = Some source }]
+    [{ from_ = get_index y; to_ = 0; weight = c; source = Some source }]
 
   | Z0, Z0 ->
     []
 
-let to_graph
-    (constraints : 'k diff_atom list)
-    (key_to_index : int Uid.Map.t)
-  : nodes:int * edges:'k edge list =
-  let nodes =
-    1 + Uid.Map.cardinal key_to_index + 1
-  in
-  let edges_constraints =
-    constraints
-    |> List.concat_map (fun { diff; source } ->
-      edges_from_constraint source diff ~nodes ~to_index:key_to_index)
-  in
-  let dummy_root_edges =
-    List.init (nodes - 1)
-      (fun i ->
-        { from_ = 0
-        ; to_ = i + 1
-        ; weight = 0
-        ; source = None
-        })
-  in
-  let edges = edges_constraints @ dummy_root_edges in
-  ~nodes, ~edges
-
-(** [to_constraint_graph formula] returns the 3-tuple graph representation
+(** [to_graph formula] returns the 3-tuple graph representation
     (NODES, EDGES, UID_TO_INDEX) of FORMULA, where:
     - NODES is number of unique variables in FORMULA + 2
     - EDGES is a 3-tuple (SRC, DST, WEIGHT)
     - UID_TO_INDEX maps UIDs from FORMULA to their node id (index)
 
     Index [0] is reserved for dummy root node and index [NODES - 1]
-    is reserved for the special "zero constant" node. *)
-let to_constraint_graph (formula : 'k Theory.literal list)
-  : 'k constraint_graph
-  =
+    is reserved for the special "zero constant" node.
+*)
+let to_graph
+  (formula : 'k Theory.literal list)
+  : 'k constraint_graph =
   let constraints = collect_constraints formula in
-  let diffs = List.map
-    (fun { diff ; _} -> diff) constraints
+  let index =
+    constraints
+    |> List.concat_map (fun { diff ; _ } -> read_constraint_keys diff)
+    |> List.sort_uniq Uid.compare
+    |> List.mapi (fun i uid -> (uid, i + 1))
+    |> Uid.Map.of_list
   in
-  let index = map_uid_indices diffs in
-  let ~nodes, ~edges = to_graph constraints index
+  let edges_constraints =
+    List.concat_map (fun { diff; source } ->
+      edges_from_constraint source diff ~to_index:index)
+      constraints
   in
+  let nodes =
+    (* Node_zero + Variable Nodes + Super Source *)
+    1 + Uid.Map.cardinal index + 1
+  in
+  let dummy_root_edges =
+    List.init (nodes - 1)
+      (fun i ->
+        { from_ = nodes - 1
+        ; to_ = i
+        ; weight = 0
+        ; source = None
+        })
+  in
+  let edges = edges_constraints @ dummy_root_edges in
   ~nodes, ~edges, ~index
 
 let relax_distance (acc : int option array * 'k edge option array * bool) (edge : 'k edge)
@@ -251,11 +240,11 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge list)
         acc
       | Some edge ->
         if List.exists
-            (fun e ->
-                e.from_ = edge.from_
-                && e.to_ = edge.to_
-                && e.weight = edge.weight)
-            acc
+          (fun e ->
+              e.from_ = edge.from_
+              && e.to_ = edge.to_
+              && e.weight = edge.weight)
+          acc
         then
           edge :: acc
         else
@@ -316,13 +305,13 @@ let resolve_splits lits =
     ([], [])
 
 (** [solve_diff_logic formula] finds the tightest upper bounds of each integer variable in FORMULA *)
-let solve_diff_logic (lits : 'k Theory.literal list) : 'k Theory.theory_solution =
-  let lits', remaining_splits = resolve_splits lits in
+let solve_diff_logic (unit_clauses : 'k Theory.literal list) : 'k Theory.theory_solution =
+  let lits', remaining_splits = resolve_splits unit_clauses in
   match remaining_splits with
   | _ :: _ as splits -> Theory_split splits
   | [] ->
-    let ~nodes, ~edges, ~index = to_constraint_graph lits' in
-    match bellman_ford nodes edges ~src:0 with
+    let ~nodes, ~edges, ~index = to_graph lits' in
+    match bellman_ford nodes edges ~src:(nodes - 1) with
     | `Negative_cycle cycle_edges ->
       let core =
         cycle_edges
@@ -331,8 +320,7 @@ let solve_diff_logic (lits : 'k Theory.literal list) : 'k Theory.theory_solution
       in
       Theory_unsat core
     | `No_negative_cycle distances ->
-      let z0_index = Array.length distances - 1 in
-      let z0_dist = distances.(z0_index) in
+      let z0_dist = distances.(0) in
       let local_model =
         Uid.Map.map
           (fun var_index ->
