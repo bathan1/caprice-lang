@@ -13,21 +13,16 @@ let nodes_equal n1 n2 =
   | Symbol_key u1, Symbol_key u2 -> Uid.equal u1 u2
   | _ -> false
 
-type diff_constraint = { x : node ; y : node ; c : int }
+type diff = { x : node ; y : node ; c : int }
 
-type diff_constraint_literal =
-  | Ineq of diff_constraint
-  | Eq of diff_constraint * diff_constraint
-(** Encodes the difference [x - y <= c] *)
-
-let diff_constraints_equal l1 l2 =
+let diffs_equal l1 l2 =
   match l1, l2 with
   | c1, c2 when c1.c = c2.c
     && nodes_equal c1.x c2.x
     && nodes_equal c1.y c2.y -> true
   | _ -> false
 
-type 'k diff_atom = { source : 'k Theory.literal ; diff : diff_constraint }
+type 'k diff_atom = { source : 'k Theory.literal ; diff : diff }
 
 type 'k diff_literal =
   | Pos of 'k diff_atom
@@ -40,76 +35,55 @@ type 'k edge =
   ; source : 'k Theory.literal option
   }
 
-type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
+type 'k constraint_graph = nodes:int * edges:'k edge list * index:int Uid.Map.t
 
-let diff_from_leq left right =
-  match Integer.affine_from_formula_opt left, Integer.affine_from_formula_opt right with
-  | Some (Var_plus_const (x, kx)), Some (Var_plus_const (y, ky)) ->
-    Some { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
-  | Some (Var_plus_const (x, kx)), Some (Const c) ->
-    Some { x = Symbol_key x; y = Z0; c = c - kx }
-  | Some (Const c), Some (Var_plus_const (y, ky)) ->
-    Some { x = Z0; y = Symbol_key y; c = ky - c }
-  | Some (Const c1), Some (Const c2) ->
-    if c1 <= c2 then Some { x = Z0; y = Z0; c = 0 }
-    else Some { x = Z0; y = Z0; c = -1 }
-  | _ -> None
+let leq_to_diff (left : Integer.affine) (right : Integer.affine) : diff =
+  match left, right with
+  | Var_plus_const (x, kx), Var_plus_const (y, ky) ->
+    { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
+  | Var_plus_const (x, kx), Const c ->
+    { x = Symbol_key x; y = Z0; c = c - kx }
+  | Const c, Var_plus_const (y, ky) ->
+    { x = Z0; y = Symbol_key y; c = ky - c }
+  | Const c1, Const c2 ->
+    if c1 <= c2 then { x = Z0; y = Z0; c = 0 }
+    else { x = Z0; y = Z0; c = -1 }
 
-let find_diff_opt
+let find_diffs
   : type a. (a * a * bool) Binop.t ->
     (a, 'k) Formula.t ->
     (a, 'k) Formula.t ->
-    diff_constraint_literal option =
-  let ineq cst = Ineq cst in
-  let eq cst1 cst2 = Eq (cst1, cst2) in
+    diff list =
   fun binop left right ->
-    match binop with
-    | Less_than_eq -> Option.map ineq @@ diff_from_leq left right
-    | Less_than ->
-      (* left < right  ===  left <= right - 1 *)
-      begin
-        match diff_from_leq left right with
-        | None -> None
-        | Some d -> Some (ineq { d with c = d.c - 1 })
+    match Integer.affine_from_formula_opt left, Integer.affine_from_formula_opt right with
+    | Some al, Some ar ->
+      let diff = leq_to_diff al ar in
+      begin match binop with
+      | Less_than_eq -> [diff]
+      | Less_than -> [ { diff with c = diff.c - 1 } ]
+      | Equal ->
+        let flipped = leq_to_diff ar al in
+        [ diff ; flipped ]
+      | _ -> []
       end
-    | Equal ->
-      begin
-        match diff_from_leq left right, diff_from_leq right left with
-        | Some d1, Some d2 -> Some (eq d1 d2)
-        | _ -> None
-      end
-    | _ -> None
+    | _ -> []
 
-let find_diff
-  : type a. (a * a * bool) Binop.t -> (a, 'k) Formula.t -> (a , 'k) Formula.t -> diff_constraint_literal =
-  fun binop left right ->
-    match find_diff_opt binop left right with
-    | None -> failwith
-    (Printf.sprintf "\n[Idl.find_diff] No diff atom found in smt-atom: %s"
-        (Formula.to_string
-          ~key:Model.prefix_key
-          (Formula.binop binop left right)))
-    | Some diff -> diff
-
-let mk_atom (source : 'k Theory.literal) (atom : 'k Theory.atom) : 'k diff_atom list =
+let make_atom (source : 'k Theory.literal) (atom : 'k Theory.atom) : 'k diff_atom list =
   match atom with
   | Bool_key _ -> []
   | Predicate (binop, left, right) ->
-    match find_diff binop left right with
-    | Ineq diff ->
-      [{ diff; source }]
-    | Eq (diff1, diff2) ->
-      [{ diff = diff1 ; source } ; { diff = diff2; source }]
+    let diffs = find_diffs binop left right in
+    List.map (fun diff -> { diff ; source }) diffs
 
 let from_theory_literal (lit : 'k Theory.literal) : 'k diff_literal list =
   match lit with
   | Pos theory_atom ->
     theory_atom
-    |> mk_atom lit
+    |> make_atom lit
     |> List.map (fun atom -> Pos atom)
   | Neg theory_atom ->
     theory_atom
-    |> mk_atom lit
+    |> make_atom lit
     |> List.map (fun atom -> Neg atom)
 
 let atom_from_literal (lit : 'k diff_literal) : 'k diff_atom =
@@ -127,14 +101,14 @@ let collect_constraints (formula : 'k Theory.literal list)
   |> List.concat_map from_theory_literal
   |> List.map atom_from_literal
 
-let read_constraint_keys ({ x ; y ; _ } : diff_constraint) : Uid.t list =
+let read_constraint_keys ({ x ; y ; _ } : diff) : Uid.t list =
   match x, y with
   | Symbol_key x, Symbol_key y when x = y -> [ x ]
   | Symbol_key x, Symbol_key y -> [ x ; y ]
   | Symbol_key key, Z0 | Z0, Symbol_key key -> [ key ]
   | _ -> []
 
-let map_uid_indices (constraints : diff_constraint list) : int Uid.Map.t =
+let map_uid_indices (constraints : diff list) : int Uid.Map.t =
   constraints
   |> List.concat_map read_constraint_keys
   |> List.sort_uniq Uid.compare
@@ -143,7 +117,7 @@ let map_uid_indices (constraints : diff_constraint list) : int Uid.Map.t =
 
 let edges_from_constraint
   (source : 'k Theory.literal)
-  ({ x; y; c } : diff_constraint)
+  ({ x; y; c } : diff)
   ~(nodes : int)
   ~(to_index : int Uid.Map.t)
   : 'k edge list =
@@ -165,7 +139,7 @@ let edges_from_constraint
 let to_graph
     (constraints : 'k diff_atom list)
     (key_to_index : int Uid.Map.t)
-  : nodes:int * edges:'k edge array =
+  : nodes:int * edges:'k edge list =
   let nodes =
     1 + Uid.Map.cardinal key_to_index + 1
   in
@@ -183,7 +157,7 @@ let to_graph
         ; source = None
         })
   in
-  let edges = Array.of_list (edges_constraints @ dummy_root_edges) in
+  let edges = edges_constraints @ dummy_root_edges in
   ~nodes, ~edges
 
 (** [to_constraint_graph formula] returns the 3-tuple graph representation
@@ -222,7 +196,7 @@ let relax_distance (acc : int option array * 'k edge option array * bool) (edge 
         distance, predecessor, true
       ) else distance, predecessor, is_updated
 
-let relax_distances (nodes : int) (edges : 'k edge array) (acc : int option array * 'k edge option array) (i : int)
+let relax_distances (nodes : int) (edges : 'k edge list) (acc : int option array * 'k edge option array) (i : int)
   : [ `Continue of int option array * 'k edge option array
     | `Stop of int option array * 'k edge option array
     ] =
@@ -230,27 +204,27 @@ let relax_distances (nodes : int) (edges : 'k edge array) (acc : int option arra
   else
     let distance, predecessor = acc in
     let distance', predecessor', is_updated =
-      Array.fold_left relax_distance (distance, predecessor, false) edges
+      List.fold_left relax_distance (distance, predecessor, false) edges
     in
     if is_updated then `Continue (distance', predecessor')
     else `Stop (distance', predecessor')
 
 (** [find_shortest_paths ~src nodes edges] runs the actual relaxation proc to
     find the shortest distances from SRC to every other node in the graph (NODES, EDGES) *)
-let find_shortest_paths ~(src : int) (nodes : int) (edges : 'k edge array)
+let find_shortest_paths ~(src : int) (nodes : int) (edges : 'k edge list)
   : int option array * 'k edge option array =
   let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
   let predecessor : 'k edge option array = Array.init nodes (fun _ -> None) in
   let vertices = Array.init nodes Fun.id in
   Array_utils.fold_left_until (relax_distances nodes edges) (distance, predecessor) vertices
 
-let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array)
+let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge list)
   : [ `Negative_cycle of 'k edge list
-    | `No_negative_cycle of int array * 'k edge option array
+    | `No_negative_cycle of int array
     ] =
   let distance, predecessor = find_shortest_paths ~src nodes edges in
   let cycle_edge =
-    Array.find_opt
+    List.find_opt
       (fun edge ->
         match distance.(edge.from_), distance.(edge.to_) with
         | Some du, Some dv -> du + edge.weight < dv
@@ -259,9 +233,7 @@ let bellman_ford ~(src : int) (nodes : int) (edges : 'k edge array)
   in
   match cycle_edge with
   | None ->
-    `No_negative_cycle
-      (Array.map (Option.value ~default:Int.max_int) distance
-      , predecessor)
+    `No_negative_cycle (Array.map (Option.value ~default:Int.max_int) distance)
   | Some edge ->
     (* This edge proves a negative cycle, so include it in the predecessor graph. *)
     predecessor.(edge.to_) <- Some edge;
@@ -296,11 +268,11 @@ type 'k split_neq_case = lower:'k Theory.literal * upper:'k Theory.literal * eq:
 
 let literal_has_same_diff l1 l2 =
   match from_theory_literal l1, from_theory_literal l2 with
-  | [Pos a], [Pos b] -> diff_constraints_equal a.diff b.diff
+  | [Pos a], [Pos b] -> diffs_equal a.diff b.diff
   | [Neg a], [Neg b] ->
       let a' = atom_from_literal (Neg a) in
       let b' = atom_from_literal (Neg b) in
-      diff_constraints_equal a'.diff b'.diff
+      diffs_equal a'.diff b'.diff
   | _ -> false
 
 let split_to_theory_clause ((~lower, ~upper, ~eq): 'k split_neq_case) : 'k Theory.literal list =
@@ -358,7 +330,7 @@ let solve_diff_logic (lits : 'k Theory.literal list) : 'k Theory.theory_solution
         |> List.sort_uniq compare
       in
       Theory_unsat core
-    | `No_negative_cycle (distances, _) ->
+    | `No_negative_cycle distances ->
       let z0_index = Array.length distances - 1 in
       let z0_dist = distances.(z0_index) in
       let local_model =
@@ -369,3 +341,4 @@ let solve_diff_logic (lits : 'k Theory.literal list) : 'k Theory.theory_solution
       in
       let model = Model.from_value_map local_model in
       Theory_sat model
+
