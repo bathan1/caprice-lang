@@ -7,7 +7,7 @@
   lsp
   ; external
   cmdliner
-  benchmark
+  utils
  )
  (promote
   (until-clean)

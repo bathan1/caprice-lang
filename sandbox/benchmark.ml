@@ -1,20 +1,19 @@
 open Smt
 open Overlays
-
-open Unix
+open Utils
 
 let sql_escape (s : string) =
   s
   |> String.split_on_char '\''
   |> String.concat "''"
 
-let time_us_float f =
-  let t1 = gettimeofday () in
-  let _ = f () in
-  let t2 = gettimeofday () in
-  (t2 -. t1) *. 1_000_000.0
+let main_solve_with_metadata expr =
+  Solve.main_solve_with_metadata (module Typed_z3.Default) expr
 
-let main_solve_with_metadata expr = Solve.main_solve_with_metadata (module Typed_z3.Default) expr
+let find_avg label results =
+  match List.assoc_opt label results with
+  | Some time_us -> time_us
+  | None -> failwith ("missing benchmark result: " ^ label)
 
 let benchmark num_trials =
   let solve_z3_only =
@@ -25,9 +24,8 @@ let benchmark num_trials =
     Boolean.from_stdin ()
   in
 
-  Printf.printf
+  Printf.eprintf
     "CREATE TABLE IF NOT EXISTS benchmarks (\n\
-    \  trial_num INTEGER NOT NULL,\n\
     \  formula_id INTEGER NOT NULL,\n\
     \  formula TEXT NOT NULL,\n\
     \  was_backend_used TEXT NOT NULL,\n\
@@ -35,56 +33,60 @@ let benchmark num_trials =
     \  time_us_z3 FLOAT NOT NULL\n\
      );\n\n";
 
-  let rec aux trial_num =
-    if trial_num = num_trials then
-      ()
-    else begin
-      fs
-      |> List.iteri (fun formula_id ftext ->
-          let formula_sql =
-            sql_escape ftext
-          in
+  fs
+  |> List.iteri (fun formula_id ftext ->
+    let formula_sql =
+      sql_escape ftext
+    in
 
-          let f =
-            Boolean.parse ftext
-          in
+    let f =
+      Boolean.parse ftext
+    in
 
-          let metadata_ref =
-            ref { Solve.was_backend_used = false }
-          in
+    let metadata_ref =
+      ref { Solve.was_backend_used = false }
+    in
 
-          let time_us_blue3 =
-            time_us_float (fun () ->
-                let _solution, ~metadata =
-                  main_solve_with_metadata f
-                in
-                metadata_ref := metadata)
-          in
+    let results =
+      Benchmarker.bench_many_avg
+        ~trials:num_trials
+        [ ( "blue3"
+          , (fun () ->
+            let _solution, ~metadata =
+              main_solve_with_metadata f
+            in
+            metadata_ref := metadata)
+          , ()
+        )
 
-          let time_us_z3 =
-            time_us_float (fun () ->
-                let f =
-                  Boolean.parse ftext
-                in
-                ignore (solve_z3_only f))
-          in
+          ; ( "z3"
+            , (fun () ->
+              let f =
+                Boolean.parse ftext
+              in
+              ignore (solve_z3_only f))
+            , ()
+          )
+        ]
+    in
 
-          let was_backend_used =
-            !metadata_ref.Solve.was_backend_used
-          in
+    let time_us_blue3 =
+      find_avg "blue3" results
+    in
 
-          Printf.printf
-            "INSERT INTO benchmarks (trial_num, formula_id, formula, was_backend_used,\
-             time_us_blue3, time_us_z3) VALUES (%d, %d, '%s', '%s', %.6f, %.6f);\n"
-            trial_num
-            formula_id
-            formula_sql
-            (Bool.to_string was_backend_used)
-            time_us_blue3
-            time_us_z3);
+    let time_us_z3 =
+      find_avg "z3" results
+    in
 
-      aux (trial_num + 1)
-    end
-  in
+    let was_backend_used =
+      !metadata_ref.Solve.was_backend_used
+    in
 
-  aux 0
+    Printf.eprintf
+      "INSERT INTO benchmarks (formula_id, formula, was_backend_used,\
+         time_us_blue3, time_us_z3) VALUES (%d, '%s', '%s', %.6f, %.6f);\n"
+      formula_id
+      formula_sql
+      (Bool.to_string was_backend_used)
+      time_us_blue3
+      time_us_z3)

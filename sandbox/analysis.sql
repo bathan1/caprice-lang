@@ -93,7 +93,6 @@ FROM diffs;
 
 .print "### What formulas did z3 beat blue3 on?"
 SELECT
-  b.trial_num,
   b.formula_id,
   b.formula,
   b.time_us_blue3,

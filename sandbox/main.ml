@@ -214,4 +214,4 @@ let sanity_check () =
 
 
 let () =
-  Sandbox.Benchmark.benchmark 10
+  Sandbox.Benchmark.benchmark 100
