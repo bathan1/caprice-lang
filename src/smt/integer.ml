@@ -64,6 +64,13 @@ let formula_from_affine_comparison
             (Formula.const_int (c - cx))
             (Formula.symbol (I x)))
     | Const c1, Const c2 -> Some (Formula.binop binop (Formula.const_int c1) (Formula.const_int c2))
+    | Var_plus_const (x, cx), Var_plus_const (y, cy) when Uid.equal x y ->
+      (* x + cx op x + cy  ==>  cx op cy *)
+      Some
+        (Formula.binop
+          binop
+          (Formula.const_int cx)
+          (Formula.const_int cy))
     | Var_plus_const _, Var_plus_const _ -> None
 
 type int_constraint =

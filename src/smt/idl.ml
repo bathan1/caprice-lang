@@ -42,7 +42,7 @@ type 'k edge =
 
 type 'k constraint_graph = nodes:int * edges:'k edge array * index:int Uid.Map.t
 
-let diff_from_leq left right : diff_constraint option =
+let diff_from_leq left right =
   match Integer.affine_from_formula_opt left, Integer.affine_from_formula_opt right with
   | Some (Var_plus_const (x, kx)), Some (Var_plus_const (y, ky)) ->
     Some { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
