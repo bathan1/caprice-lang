@@ -212,6 +212,5 @@ let sanity_check () =
     List.iter print_failure failures
     end
 
-
 let () =
-  Sandbox.Benchmark.benchmark 100
+  Benchmark.benchmark 100

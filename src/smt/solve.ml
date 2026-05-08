@@ -2,14 +2,15 @@ type 'k solver = (bool, 'k) Formula.t -> 'k Solution.t
 
 type 'k simplifier = 'k solver -> 'k solver
 
+(** Add whatever here it doesn't affect the solving *)
 type metadata =
   { was_backend_used : bool }
 
-type 'k solver_with_metadata =
+type 'k solver_meta =
   (bool, 'k) Formula.t -> 'k Solution.t * metadata:metadata
 
-type 'k simplifier_with_metadata =
-  'k solver_with_metadata -> 'k solver_with_metadata
+type 'k simplifier_meta =
+  'k solver_meta -> 'k solver_meta
 
 module type SOLVABLE = sig
   include Formula.S
@@ -44,6 +45,61 @@ let rec collect_concrete
         (Some acc)
         ls
   | _ -> Some acc
+
+let rec simplify : 'k simplifier = fun solve expr ->
+  let assign i k = Solution.Sat (Model.singleton i k) in
+  (* Hand-write a lot of special cases for single formulas *)
+  match expr with
+  | Const_bool false -> Unsat
+  | Const_bool true -> Sat Model.empty
+  | Key k ->
+    assign true k
+  | Not Key k ->
+    assign false k
+  | Not (Binop (Equal, Key k, Const_int i)) ->
+    assign (if i = 0 then 1 else 0) k
+  | Binop ((Equal | Less_than_eq), Key (I _ as k), Const_int i)
+  | Binop ((Equal | Less_than_eq), Const_int i, Key (I _ as k)) ->
+    assign i k
+  | Binop (Less_than, Key k, Const_int i) ->
+    assign (i - 1) k
+  | Binop (Less_than, Const_int i, Key k) ->
+    assign (i + 1) k
+  | Binop (Less_than, Key (I _ as k), Key (I _ as k'))
+  | Binop (Less_than_eq, Key (I _ as k), Key (I _ as k')) ->
+    Solution.merge (assign 0 k) (assign 1 k')
+  | Binop (Equal, Key k, Key k') ->
+    begin match k, k' with
+    | I _, I _ -> Solution.merge (assign 0 k) (assign 0 k')
+    | B _, B _ -> Solution.merge (assign true k) (assign true k')
+    end
+  | Not Binop (Equal, Key k, Key k') ->
+    begin match k, k' with
+    | I _, I _ -> Solution.merge (assign 0 k) (assign 1 k')
+    | B _, B _ -> Solution.merge (assign true k) (assign false k')
+    end
+  | And e_ls ->
+    (*
+      If there is any (key = int) formula, then we can subst it through, for it
+      is an "implied concretization".
+
+      This idea originates with KLEE (https://dl.acm.org/doi/abs/10.5555/1855741.1855756)
+      from Section 3.3, paragraph _Constraint Set Simplification_.
+    *)
+    let find (e : ('a, 'k) Formula.t) : (const:int * (int, 'k) Symbol.t) option =
+      match e with
+      | Binop (Equal, Key k, Const_int const) -> Some (~const, k)
+      | _ -> None
+    in
+    begin match List.find_map find e_ls with
+    | Some (~const, k) ->
+      let reduced_expr = Formula.and_ (List.map (Formula.subst const k) e_ls) in
+      Solution.merge (simplify solve reduced_expr) (assign const k)
+    | None ->
+      solve expr
+    end
+  | _ ->
+    solve expr
 
 (** [implied_concretization next expr] first attempts to solve EXPR with a
     few heuristics, and then calls the solver NEXT.
@@ -125,7 +181,8 @@ let contains_unsolvable_binop formula =
 let linearize next expr =
   next (Integer.linearize expr)
 
-let drop_redundant_ineqs next expr = next (Integer.drop_redundant_ineqs expr)
+let drop_redundant_ineqs next expr =
+  next (Integer.drop_redundant_ineqs expr)
 
 let blue3 (next : 'k solver) (formula : (bool, 'k) Formula.t) =
   let solve formula = Connector.cdcl_T ~theory:Idl.solve_diff_logic formula in
@@ -140,7 +197,7 @@ let blue3 (next : 'k solver) (formula : (bool, 'k) Formula.t) =
       | solution -> solution
 
 let with_metadata (simplifier : 'k simplifier)
-  : 'k simplifier_with_metadata =
+  : 'k simplifier_meta =
   fun next formula ->
     let metadata = ref { was_backend_used = false } in
 
@@ -167,33 +224,30 @@ let with_metadata (simplifier : 'k simplifier)
   then with simpl2, and finally with simpl3 before calling the solver.
 *)
 let ( @> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
-  fun f g -> fun solve -> g (f solve)
-
-let ( @@> ) : 'k simplifier -> 'k simplifier -> 'k simplifier =
   fun f g -> fun solve -> f (g solve)
 
-let ( @@>> )
-  : 'k simplifier_with_metadata ->
-    'k simplifier_with_metadata ->
-    'k simplifier_with_metadata =
+let ( @@> )
+  : 'k simplifier_meta ->
+    'k simplifier_meta ->
+    'k simplifier_meta =
   fun f g -> fun solve -> f (g solve)
 
 let main_solve (module Oracle : SOLVABLE) : 'k solver =
   let pipeline =
     linearize
-    @@> implied_concretization
-    @@> drop_redundant_ineqs
-    @@> blue3
+    @> implied_concretization
+    @> drop_redundant_ineqs
+    @> blue3
   in
   pipeline (direct_solve (module Oracle))
 
 let main_solve_with_metadata (module Oracle : SOLVABLE)
-  : 'k solver_with_metadata =
+  : 'k solver_meta =
   let pipeline =
     with_metadata linearize
-    @@>> with_metadata implied_concretization
-    @@>> with_metadata drop_redundant_ineqs
-    @@>> with_metadata blue3
+    @@> with_metadata implied_concretization
+    @@> with_metadata drop_redundant_ineqs
+    @@> with_metadata blue3
   in
 
   pipeline

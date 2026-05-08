@@ -17,6 +17,32 @@ SELECT COUNT(DISTINCT formula_id) AS z3_deferred_formula_count
 FROM benchmarks
 WHERE was_backend_used = 'true';
 
+.print "\n### On average, how much slower were the deferred cases than just calling z3 by itself?"
+SELECT
+  COUNT(*) AS num_deferred_cases,
+  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS avg_slower_by,
+  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_z3), 2) || '%' AS avg_percent_slower_than_z3
+FROM benchmarks
+WHERE was_backend_used = 'true';
+
+.print "\n### How much faster were the fast cases on average?"
+
+SELECT
+  COUNT(*) AS num_fast_cases,
+  ROUND(AVG(time_us_z3 - time_us_blue3), 2) || 'μs' AS avg_faster_by,
+  ROUND(AVG(((time_us_z3 - time_us_blue3) * 100.0) / time_us_z3), 2) || '%' AS avg_percent_faster
+FROM benchmarks
+WHERE time_us_blue3 < time_us_z3;
+
+.print "\n### How much slower were the slow cases on average?"
+
+SELECT
+  COUNT(*) AS num_slow_cases,
+  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS avg_slower_by,
+  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_blue3), 2) || '%' AS avg_percent_slower
+FROM benchmarks
+WHERE time_us_blue3 > time_us_z3;
+
 .print "\n### Top 10 fastest blue3-only cases"
 
 SELECT
@@ -46,32 +72,6 @@ WHERE was_backend_used = 'false'
 GROUP BY formula_id, formula
 ORDER BY AVG(time_us_blue3) DESC
 LIMIT 10;
-
-.print "\n### On average, how much slower were the deferred cases than just calling z3 by itself?"
-SELECT
-  COUNT(*) AS num_deferred_cases,
-  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS avg_slower_by,
-  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_z3), 2) || '%' AS avg_percent_slower_than_z3
-FROM benchmarks
-WHERE was_backend_used = 'true';
-
-.print "\n### How much faster were the fast cases on average?"
-
-SELECT
-  COUNT(*) AS num_fast_cases,
-  ROUND(AVG(time_us_z3 - time_us_blue3), 2) || 'μs' AS avg_faster_by,
-  ROUND(AVG(((time_us_z3 - time_us_blue3) * 100.0) / time_us_z3), 2) || '%' AS avg_percent_faster
-FROM benchmarks
-WHERE time_us_blue3 < time_us_z3;
-
-.print "\n### How much slower were the slow cases on average?"
-
-SELECT
-  COUNT(*) AS num_slow_cases,
-  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS avg_slower_by,
-  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_blue3), 2) || '%' AS avg_percent_slower
-FROM benchmarks
-WHERE time_us_blue3 > time_us_z3;
 
 .print "\n### What was the max time difference blue3 beat z3 by?"
 WITH diffs AS (
