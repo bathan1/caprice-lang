@@ -67,6 +67,17 @@ end = struct
     | Const_int _ | Const_bool _ -> true
     | Key _ | Not _ | And _ | Binop _ -> false
 
+  let bool_opt : type a k. (a,k) t -> (bool, k) t option =
+    function
+    | Const_bool _ as f -> Some f
+    | Key (B _) as f -> Some f
+    | Not _ as f -> Some f
+    | And _ as f -> Some f
+    | Binop (Less_than, _, _) as f -> Some f
+    | Binop (Less_than_eq, _, _) as f -> Some f
+    | Binop (Equal, _, _) as f -> Some f
+    | _ -> None
+
   let rec binop
     : type a b c. (a * a * b, c) Binop.c -> (a, 'k) t -> (a, 'k) t -> (b, 'k) t
     = fun op x y ->
@@ -82,29 +93,14 @@ end = struct
       | e1, e2 -> Binop (Or, e1, e2)
       end
     | Equal ->
-      let as_bool : type a k. (a, k) t -> (bool, k) t option =
-        function
-        | Const_bool _ as f -> Some f
-        | Key (B _) as f -> Some f
-        | Not _ as f -> Some f
-        | And _ as f -> Some f
-        | Binop (Less_than, _, _) as f -> Some f
-        | Binop (Less_than_eq, _, _) as f -> Some f
-        | Binop (Equal, _, _) as f -> Some f
-        | _ -> None
-      in
-      begin match as_bool x, as_bool y with
+      begin match bool_opt x, bool_opt y with
       | Some bx, Some by -> iff bx by
       | _ ->
         begin match x, y with
-        | Const_int _, Key _ ->
-            Binop (Equal, y, x)
-        | Const_int i1, Const_int i2 ->
-            Const_bool (i1 = i2)
-        | e1, e2 when equal e1 e2 ->
-            true_
-        | e1, e2 ->
-            Binop (Equal, e1, e2)
+        | Const_int _, Key _ -> Binop (Equal, y, x)
+        | Const_int i1, Const_int i2 -> Const_bool (i1 = i2)
+        | e1, e2 when equal e1 e2 -> true_
+        | e1, e2 -> Binop (Equal, e1, e2)
         end
       end
     | Not_equal -> not_ (binop Equal x y)
