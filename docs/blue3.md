@@ -55,7 +55,7 @@ As humans, all this rewriting may seem like extra work because we don't need to 
 
 But Difference Logic allows us to encode how we "know" that this is UNSAT in a way a computer can understand. Moreover, it is able to handle the "simple" formula cases that we didn't even know were "simple", because it formalizes what type of formula it can solve.
 
-We get the computer to tell us whether formulas like `(6 <= a) ^ (a < 0)` are satisfiable through a familiar shortest distance path graph search.
+We get the computer to tell us whether formulas like `(6 <= a) ^ (a < 0)` are satisfiable through a familiar shortest distance graph algorithm.
 
 ### Bellman Ford
 The Bellman Ford algorithm finds the shortest distance paths from a particular node to all others in a directed graph.
@@ -63,26 +63,199 @@ The Bellman Ford algorithm finds the shortest distance paths from a particular n
 Suppose we have a graph with the following edges:
 
 ```ocaml
-let () =
-  let edges = [|
-    (1, 0, -6) ;
-    (0, 1, -1) ;
-    (2, 0, 1) ;
-    (2, 1, 1) ;
-  |] in
-  ...
+let edges =
+  [ ('a', '0', 3)
+  ; ('0', 'a', -1)
+  ; ('z', '0', 5)
+  ; ('z', 'a', 5)
+  ]
 ```
 
 It looks something like this:
 
 ```mermaid
 graph LR
-  n1["1"] -->|"-6"| n0["0"]
-  n0 -->|"-1"| n1
-  n2["2"] -->|"1"| n0
-  n2 -->|"1"| n1
+  na["a"] -->|"3"| n0["0"]
+  n0 -->|"-1"| na["a"]
+  nz["z"] -->|"5"| n0["0"]
+  nz -->|"5"| na["a"]
 ```
 
+Now let's say we wanted to find the shortest distance paths from `z` to every other node. We can run bellman ford against this edge list...
+
+```ocaml
+match bellman_ford ~src:'z' edges with
+| `No_negative_cycle distances ->
+  print_endline "No negative cycle found.";
+  List.iter (fun (node, distance) ->
+    Printf.printf "dist(%c) = %d\n" node distance)
+    distances
+
+| `Negative_cycle cycle_edges ->
+  print_endline "Negative cycle found:";
+  List.iter (fun edge ->
+    Printf.printf "- %s\n" (pp_edge edge))
+    cycle_edges
+```
+
+and it will tell us:
+
+```bash
+No negative cycle found.
+dist(z) = 0
+dist(a) = 4
+dist(0) = 5
+```
+
+The shortest distance path from `z` to `0` is just the direct edge `z -> 0` with weight `5`.
+
+The shortest distance path from `z` to `a` is `4`, because we can go from `z` to `0` for cost `5`, then from `0` to `a` with cost `-1` to give us a shortest distance of `4`.
+
+If we jumped from `a` back to `0` for a cost of `3`, our distance would go from `4` to `7`. So even though we can go back and forth from `a` to `0`, it will just add cost to our path to `a` to cycle back to `0`. This means there is **no negative cycle**.
+
+Now if we changed the edge from `a -> 0` to have cost `-6`...
+
+```ocaml
+let edges =
+  [ ('a', '0', -6)
+  ; ('0', 'a', -1)
+  ; ('z', '0', 5)
+  ; ('z', 'a', 5)
+  ]
+```
+
+```mermaid
+graph LR
+  na["a"] -->|"-6"| n0["0"]
+  n0 -->|"-1"| na["a"]
+  nz["z"] -->|"5"| n0["0"]
+  nz -->|"5"| na["a"]
+```
+
+...then Bellman Ford will tell us:
+
+```
+Negative cycle found:
+- 0 -> a (-1)
+- a -> 0 (-6)
+```
+
+Because after going from `z` to `0` for cost `5`, going to `0` from `a` costs us `-1`, which leads us to total cost of `4`. And now going from `a` *back* to `0` would cost us `-6` weight for a total sum of `-2`, which is less than our previous path to `a`. We can do this as many times as we want and will end up with lower and lower weights.
+
+So there is no shortest path from `z` to `a`, because for any shortest-path `P` we find for it, we can find a shorter path `P'` by circling over `a` and `0`. And as a consequence, we have no shortest path from `z` to *any* other node, because we can loop over the `a` and `0` edges once more for any other claimed shortest path and get a lower distance path. Thus, we have a **negative cycle**.
+
+Bellman Ford is able to tell us all this about our graphs rather elegantly. The algorithm revolves around iterating over each edge in the edge list, where for each edge in the iteration, we run a `relax` function against it:
+
+```ocaml
+let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i : int)
+  ...
+    let iter =
+      List.fold_left relax_distance { paths ; is_updated } edges
+    in
+  ...
+```
+
+For each call to `relax_distance` against an edge `(from, to, weight)`, we just have to compare our current shortest distance to the `from` node and our current shortest to the `to` node. If our current shortest distance to `from` plus `weight` is less than our current shortest distance to the `to` node, or `dist(from) + weight < dist(to)`, then we update our shortest distance to `to` with that sum:
+
+```ocaml
+let relax_distance
+  (state : loop)
+  (edge : int edge)
+  : loop =
+  ...
+  let from_, to_, weight = edge in
+  match distance.(from_), distance.(to_) with
+    ...
+    | Some du, Some dv when du + weight < dv ->
+      distance.(to_) <- Some (du + weight);
+      ...
+```
+
+And for a graph with `NUM_NODES` nodes, we just run the above edges iteration a max of `NUM_NODES - 1` times:
+
+```ocaml
+let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i : int)
+  : [ `Continue of loop
+    | `Stop of min_paths
+    ] =
+  let { paths ; is_updated } = state in
+  if i = num_nodes - 1 then `Stop paths
+  else
+    let iter =
+      List.fold_left relax_distance { paths ; is_updated } edges
+    in
+    if iter.is_updated then `Continue iter
+    else `Stop paths
+```
+
+A common optimization is to early return when no distances were updated in some iteration. I implemented this using a `fold_until` style loop where we only ``Continue` the next relaxation iteration when the `is_updated` flag is set. This flag is set in an edges iteration when at least one shortest distance from the loop state is lowered. So when the relaxation condition described is hit, `is_updated` is set to true:
+
+```ocaml
+let relax_distance
+  ...
+  match distance.(from_), distance.(to_) with
+  ...
+  | Some du, Some dv when du + weight < dv ->
+    distance.(to_) <- Some (du + weight);
+    predecessor.(to_) <- Some { edge ; tail = from_ };
+    { paths = ~distance, ~predecessor ; is_updated = true }
+  ...
+```
+
+Along with when a distance was initially "discovered", which is the first case the `match` handles...
+
+```ocaml
+let relax_distance
+  ...
+  match distance.(from_), distance.(to_) with
+  | Some du, None ->
+    distance.(to_) <- Some (du + weight);
+    predecessor.(to_) <- Some { edge ; tail = from_ };
+    { paths = (~distance, ~predecessor) ; is_updated = true }
+  ...
+```
+
+... where we favor using `None` over an integer max to represent the initial distances, because this is OCaml.
+
+### Bellman Ford as a Difference Logic solver
+Bellman Ford is significant to us because it solves our difference formulas. Recall that a difference literal is in the form:
+
+```
+(x - y) <> c
+# Rewritten
+(x <> y + c)
+```
+
+where `x` and `y` are either an int variable or the constant `0`, `c` is some constant, and `<>` is an operator that is one of:
+
+```
+<, <=, >, >=, =
+```
+
+We can encode an edge *from* `y` *to* `x` with cost `c` like so:
+
+```mermaid
+graph LR
+  ny["y"] -->|"c"| nx["x"]
+```
+
+Referring back to our example:
+
+```
+(6 <= a) ^ (a < 0)
+(0 - a <= -6) ^ (a - 0 <= -1)
+```
+
+The corresponding difference graph is:
+
+```mermaid
+graph LR
+  n0["0"]
+  na["a"]
+
+  n0 -->|"-6"| na
+  na -->|"-1"| n0
+```
 
 ## An extra IDL formula case
 Difference logic doesn't know anything about boolean logic, including `iff` statements that have difference encodable formula terms in them. Consider the unit clause:

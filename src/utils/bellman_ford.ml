@@ -25,13 +25,12 @@ let relax_distance
 
   | _ -> state
 
-let relax_distances nodes edges
-  ({ paths ; is_updated } : loop)
-  (i : int)
+let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i : int)
   : [ `Continue of loop
     | `Stop of min_paths
     ] =
-  if i = nodes - 1 then `Stop paths
+  let { paths ; is_updated } = state in
+  if i = num_nodes - 1 then `Stop paths
   else
     let iter =
       List.fold_left relax_distance { paths ; is_updated } edges
@@ -39,12 +38,12 @@ let relax_distances nodes edges
     if iter.is_updated then `Continue iter
     else `Stop paths
 
-let find_min_paths ~(src : int) (nodes : int) (edges : int edge list) =
-  let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
-  let predecessor : pred option array = Array.init nodes (fun _ -> None) in
-  let vertices = Array.init nodes Fun.id in
+let find_min_paths ~(src : int) (num_nodes : int) (edges : int edge list) =
+  let distance = Array.init num_nodes (fun i -> if i = src then Some 0 else None) in
+  let predecessor : pred option array = Array.init num_nodes (fun _ -> None) in
+  let vertices = Array.init num_nodes Fun.id in
   Array_utils.fold_until
-    (relax_distances nodes edges)
+    (relax_distances num_nodes edges)
     (fun { paths ; _ } -> paths)
     { paths = ~distance, ~predecessor ; is_updated = false }
     vertices
