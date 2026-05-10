@@ -2,9 +2,9 @@ type 'a edge = 'a * 'a * int
 
 type pred = { edge : int edge ; tail : int }
 
-type min_paths = distance:int option array * predecessor:pred option array
+type paths = distance:int option array * predecessor:pred option array
 
-type loop = { paths : min_paths ; is_updated : bool }
+type loop = { paths : paths ; is_updated : bool }
 
 let relax_distance
   (state : loop)
@@ -27,7 +27,7 @@ let relax_distance
 
 let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i : int)
   : [ `Continue of loop
-    | `Stop of min_paths
+    | `Stop of paths
     ] =
   let { paths ; is_updated } = state in
   if i = num_nodes - 1 then `Stop paths
@@ -38,12 +38,12 @@ let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i 
     if iter.is_updated then `Continue iter
     else `Stop paths
 
-let find_min_paths ~(src : int) (num_nodes : int) (edges : int edge list) =
-  let distance = Array.init num_nodes (fun i -> if i = src then Some 0 else None) in
-  let predecessor : pred option array = Array.init num_nodes (fun _ -> None) in
-  let vertices = Array.init num_nodes Fun.id in
+let find_paths ~(src : int) (nodes : int) (edges : int edge list) =
+  let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
+  let predecessor : pred option array = Array.init nodes (fun _ -> None) in
+  let vertices = Array.init nodes Fun.id in
   Array_utils.fold_until
-    (relax_distances num_nodes edges)
+    (relax_distances nodes edges)
     (fun { paths ; _ } -> paths)
     { paths = ~distance, ~predecessor ; is_updated = false }
     vertices
@@ -57,7 +57,7 @@ let find_cycle_edge distance edges =
       | _ -> None)
     edges
 
-let bellman_ford_proc ~(src : int) (edges : int edge list) =
+let find_paths_or_cycle ~(src : int) (edges : int edge list) =
   let nodes =
     edges
     |> List.fold_left (fun acc (u, v, _) ->
@@ -67,7 +67,7 @@ let bellman_ford_proc ~(src : int) (edges : int edge list) =
     ) Iterables.IntSet.empty
     |> Iterables.IntSet.cardinal
   in
-  let ~distance, ~predecessor = find_min_paths ~src nodes edges in
+  let ~distance, ~predecessor = find_paths ~src nodes edges in
   let cycle_edge = find_cycle_edge distance edges in
   match cycle_edge with
   | None ->
@@ -153,7 +153,7 @@ let bellman_ford
 
   let src_i = get_index src in
 
-  match bellman_ford_proc ~src:src_i indexed_edges with
+  match find_paths_or_cycle ~src:src_i indexed_edges with
   | `No_negative_cycle distances ->
     let distances' =
       Iterables.IntMap.fold

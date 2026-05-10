@@ -6,7 +6,7 @@ open Utils
 module Node = struct
   type t =
     | Symbol_key of Uid.t
-    | Z0
+    | Zero
     | Root
 
   let compare a b =
@@ -15,9 +15,9 @@ module Node = struct
     | Root, _ -> -1
     | _, Root -> 1
 
-    | Z0, Z0 -> 0
-    | Z0, _ -> -1
-    | _, Z0 -> 1
+    | Zero, Zero -> 0
+    | Zero, _ -> -1
+    | _, Zero -> 1
 
     | Symbol_key x, Symbol_key y -> Uid.compare x y
 end
@@ -27,13 +27,13 @@ module NodeMap = NodeIterables.Map
 
 type node = Node.t =
   | Symbol_key of Uid.t
-  | Z0
+  | Zero
   | Root
 
 let nodes_equal n1 n2 =
   match n1, n2 with
   | Root, Root -> true
-  | Z0, Z0 -> true
+  | Zero, Zero -> true
   | Symbol_key u1, Symbol_key u2 -> Uid.equal u1 u2
   | _ -> false
 
@@ -64,12 +64,12 @@ let leq_to_diff (left : Integer.affine) (right : Integer.affine) : diff =
   | Var_plus_const (x, kx), Var_plus_const (y, ky) ->
     { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
   | Var_plus_const (x, kx), Const c ->
-    { x = Symbol_key x; y = Z0; c = c - kx }
+    { x = Symbol_key x; y = Zero; c = c - kx }
   | Const c, Var_plus_const (y, ky) ->
-    { x = Z0; y = Symbol_key y; c = ky - c }
+    { x = Zero; y = Symbol_key y; c = ky - c }
   | Const c1, Const c2 ->
-    if c1 <= c2 then { x = Z0; y = Z0; c = 0 }
-    else { x = Z0; y = Z0; c = -1 }
+    if c1 <= c2 then { x = Zero; y = Zero; c = 0 }
+    else { x = Zero; y = Zero; c = -1 }
 
 let find_diffs
   : type a. (a * a * bool) Binop.t ->
@@ -127,7 +127,7 @@ let read_constraint_keys ({ x ; y ; _ } : diff) : Uid.t list =
   match x, y with
   | Symbol_key x, Symbol_key y when Uid.equal x y -> [x]
   | Symbol_key x, Symbol_key y -> [x; y]
-  | Symbol_key key, Z0 | Z0, Symbol_key key -> [key]
+  | Symbol_key key, Zero | Zero, Symbol_key key -> [key]
   | _ -> []
 
 let edges_from_constraint
@@ -141,10 +141,10 @@ let edges_from_constraint
   | Symbol_key x, Symbol_key y ->
     (* x - y <= c === y -> x *)
     [mk (Symbol_key y) (Symbol_key x)]
-  | Symbol_key x, Z0 ->
-    [mk Z0 (Symbol_key x)]
-  | Z0, Symbol_key y ->
-    [mk (Symbol_key y) Z0]
+  | Symbol_key x, Zero ->
+    [mk Zero (Symbol_key x)]
+  | Zero, Symbol_key y ->
+    [mk (Symbol_key y) Zero]
   | _ -> []
 
 (** [to_graph formula] returns the graph representation of FORMULA.
@@ -169,7 +169,7 @@ let to_graph (formula : 'k Theory.literal list) : 'k constraint_graph =
   in
 
   let graph_nodes =
-    Z0 :: List.map (fun uid -> Symbol_key uid) vars
+    Zero :: List.map (fun uid -> Symbol_key uid) vars
   in
 
   let dummy_pairs =
@@ -274,7 +274,7 @@ let solve_diff_logic (literals : 'k Theory.literal list)
              NodeMap.empty
       in
 
-      let z0_dist = NodeMap.find Z0 distances in
+      let z0_dist = NodeMap.find Zero distances in
 
       let local_model =
         vars

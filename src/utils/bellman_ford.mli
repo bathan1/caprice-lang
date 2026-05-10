@@ -6,11 +6,11 @@ type 'a edge = 'a * 'a * int
 type pred
 
 (** Represents the distance tracking state *)
-type min_paths = distance:int option array * predecessor:pred option array
+type paths = distance:int option array * predecessor:pred option array
 
 (** The [is_updated] flag lets us early exit if the distances
     didn't change for any iteration of the relax proc *)
-type loop = { paths : min_paths ; is_updated : bool }
+type loop = { paths : paths ; is_updated : bool }
 
 (** [relax_distance loop i edge] computes the next [LOOP.path=(DISTANCE, PREDECESSOR)]
     state for FROM node at the I-th indexed [EDGE=(FROM, TO, WEIGHT)], lowering
@@ -28,12 +28,12 @@ val relax_distance : loop -> int edge -> loop
     with [`Stop] *)
 val relax_distances : int -> int edge list -> loop -> int ->
   [ `Continue of loop
-  | `Stop of min_paths
+  | `Stop of paths
   ]
 
-(** [find_min_paths ~src nodes edges] finds the minimum distance from SRC to
+(** [find_paths ~src nodes edges] finds the minimum distance from SRC to
     all other NODES in EDGES *)
-val find_min_paths : src:int -> int -> int edge list -> min_paths
+val find_paths : src:int -> int -> int edge list -> paths
 
 (** [find_cycle_edge distance edges] returns the first [(index, tail)]
     tuple encoding an edge from [EDGES.(INDEX)] with [from = TAIL]

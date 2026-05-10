@@ -35,6 +35,7 @@ let () =
     ]
   in
   print_bellman_ford ~label:"OK cycle" ~src:'z' edges;
+
   let edges =
     [ ('a', '0', -6)
     ; ('0', 'a', -1)
@@ -43,6 +44,7 @@ let () =
     ]
   in
   print_bellman_ford ~label:"Negative Cycle" ~src:'z' edges;
+
   let edges =
     [ ('a', '0', -6)
     ; ('0', 'a', -1)
@@ -50,3 +52,13 @@ let () =
   in
   print_bellman_ford ~label:"Negative Cycle src a" ~src:'a' edges;
   print_bellman_ford ~label:"Negative Cycle src 0" ~src:'0' edges;
+  
+  let edges =
+    [ ('a', '0', -6)
+    ; ('0', 'a', -1)
+    ; ('0', 'b', 5)
+    ]
+  in
+  print_bellman_ford ~label:"Augmented src a" ~src:'a' edges;
+  print_bellman_ford ~label:"Augmented src 0" ~src:'0' edges;
+  print_bellman_ford ~label:"Augmented src b" ~src:'b' edges;

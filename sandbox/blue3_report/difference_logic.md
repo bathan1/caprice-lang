@@ -1,5 +1,5 @@
-## Difference Logic
-Difference logic is about solving **difference** formulas. Formally this means it handles terms that take on the shape:
+# Difference Logic
+Integer Difference Logic, or IDL for short, is about solving **difference** formulas that operate on *integers*, and is a subtheory of the Linear Integer Arithmetic logic. There is a variant of IDL that works over the reals, but caprice only uses ints for its formulas, so we will describe the integer version here. Speaking more formally, a solver for IDL handles terms that take on the shape:
 
 ```
 (x - y) <> c
@@ -30,7 +30,7 @@ But Difference Logic allows us to encode how we "know" that this is UNSAT in a w
 
 We get the computer to tell us whether formulas like `(6 <= a) ^ (a < 0)` are satisfiable through a familiar shortest distance graph algorithm.
 
-### Bellman Ford
+## Bellman Ford
 The Bellman Ford algorithm finds the shortest distance paths from a particular node to all others in a directed graph.
 
 Suppose we have a graph with the following edges:
@@ -205,7 +205,7 @@ let relax_distance
 
 ... where we favor using `None` over an integer max to represent the initial distances, because this is OCaml.
 
-### Bellman Ford as a Difference Logic solver
+## Bellman Ford as a Difference Logic solver
 Bellman Ford is useful because it solves our difference formulas. Recall that difference formulas are made of literals in the form:
 
 ```
@@ -227,7 +227,9 @@ graph LR
   ny["y"] -->|"c"| nx["x"]
 ```
 
-Referring back to our example:
+### Bellman Ford UNSAT Case 
+
+Referring back to our simple UNSAT example formula:
 
 ```
 (6 <= a) ^ (a < 0)
@@ -301,8 +303,102 @@ Negative cycle found:
 - 0 -> a (-1)
 ```
 
-Changing the `src` to `z` doesn't affect the outcome either:
+Changing the `src` to `0` doesn't affect the outcome:
+
+```ocaml
+print_bellman_ford ~label:"Negative Cycle src 0" ~src:'0' edges;
+```
 
 ```bash
-print_bellman_ford ~label:"Negative Cycle src a" ~src:'a' edges;
+Example: [Negative Cycle src 0]
+Negative cycle found:
+- a -> 0 (-6)
+- 0 -> a (-1)
 ```
+
+In other words this is a negative cycle made up of the edges `('a', '0', -6)`, `('0', 'a', -1)`, which are all the edges from our input edge list. These edges map directly to our difference formula `0 - a <= -6` or `0 <= a - 6`, which is our rewritten version of the original formula:
+
+```
+(6 <= a) ^ (a < 0)
+```
+
+Returning to the original task of finding a full SMT solution for this formula, we would map the `Negative cycle` result to `UNSAT`, which is exactly what we wanted our solver to find. Speaking in terms of the SMT architecture, Blue3 *uses* the IDL solver to find a final solution, and the IDL solver *uses* Bellman Ford so Blue3 can find that the formula is UNSAT.
+
+```mermaid
+flowchart TD
+    subgraph Part_1["IDL flow part 1"]
+        B["Blue3"]
+        I["IDL"]
+        BF["Bellman Ford"]
+
+        B -->|"solve (6 <= a) ^ (a < 0)"| I
+        I -->|"run ('a', '0', -6), ('0', 'a', -1)"| BF
+    end
+```
+
+```mermaid
+flowchart TD
+    subgraph Part_2["IDL flow part 2"]
+        B["Blue3"]
+        I["IDL"]
+        BF["Bellman Ford"]
+
+        BF -->|"Negative cycle ('a', '0', -6), ('0', 'a', -1)"| I
+        I -->|"UNSAT"| B
+    end
+```
+
+Before discussing the SAT case, let's see what happens if we adjust our working graph slightly.
+
+Let's add one node `b` to our graph and one edge `('0', 'b', 5)`:
+
+```ocaml
+let edges =
+  [ ('a', '0', -6)
+  ; ('0', 'a', -1)
+  ; ('0', 'b', 5)
+  ]
+in
+print_bellman_ford ~label:"Augmented src a" ~src:'a' edges;
+print_bellman_ford ~label:"Augmented src 0" ~src:'0' edges;
+```
+
+```mermaid
+graph LR
+  n0["0"]
+  na["a"]
+  nb["b"]
+
+  na -->|"-6"| n0
+  n0 -->|"-1"| na
+  n0 -->|"5"| nb
+```
+
+Bellman Ford can still find the negative cycle in the graph if we search from either `a` and `0`:
+
+```bash
+Example: [Augmented src a]
+Negative cycle found:
+- 0 -> a (-1)
+- a -> 0 (-6)
+
+Example: [Augmented src 0]
+Negative cycle found:
+- 0 -> a (-1)
+- a -> 0 (-6)
+```
+
+But if we searched from `b` instead, we would not find the negative cycle:
+
+```ocaml
+print_bellman_ford ~label:"Augmented src b" ~src:'b' edges;
+```
+
+```bash
+Example: [Augmented src b]
+No negative cycle found.
+dist(a) = 4611686018427387903
+dist(0) = 4611686018427387903
+```
+
+Where the int max distances represent a distance of infinity which is the initial state of the min distance table. This is because `r` has no outgoing edges, so bellman ford terminates after the first iteration over the edges.
