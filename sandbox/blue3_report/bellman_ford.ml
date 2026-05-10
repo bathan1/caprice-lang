@@ -49,3 +49,4 @@ let () =
     ]
   in
   print_bellman_ford ~label:"Negative Cycle src a" ~src:'a' edges;
+  print_bellman_ford ~label:"Negative Cycle src 0" ~src:'0' edges;
