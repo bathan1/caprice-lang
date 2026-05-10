@@ -84,21 +84,33 @@ graph LR
 Now let's say we wanted to find the shortest distance paths from `z` to every other node. We can run bellman ford against this edge list...
 
 ```ocaml
-match bellman_ford ~src:'z' edges with
-| `No_negative_cycle distances ->
-  print_endline "No negative cycle found.";
-  List.iter (fun (node, distance) ->
-    Printf.printf "dist(%c) = %d\n" node distance)
-    distances
+let pp_result ~src result =
+  match result with
+  | `No_negative_cycle distances ->
+    print_endline "No negative cycle found.";
+    List.iter (fun (node, distance) ->
+      if node = src then ()
+      else
+        Printf.printf "dist(%c) = %d\n" node distance)
+      distances
 
-| `Negative_cycle cycle_edges ->
-  print_endline "Negative cycle found:";
-  List.iter (fun edge ->
-    Printf.printf "- %s\n" (pp_edge edge))
-    cycle_edges
+  | `Negative_cycle cycle_edges ->
+    print_endline "Negative cycle found:";
+    List.iter (fun edge ->
+      Printf.printf "- %s\n" (pp_edge edge))
+      cycle_edges
+
+let print_bellman_ford ~label ~src edges =
+  Printf.printf "Example: [%s]\n" label;
+  pp_result ~src (bellman_ford ~src edges);
+  print_newline ()
 ```
 
 and it will tell us:
+
+```ocaml
+print_bellman_ford ~label:"OK cycle" ~src:'z' edges;
+```
 
 ```bash
 No negative cycle found.
@@ -117,11 +129,13 @@ Now if we changed the edge from `a -> 0` to have cost `-6`...
 
 ```ocaml
 let edges =
-  [ ('a', '0', -6)
-  ; ('0', 'a', -1)
-  ; ('z', '0', 5)
-  ; ('z', 'a', 5)
-  ]
+[ ('a', '0', -6)
+; ('0', 'a', -1)
+; ('z', '0', 5)
+; ('z', 'a', 5)
+]
+in
+print_bellman_ford ~label:"Negative Cycle" ~src:'z' edges;
 ```
 
 ```mermaid
@@ -135,9 +149,10 @@ graph LR
 ...then Bellman Ford will tell us:
 
 ```
-Negative cycle found:
-- 0 -> a (-1)
-- a -> 0 (-6)
+Example: [OK cycle]
+No negative cycle found.
+dist(a) = 4
+dist(0) = 5
 ```
 
 Because after going from `z` to `0` for cost `5`, going to `0` from `a` costs us `-1`, which leads us to total cost of `4`. And now going from `a` *back* to `0` would cost us `-6` weight for a total sum of `-2`, which is less than our previous path to `a`. We can do this as many times as we want and will end up with lower and lower weights.
@@ -218,7 +233,7 @@ let relax_distance
 ... where we favor using `None` over an integer max to represent the initial distances, because this is OCaml.
 
 ### Bellman Ford as a Difference Logic solver
-Bellman Ford is significant to us because it solves our difference formulas. Recall that a difference literal is in the form:
+Bellman Ford is useful because it solves our difference formulas. Recall that a difference literal is in the form:
 
 ```
 (x - y) <> c
@@ -232,7 +247,7 @@ where `x` and `y` are either an int variable or the constant `0`, `c` is some co
 <, <=, >, >=, =
 ```
 
-We can encode an edge *from* `y` *to* `x` with cost `c` like so:
+We encode an edge *from* `y` *to* `x` with cost `c` like so:
 
 ```mermaid
 graph LR
@@ -246,15 +261,71 @@ Referring back to our example:
 (0 - a <= -6) ^ (a - 0 <= -1)
 ```
 
-The corresponding difference graph is:
+We can map `6 <= a` to the edge `('a', '0', -6)`...
 
 ```mermaid
 graph LR
   n0["0"]
   na["a"]
 
-  n0 -->|"-6"| na
-  na -->|"-1"| n0
+  na -->|"-6"| n0
+```
+
+...because rewritten in the difference form it is `0 - a <= -6` or `0 <= a - 6`.
+
+So our `x` is `0`, `y` is `a`, and `c` is `-6`:
+
+| Difference | Formula |
+| ---------- | ------- |
+|    `x`     |   `0`   |
+|    `y`     |   `a`   |
+|    `c`     |  `-6`   |
+|    `<>`    |  `<=`   |
+
+We can similarly map the `a < 0` clause to the edge `('0', 'a', -1)`:
+
+```mermaid
+graph LR
+  n0["0"]
+  na["a"]
+
+  n0 -->|"-1"| na
+```
+
+| Difference | Formula |
+| ---------- | ------- |
+|    `x`     |   `a`   |
+|    `y`     |   `0`   |
+|    `c`     |  `-1`   |
+|    `<>`    |  `<=`   |
+
+Both clauses use the `<=` operator which means we can map this to our graph. The full graph looks something like this:
+
+```mermaid
+graph LR
+  n0["0"]
+  na["a"]
+
+  na -->|"-6"| n0
+  n0 -->|"-1"| na
+```
+
+Then running Bellman Ford on this with source node `src` set to `a`, it tells us:
+
+```ocaml
+let edges =
+[ ('a', '0', -6)
+; ('0', 'a', -1)
+]
+in
+print_bellman_ford ~label:"Negative Cycle src a" ~src:'a' edges;
+```
+
+```bash
+Example: [Negative Cycle src a]
+Negative cycle found:
+- a -> 0 (-6)
+- 0 -> a (-1)
 ```
 
 ## An extra IDL formula case
