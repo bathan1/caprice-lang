@@ -1,3 +1,16 @@
+module type SET = sig
+  include Baby.W.Set.S
+
+  val random_elt_opt : t -> elt option
+  val list_map : (elt -> 'b) -> t -> 'b list
+end
+
+module type MAP = sig
+  include Baby.W.Map.S
+
+  val random_binding_opt : 'a t -> (key * 'a) option
+  val extend : 'a t -> with_:'a t -> 'a t
+end
 
 (* Make weight-balanced set and map modules. *)
 module Make_W (K : Baby.OrderedType) = struct
@@ -55,3 +68,4 @@ module Make_W (K : Baby.OrderedType) = struct
       aux (Enum.enum t)
   end
 end
+

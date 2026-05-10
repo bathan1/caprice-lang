@@ -1,3 +1,3 @@
-module IntSet = Set.Make (Int)
-
-module IntMap = Map.Make (Int)
+module IntIterables = Set_map.Make_W (Int)
+module IntSet = IntIterables.Set
+module IntMap = IntIterables.Map

@@ -60,11 +60,10 @@ We get the computer to tell us whether formulas like `(6 <= a) ^ (a < 0)` are sa
 ### Bellman Ford
 The Bellman Ford algorithm finds the shortest distance paths from a particular node to all others in a directed graph.
 
-Suppose we have a graph with 3 nodes and 2 edges:
+Suppose we have a graph with the following edges:
 
 ```ocaml
 let () =
-  let num_nodes = 3 in
   let edges = [|
     (1, 0, -6) ;
     (0, 1, -1) ;
