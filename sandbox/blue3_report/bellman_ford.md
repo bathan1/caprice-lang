@@ -127,10 +127,10 @@ let relax_distance (last_updated : bool) (edge : Node.t edge) (tbl : tbl) : bool
   let from_, to_, cost = edge in
   match Hashtbl.find_opt tbl from_, Hashtbl.find_opt tbl to_ with
   | Some (du, _), None ->
-    Hashtbl.replace tbl to_ (du + cost, edge);
+    Hashtbl.replace tbl to_ (du + cost, Some edge);
     ...
   | Some (du, _), Some (dv, _) when du + cost < dv ->
-    Hashtbl.replace tbl to_ (du + cost, edge);
+    Hashtbl.replace tbl to_ (du + cost, Some edge);
     ...
   ...
 ```
@@ -217,12 +217,12 @@ let create_tbl ~(src : Node.t) (edges : Node.t edge list) : t =
   let n = count edges in
   let tbl = Hashtbl.create n in
   let () =
-    Hashtbl.add tbl src (0, (src, src, 0))
+    Hashtbl.add tbl src (0, None)
   in
   tbl, n
 ```
 
-## Predecessors and the minimum-distance Path
+## Predecessors and the Minimum Distance Path
 
 You can think of `find_distances` as the "raw" Bellman Ford implementation that returns the final distance table regardless of whether a negative cycle exists. When there is no negative cycle, then the distance table is our effective return value of the `bellman_ford` implementation:
 
@@ -230,7 +230,7 @@ You can think of `find_distances` as the "raw" Bellman Ford implementation that 
 let bellman_ford
   (type node)
   (module Node : Baby.OrderedType with type t = node)
-  ~(src : node)
+ ~(src : node)
   (edges : node edge list)
   : [ `No_negative_cycle of (node * int) list
     | `Negative_cycle of node edge list
@@ -258,10 +258,10 @@ let relax_distance (last_updated : bool) (edge : Node.t edge) (tbl : tbl) : bool
   let from_, to_, cost = edge in
   match Hashtbl.find_opt tbl from_, Hashtbl.find_opt tbl to_ with
   | Some (du, _), None ->
-    Hashtbl.replace tbl to_ (du + cost, edge);
+    Hashtbl.replace tbl to_ (du + cost, Some edge);
     ...
   | Some (du, _), Some (dv, _) when du + cost < dv ->
-    Hashtbl.replace tbl to_ (du + cost, edge);
+    Hashtbl.replace tbl to_ (du + cost, Some edge);
     ...
   ...
 ```
@@ -274,6 +274,13 @@ We lookup the `predecessor` *edge* with `find_predecessor_edge`:
 let find_predecessor_edge (node : Node.t) (tbl : tbl)
   : Node.t edge option =
   snd @@ Hashtbl.find tbl node
+```
+
+And then the `predecessor` *node* with `find_predecessor`, where we just take out the `from_` tuple element:
+
+```ocaml
+let find_predecessor (node : Node.t) (tbl : tbl) : Node.t option =
+  Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge node tbl)
 ```
 
 > The typical implementation of Bellman Ford keeps two *separate* tables for both distance and the predecessor *node*. This seems like the simpler option, but I felt that in a functional language like OCaml, it would be more idiomatic to merge them into 1 table because they are dependent on the same state (not unlike the [grouping related state pattern](https://react.dev/learn/choosing-the-state-structure#group-related-state) from React).
@@ -312,8 +319,8 @@ Minimum distance to 'a' = 4
 The shortest distance path is `z -> 0 -> a`, which we can *derive* from the predecessor edge:
 
 ```ocaml
-let predecessor_edge_of_a = snd @@ Hashtbl.find dist 'a' in
-Printf.printf "Predecessor edge of 'a' is: %s\n" (pp_edge predecessor_edge_of_a);
+let predecessor_edge_of_a = BellmanFord.find_predecessor_edge 'a' dist in
+Printf.printf "Predecessor edge is: %s\n" (pp_edge_opt predecessor_edge_of_a);
 ```
 
 ```bash
@@ -323,14 +330,162 @@ Predecessor edge is: 0 -> a (-1)
 `predecessor_edge_of_a` says `0` is the last node in the shortest-distance path before we hit `a`. Then finding the predecessor edge of `0`...
 
 ```ocaml
-let predecessor_edge_of_0 = snd @@ Hashtbl.find dist '0' in
-Printf.printf "Predecessor edge is: %s\n" (pp_edge predecessor_edge_of_0);
+let predecessor_edge_of_0 = BellmanFord.find_predecessor_edge '0' dist in
+Printf.printf "Predecessor edge is: %s\n" (pp_edge_opt predecessor_edge_of_0);
 ```
 
 ```bash
 Predecessor edge is: z -> 0 (5)
 ```
 
-Leads us back to our source node `z`. So the idea with storing just 1 edge is that it is enough to trace back the minimum distance path.
+Leads us back to our source node `z`. So the main takeaway is that 1 edge is enough to trace back the minimum distance path.
 
-## 
+## Detecting Negative Cycles
+For the purposes of the Blue3 solver, we don't care about the shortest distance paths and only care about the distance values themselves when bellman ford is able to return a meaningful distance table. This is why we filter out the predecessor in the `No_negative_cycle` case:
+
+```ocaml
+match find_cycle_entry_opt edges tbl with
+| None -> `No_negative_cycle (
+  tbl
+  |> Hashtbl.to_seq
+  |> Seq.map (fun (node, (dist, _)) -> node, dist)
+  |> List.of_seq
+)
+```
+
+The predecessor becomes useful when `find_cycle_entry_opt` returns the other `Negative_cycle` case:
+
+```ocaml
+let bellman_ford
+  (type node)
+  (module Node : Baby.OrderedType with type t = node)
+ ~(src : node)
+  (edges : node edge list)
+  : [ `No_negative_cycle of (node * int) list
+    | `Negative_cycle of node edge list
+    ] =
+  let open Make (Node) in
+  let tbl, num_nodes = find_distances ~src edges in
+  match find_cycle_entry_opt edges tbl with
+  | None -> ...
+  | Some end_ -> (* we need predecessor to handle this case *)
+```
+
+`find_cycle_entry_opt` finds a node we can backtrack from to find a negative cycle when it exists. It finds the node by attempting to relax the distance state once more in a fashion very similar to `relax_distances`:
+
+```ocaml
+let find_cycle_entry_opt (edges : Node.t edge list) (tbl : tbl)
+  : Node.t option =
+  List.find_map
+    (fun ((_, to_, _) as edge) ->
+      if relax_distance false edge tbl then
+        Some to_
+      else None)
+    edges
+```
+
+The basic idea is that the minimum distance paths take at most `NUM_NODES - 1` iterations over the edges to find. If we can relax any distance after those `NUM_NODES - 1` iterations...
+
+```ocaml
+let relax_distance (last_updated : bool) (edge : Node.t edge) (tbl : tbl) : bool =
+  ...
+  match Hashtbl.find_opt tbl from_, Hashtbl.find_opt tbl to_ with
+  | Some (du, _), None -> ...
+  | Some (du, _), Some (dv, _) when du + cost < dv ->
+    Hashtbl.replace tbl to_ (du + cost, Some edge);
+    last_updated || true
+  | _ -> ...
+```
+
+...then there is a negative cycle, because the subsequent `NUM_NODES + 1, NUM_NODES + 2, ...` iterations of `relax_distance` will also return `true` infinitely.
+
+`find_cycle_entry_opt` returns the `to_` node of the first edge that was able to be relaxed.
+
+For example, for the graph with negative cycle `a -> b -> c -> a`:
+
+```ocaml
+let edges =
+[ ('s', 'a', 2)
+; ('a', 'b', 1)
+; ('b', 'c', -4)
+; ('c', 'a', 1)
+; ('c', 'd', 3)
+]
+```
+
+```mermaid
+graph LR
+  s["s"] -->|"2"| a["a"]
+  a["a"] -->|"1"| b["b"]
+  b["b"] -->|"-4"| c["c"]
+  c["c"] -->|"1"| a["a"]
+  c["c"] -->|"3"| d["d"]
+```
+
+`find_entry_opt` would return `b`:
+
+```ocaml
+let dist, _ = BellmanFord.find_distances ~src:'s' edges in
+let cycle_entry = BellmanFord.find_cycle_entry edges dist in
+Printf.printf "Cycle entry is: %c\n" cycle_entry;
+```
+
+```bash
+Cycle entry is: b
+```
+
+To illustrate why `b` was chosen specifically, let's consider the 2 distance states of the state from the initial edges pass, along with the state from any subsequent passes thereafter:
+
+1. On the initial pass, our distance to `a` gets updated to `2` from the direct path while our distance state for `b` is set to `3` (from `s -> a -> b`):
+
+    | variable | distance |
+    | -------- | -------- |
+    |    a     |     2    |
+    |    b     |     3    |
+    |    c     |    -1    |
+    
+    Once `c -> a` is visited, the distance to `a` gets updated to `0` because the edge `c -> a` meets the relaxation condition `dist(c) + weight < dist(a)`, or written out explicitly:
+
+    ```bash
+    (-1 + 1 = 0) < 2 # obviously...
+    ```
+
+    | variable | distance |
+    | -------- | -------- |
+    |    a     |     0    |
+    |    b     |     3    |
+    |    c     |    -1    |
+    
+2. On the second pass, when we visit `a -> b` again, we see that `dist(a) + cost < dist(b)` again, so we relax `b` again, this time to `0 + 1 = 1`:
+
+    | variable | distance |
+    | -------- | -------- |
+    |    a     |     0    |
+    |    b     |     1    |
+    |    c     |    -1    |
+
+    For the remainder of the `NUM_NODES - 1` iterations over the edges, we will always update `b` (along with `a` and `c`), which implies we will exhaust all `NUM_NODES - 1` iterations:
+
+    ```ocaml
+    let relax (edges : Node.t edge list) (tbl, num_nodes : t) (i : int)
+      : [ `Continue of t | `Stop of tbl ] =
+      if i = num_nodes - 1 then `Stop tbl
+      ...
+    ```
+    
+    Due to the presence of the negative cycle, `find_cycle_entry_opt` will end up being able to relax the distance for at least one node, so it will return the `Some to_` option:
+
+    ```ocaml
+    let find_cycle_entry_opt (edges : Node.t edge list) (tbl : tbl)
+      : Node.t option =
+      List.find_map
+        (fun ((_, to_, _) as edge) ->
+          if relax_distance false edge tbl then
+            Some to_
+          else None)
+        edges
+    ```
+    
+`List.find_map` returns on the first match it finds. This means that the first edge from the `edges` list that it can relax will be the one chosen. In our case, that edge is `a -> b`, so `find_cycle_entry_opt` returns `b`.
+
+Then with an entry point into the cycle, Bellman Ford implementation concludes as follows

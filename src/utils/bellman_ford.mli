@@ -19,6 +19,7 @@ val bellman_ford :
   | `Negative_cycle of 'node edge list
   ]
 
+(** [Make Node] instantiates the Bellman Ford operations module. *)
 module Make (Node : Baby.OrderedType) : sig
   type key = Node.t
   type value = int * Node.t edge option
@@ -38,11 +39,15 @@ module Make (Node : Baby.OrderedType) : sig
 
   val find_distances : src:Node.t -> Node.t edge list -> t
 
-  val find_cycle_entry_opt : Node.t edge list -> tbl -> Node.t option
+  val find_cycle_entry_opt : Node.t edge list -> t -> Node.t option
+  (** [find_cycle_entry_opt edges dist] finds the first node from EDGES that is part of the negative cycle *and* applies the relaxation to [to_], if it exists in tbl from DIST otherwise it throws *)
+
+  val find_cycle_entry : Node.t edge list -> t -> Node.t
+  (** [find_cycle_entry edges dist] finds the [to_] node of the first edge from EDGES that is part of the negative cycle *and* applies the relaxation to [to_], if it exists in tbl from DIST otherwise it throws *)
 
   val find_predecessor_edge : Node.t -> tbl -> Node.t edge option
 
   val find_predecessor : Node.t -> tbl -> Node.t option
 
-  val find_cycle : Node.t -> t -> Node.t
+  val collect_cycle : Node.t -> tbl -> Node.t edge list
 end

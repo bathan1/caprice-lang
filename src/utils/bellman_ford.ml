@@ -68,53 +68,60 @@ module Make (Node : Baby.OrderedType) = struct
   let find_predecessor (node : Node.t) (tbl : tbl) : Node.t option =
     Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge node tbl)
 
-  let find_cycle_entry_opt (edges : Node.t edge list) (tbl : tbl)
+  let find_cycle_entry_opt (edges : Node.t edge list) (tbl, num_nodes : t)
     : Node.t option =
-    List.find_map
-      (fun ((from_, to_, weight) as edge) ->
-        match Hashtbl.find_opt tbl from_, Hashtbl.find_opt tbl to_ with
-        | Some (du, _), Some (dv, _) when du + weight < dv ->
-          ignore (relax_distance true edge tbl);
+    let relaxed_predecessor = List.find_map
+      (fun ((_, to_, _) as edge) ->
+        if relax_distance false edge tbl then
           Some to_
-        | _ -> None)
+        else None)
       edges
-
-  let find_cycle (start : Node.t) (tbl, num_nodes : t) : Node.t =
-    let rec move_back node n =
-      if n = 0 then node
-      else
-        match find_predecessor node tbl with
-        | None -> node
-        | Some from_ -> move_back from_ (n - 1)
     in
-    move_back start num_nodes
+    match relaxed_predecessor with
+    | None -> None
+    | Some entry ->
+      let rec move_back node n =
+        if n = 0 then node
+        else if n < num_nodes && node = entry then node
+        else
+          match find_predecessor node tbl with
+          | None -> node
+          | Some from_ -> move_back from_ (n - 1)
+      in
+      Some (move_back entry num_nodes)
+      
+  let find_cycle_entry (edges : Node.t edge list) (t : t) : Node.t =
+    match find_cycle_entry_opt edges t with
+    | Some entry -> entry
+    | None -> failwith "No negative cycle found"
+
+  let collect_cycle (start : Node.t) (tbl : tbl) : Node.t edge list =
+    let rec loop curr acc =
+      match find_predecessor_edge curr tbl with
+      | None -> acc
+      | Some ((from_, _, _) as pred_edge) ->
+        let acc = pred_edge :: acc in
+        if Node.compare from_ start = 0 then acc
+        else loop from_ acc
+    in
+    loop start []
 end
 
 let bellman_ford
   (type node)
   (module Node : Baby.OrderedType with type t = node)
-  ~(src : node)
+ ~(src : node)
   (edges : node edge list)
   : [ `No_negative_cycle of (node * int) list
     | `Negative_cycle of node edge list
     ] =
   let open Make (Node) in
   let tbl, num_nodes = find_distances ~src edges in
-  match find_cycle_entry_opt edges tbl with
+  match find_cycle_entry_opt edges (tbl, num_nodes) with
   | None -> `No_negative_cycle (
     tbl
     |> Hashtbl.to_seq
     |> Seq.map (fun (node, (dist, _)) -> node, dist)
     |> List.of_seq
   )
-  | Some end_ ->
-    let start = find_cycle end_ (tbl, num_nodes) in
-    let rec collect curr n acc =
-      if n = 0 then acc
-      else
-        match find_predecessor_edge curr tbl with
-        | None -> acc
-        | Some ((from_, _, _) as pred_edge) ->
-            collect from_ (n - 1) (pred_edge :: acc)
-    in
-    `Negative_cycle (collect start num_nodes [])
+  | Some entry -> `Negative_cycle (collect_cycle entry tbl)
