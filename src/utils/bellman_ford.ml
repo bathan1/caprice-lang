@@ -46,7 +46,7 @@ module Make (Node : Baby.OrderedType) = struct
   let relax_edges (edges : Node.t edge list) (dist : tbl) (i : int)
     : [ `Continue of tbl | `Stop of tbl ] =
     let num_nodes = Hashtbl.length dist in
-    if i = num_nodes - 1 then `Stop dist
+    if i >= num_nodes - 1 then `Stop dist
     else
       let is_dist_updated = List.fold_left (relax_edge dist) false edges
       in

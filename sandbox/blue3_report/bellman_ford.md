@@ -104,7 +104,7 @@ For a graph with `NUM_NODES` nodes, we run the above edges iteration a max of `N
 let relax_edges (edges : Node.t edge list) (dist : tbl) (i : int)
   : [ `Continue of tbl | `Stop of tbl ] =
   let num_nodes = Hashtbl.length dist in
-  if i = num_nodes - 1 then `Stop dist
+  if i >= num_nodes - 1 then `Stop dist
   ...
 ```
 
