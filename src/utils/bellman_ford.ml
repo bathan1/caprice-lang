@@ -61,32 +61,33 @@ module Make (Node : Baby.OrderedType) = struct
     in
     final_tbl, num_nodes
 
-  let find_cycle_edge_opt (edges : Node.t edge list) (tbl : tbl)
+  let find_predecessor_edge (node : Node.t) (tbl : tbl)
     : Node.t edge option =
+    snd @@ Hashtbl.find tbl node
+
+  let find_predecessor (node : Node.t) (tbl : tbl) : Node.t option =
+    Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge node tbl)
+
+  let find_cycle_entry_opt (edges : Node.t edge list) (tbl : tbl)
+    : Node.t option =
     List.find_map
       (fun ((from_, to_, weight) as edge) ->
         match Hashtbl.find_opt tbl from_, Hashtbl.find_opt tbl to_ with
         | Some (du, _), Some (dv, _) when du + weight < dv ->
-          Some edge
+          ignore (relax_distance true edge tbl);
+          Some to_
         | _ -> None)
       edges
 
-  let find_predecessor_edge_opt (node : Node.t) (tbl : tbl)
-    : Node.t edge option =
-    snd @@ Hashtbl.find tbl node
-
-  let find_predecessor_opt (node : Node.t) (tbl : tbl) : Node.t option =
-    Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge_opt node tbl)
-
-  let find_cycle_start (first_to : Node.t) (tbl, num_nodes : t) : Node.t =
+  let find_cycle (start : Node.t) (tbl, num_nodes : t) : Node.t =
     let rec move_back node n =
       if n = 0 then node
       else
-        match find_predecessor_opt node tbl with
+        match find_predecessor node tbl with
         | None -> node
         | Some from_ -> move_back from_ (n - 1)
     in
-    move_back first_to num_nodes
+    move_back start num_nodes
 end
 
 let bellman_ford
@@ -99,26 +100,19 @@ let bellman_ford
     ] =
   let open Make (Node) in
   let tbl, num_nodes = find_distances ~src edges in
-  let cycle_edge = find_cycle_edge_opt edges tbl in
-  match cycle_edge with
+  match find_cycle_entry_opt edges tbl with
   | None -> `No_negative_cycle (
     tbl
     |> Hashtbl.to_seq
     |> Seq.map (fun (node, (dist, _)) -> node, dist)
     |> List.of_seq
   )
-  | Some edge ->
-    let from_, to_, weight = edge in
-    let () =
-      match Hashtbl.find_opt tbl from_ with
-      | None -> ()
-      | Some (du, _) -> Hashtbl.replace tbl to_ (du + weight, Some edge)
-    in
-    let start = find_cycle_start to_ (tbl, num_nodes) in
+  | Some end_ ->
+    let start = find_cycle end_ (tbl, num_nodes) in
     let rec collect curr n acc =
       if n = 0 then acc
       else
-        match find_predecessor_edge_opt curr tbl with
+        match find_predecessor_edge curr tbl with
         | None -> acc
         | Some ((from_, _, _) as pred_edge) ->
             collect from_ (n - 1) (pred_edge :: acc)

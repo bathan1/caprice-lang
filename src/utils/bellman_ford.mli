@@ -38,9 +38,11 @@ module Make (Node : Baby.OrderedType) : sig
 
   val find_distances : src:Node.t -> Node.t edge list -> t
 
-  val find_cycle_edge_opt : Node.t edge list -> tbl -> Node.t edge option
+  val find_cycle_entry_opt : Node.t edge list -> tbl -> Node.t option
 
-  val find_predecessor_opt : Node.t -> tbl -> Node.t option
+  val find_predecessor_edge : Node.t -> tbl -> Node.t edge option
 
-  val find_cycle_start : Node.t -> t -> Node.t
+  val find_predecessor : Node.t -> tbl -> Node.t option
+
+  val find_cycle : Node.t -> t -> Node.t
 end

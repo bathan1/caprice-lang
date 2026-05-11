@@ -268,6 +268,14 @@ let relax_distance (last_updated : bool) (edge : Node.t edge) (tbl : tbl) : bool
 
 You can think of the `(distance, predecessor)` as *separate* derivations of the *same* state. `distance` *tells* us the **shortest distance**, while `predecessor` *allows* us to derive the corresponding shortest-distance path from `src`.
 
+We lookup the `predecessor` *edge* with `find_predecessor_edge`:
+
+```ocaml
+let find_predecessor_edge (node : Node.t) (tbl : tbl)
+  : Node.t edge option =
+  snd @@ Hashtbl.find tbl node
+```
+
 > The typical implementation of Bellman Ford keeps two *separate* tables for both distance and the predecessor *node*. This seems like the simpler option, but I felt that in a functional language like OCaml, it would be more idiomatic to merge them into 1 table because they are dependent on the same state (not unlike the [grouping related state pattern](https://react.dev/learn/choosing-the-state-structure#group-related-state) from React).
 
 Revisiting our `OK cycle` example of a non-negative cyclic graph where we set `src` to `z`:
@@ -323,4 +331,6 @@ Printf.printf "Predecessor edge is: %s\n" (pp_edge predecessor_edge_of_0);
 Predecessor edge is: z -> 0 (5)
 ```
 
-Leads us back to our source node `z`. So the idea with storing just 1 edge is that it is enough to trace back a path.
+Leads us back to our source node `z`. So the idea with storing just 1 edge is that it is enough to trace back the minimum distance path.
+
+## 
