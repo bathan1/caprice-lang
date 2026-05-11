@@ -53,7 +53,7 @@ module Make (Node : Baby.OrderedType) = struct
       if is_dist_updated then `Continue dist
       else `Stop dist
 
-  let find_distances ~(src : Node.t) (edges : Node.t edge list) =
+  let find_shortest_paths ~(src : Node.t) (edges : Node.t edge list) : tbl =
     let dist = create_tbl ~src edges in
     let num_nodes = Hashtbl.length dist in
     let vertices = List.init num_nodes Fun.id in
@@ -64,6 +64,11 @@ module Make (Node : Baby.OrderedType) = struct
       vertices
     in
     final_tbl
+
+  let find_distance (node : Node.t) (dist : tbl) : int =
+    match fst @@ Hashtbl.find dist node with
+    | None -> Int.max_int
+    | Some v -> v
 
   let find_predecessor_edge (node : Node.t) (dist : tbl)
     : Node.t edge option =
@@ -131,16 +136,12 @@ let bellman_ford
     | `Negative_cycle of node edge list
     ] =
   let open Make (Node) in
-  let tbl = find_distances ~src edges in
+  let tbl = find_shortest_paths ~src edges in
   match find_cycle_entry_opt edges tbl with
   | None -> `No_negative_cycle (
     tbl
-    |> Hashtbl.to_seq
-    |> Seq.map (fun (node, entry) ->
-      match fst entry with
-      | None -> node, Int.max_int
-      | Some dist -> node, dist
-    )
+    |> Hashtbl.to_seq_keys
+    |> Seq.map (fun node -> node, find_distance node tbl)
     |> List.of_seq
   )
   | Some entry -> `Negative_cycle (collect_cycle entry tbl)

@@ -2,25 +2,6 @@ open Utils
 
 let bellman_ford = Bellman_ford.bellman_ford (module Char)
 
-let _print_dist_tbl label tbl =
-  Printf.printf "\n%s\n" label;
-  tbl
-  |> Hashtbl.to_seq
-  |> List.of_seq
-  |> List.sort (fun (n1, _) (n2, _) -> Char.compare n1 n2)
-  |> List.iter (fun (node, (dist, pred_edge_opt)) ->
-      match pred_edge_opt with
-      | None ->
-          Printf.printf "%c: dist=%d, pred=None\n" node dist
-      | Some (from_, to_, weight) ->
-          Printf.printf
-            "%c: dist=%d, pred=(%c -> %c, %d)\n"
-            node
-            dist
-            from_
-            to_
-            weight)
-
 let pp_edge (from_, to_, weight) =
   Printf.sprintf "%c -> %c (%d)" from_ to_ weight
   
@@ -52,7 +33,8 @@ let print_bellman_ford ~label ~src edges =
   pp_result ~src (bellman_ford ~src edges);
   print_newline ()
 
-let () =
+
+let intro_graph () =
   let edges = 
     [ ('a', '0', 3)
     ; ('0', 'a', -1)
@@ -60,8 +42,9 @@ let () =
     ; ('z', 'a', 5)
     ]
   in
-  print_bellman_ford ~label:"OK cycle" ~src:'z' edges;
+  print_bellman_ford ~label:"OK cycle" ~src:'z' edges
 
+let intro_graph_neg_cycle () =
   let edges =
     [ ('a', '0', -6)
     ; ('0', 'a', -1)
@@ -69,7 +52,11 @@ let () =
     ; ('z', 'a', 5)
     ]
   in
-  print_bellman_ford ~label:"Negative Cycle" ~src:'z' edges;
+  print_bellman_ford ~label:"Negative Cycle" ~src:'z' edges
+
+let () =
+  intro_graph ();
+  intro_graph_neg_cycle ();
 
   let edges =
     [ ('a', '0', -6)
@@ -97,8 +84,8 @@ let () =
     ]
   in
   let module BellmanFord = Bellman_ford.Make (Char) in
-  let dist, _num_nodes = BellmanFord.find_distances ~src:'z' edges in
-  Printf.printf "Minimum distance to 'a' = %d\n" (fst @@ Hashtbl.find dist 'a');
+  let dist = BellmanFord.find_shortest_paths ~src:'z' edges in
+  Printf.printf "Minimum distance to 'a' = %d\n" (BellmanFord.find_distance 'a' dist);
   let predecessor_edge_of_a = BellmanFord.find_predecessor_edge 'a' dist in
   Printf.printf "Predecessor edge is: %s\n" (pp_edge_opt predecessor_edge_of_a);
   let predecessor_edge_of_0 = BellmanFord.find_predecessor_edge '0' dist in
@@ -111,7 +98,7 @@ let () =
   ; ('c', 'a', 1)
   ; ('c', 'd', 3)
   ] in
-  let dist = BellmanFord.find_distances ~src:'s' edges in
+  let dist = BellmanFord.find_shortest_paths ~src:'s' edges in
   let cycle_entry = BellmanFord.find_cycle_entry edges dist in
   Printf.printf "Cycle entry is: %c\n" cycle_entry;
   
@@ -123,7 +110,7 @@ let () =
     ; ('c', 'a', 1)
     ]
   in
-  let cycle_entry = BellmanFord.find_relaxed_node edges (fst dist) in
+  let cycle_entry = BellmanFord.find_relaxed_node edges dist in
   Printf.printf "First relaxed node found: %c\n" cycle_entry;
   let cycle_from_entry = BellmanFord.collect_cycle cycle_entry dist in
   List.iter (fun edge ->
@@ -138,7 +125,7 @@ let () =
     ; ('c', 'd', 3)
     ]
   in
-  let dist = BellmanFord.find_distances ~src:'s' edges in
+  let dist = BellmanFord.find_shortest_paths ~src:'z' edges in
   let cycle_entry = BellmanFord.find_cycle_entry edges dist in
   let cycle_from_entry = BellmanFord.collect_cycle cycle_entry dist in
   Printf.printf "Negative cycle found:\n";

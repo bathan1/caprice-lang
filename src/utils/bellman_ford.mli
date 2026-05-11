@@ -62,8 +62,13 @@ module Make (Node : Baby.OrderedType) : sig
   val relax_edges : Node.t edge list -> tbl -> int ->
     [ `Continue of tbl | `Stop of tbl ]
 
-  (** [find_distances ~src] *)
-  val find_distances : src:Node.t -> Node.t edge list -> tbl
+  (** [find_shortest_paths ~src edges] returns the minimum distance table
+      of SRC to all other nodes in EDGES *)
+  val find_shortest_paths : src:Node.t -> Node.t edge list -> tbl
+
+  (** [find_distance node dist] returns the current shortest distance of NODE in DIST
+      if it exists or [Int.int_max] otherwise *)
+  val find_distance : Node.t -> tbl -> int
 
   (** [find_relaxed_node_opt edges dist] attempts to relax the distance in DIST for each edge 
       in EDGES and returns the `to_` node of the first edge that it relaxed, if it exists *)
