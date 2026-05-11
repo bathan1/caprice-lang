@@ -1,33 +1,33 @@
-type 'a edge = 'a * 'a * int
+type 'node edge = 'node * 'node * int
 
-type pred = { edge : int edge ; tail : int }
+type 'node pred = { edge : 'node edge ; tail : 'node }
 
-type paths = distance:int option array * predecessor:pred option array
+type 'node paths = distance:('node, int) Hashtbl.t * predecessor:('node, 'node pred) Hashtbl.t
 
-type loop = { paths : paths ; is_updated : bool }
+type 'node loop = { paths : 'node paths ; is_updated : bool }
 
 let relax_distance
-  (state : loop)
-  (edge : int edge)
-  : loop =
+  (state : 'node loop)
+  (edge : 'node edge)
+  : 'node loop =
   let { paths = ~distance, ~predecessor ; _ } = state in
   let from_, to_, weight = edge in
-  match distance.(from_), distance.(to_) with
+  match Hashtbl.find_opt distance from_, Hashtbl.find_opt distance to_ with
   | Some du, None ->
-    distance.(to_) <- Some (du + weight);
-    predecessor.(to_) <- Some { edge ; tail = from_ };
+    Hashtbl.replace distance to_ (du + weight);
+    Hashtbl.replace predecessor to_ { edge ; tail = from_ };
     { paths = (~distance, ~predecessor) ; is_updated = true }
 
   | Some du, Some dv when du + weight < dv ->
-    distance.(to_) <- Some (du + weight);
-    predecessor.(to_) <- Some { edge ; tail = from_ };
+    Hashtbl.replace distance to_ (du + weight);
+    Hashtbl.replace predecessor to_ { edge ; tail = from_ };
     { paths = ~distance, ~predecessor ; is_updated = true }
 
   | _ -> state
 
-let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i : int)
-  : [ `Continue of loop
-    | `Stop of paths
+let relax_distances (num_nodes : int) (edges : 'node edge list) (state : 'node loop) (i : int)
+  : [ `Continue of 'node loop
+    | `Stop of 'node paths
     ] =
   let { paths ; is_updated } = state in
   if i = num_nodes - 1 then `Stop paths
@@ -38,9 +38,14 @@ let relax_distances (num_nodes : int) (edges : int edge list) (state : loop) (i 
     if iter.is_updated then `Continue iter
     else `Stop paths
 
-let find_paths ~(src : int) (nodes : int) (edges : int edge list) =
-  let distance = Array.init nodes (fun i -> if i = src then Some 0 else None) in
-  let predecessor : pred option array = Array.init nodes (fun _ -> None) in
+let init_distance (src : 'node) (num_nodes : int) =
+  let distance = Hashtbl.create num_nodes in
+  Hashtbl.add distance src 0;
+  distance
+
+let find_paths ~(src : 'node) (nodes : int) (edges : 'node edge list) =
+  let distance = init_distance src nodes in
+  let predecessor = Hashtbl.create nodes in
   let vertices = Array.init nodes Fun.id in
   Array_utils.fold_until
     (relax_distances nodes edges)
@@ -48,53 +53,38 @@ let find_paths ~(src : int) (nodes : int) (edges : int edge list) =
     { paths = ~distance, ~predecessor ; is_updated = false }
     vertices
 
-let find_cycle_edge distance edges =
+let find_cycle_edge (distance : ('node, int) Hashtbl.t) (edges : 'node edge list) =
   List.find_map
     (fun ((from_, to_, weight) as edge) ->
-      match distance.(from_), distance.(to_) with
+      match Hashtbl.find_opt distance from_, Hashtbl.find_opt distance to_ with
       | Some du, Some dv when du + weight < dv ->
         Some ({ edge ; tail = from_ }, to_)
       | _ -> None)
     edges
 
-let find_paths_or_cycle ~(src : int) (edges : int edge list) =
-  let nodes =
-    edges
-    |> List.fold_left (fun acc (u, v, _) ->
-      acc
-      |> Iterables.IntSet.add u
-      |> Iterables.IntSet.add v
-    ) Iterables.IntSet.empty
-    |> Iterables.IntSet.cardinal
-  in
-  let ~distance, ~predecessor = find_paths ~src nodes edges in
+let find_paths_or_cycle ~(src : 'node) (num_nodes : int) (edges : 'node edge list) =
+  let ~distance, ~predecessor = find_paths ~src num_nodes edges in
   let cycle_edge = find_cycle_edge distance edges in
   match cycle_edge with
-  | None ->
-    let distance_map =
-      distance
-      |> Array.mapi (fun i dist -> i, Option.value ~default:Int.max_int dist)
-      |> Iterables.IntMap.of_array
-    in
-    `No_negative_cycle distance_map
+  | None -> `No_negative_cycle distance
   | Some ({ edge ; tail = cycle_tail }, cycle_start) ->
   (* This edge proves a negative cycle, so include it in the predecessor graph. *)
-  predecessor.(cycle_start) <- Some { edge ; tail = cycle_tail };
+    Hashtbl.replace predecessor cycle_start { edge ; tail = cycle_tail } ;
 
-  let rec move_back vertex n =
-    if n = 0 then vertex
-    else
-      match predecessor.(vertex) with
-      | None -> vertex
-      | Some { tail ; _ } -> move_back tail (n - 1)
-  in
+    let rec move_back vertex n =
+      if n = 0 then vertex
+      else
+        match Hashtbl.find_opt predecessor vertex with
+        | None -> vertex
+        | Some { tail ; _ } -> move_back tail (n - 1)
+    in
 
-  let start = move_back cycle_tail nodes in
+  let start = move_back cycle_tail num_nodes in
 
   let rec collect curr seen acc =
     if List.mem curr seen then acc
     else
-      match predecessor.(curr) with
+      match Hashtbl.find_opt predecessor curr with
       | None -> acc
       | Some { edge ; tail } ->
         collect tail (curr :: seen) (edge :: acc)
@@ -111,7 +101,6 @@ let bellman_ford
     | `Negative_cycle of node edge list
     ] =
   let module NodeIterables = Set_map.Make_W (Node) in
-  let module NodeMap = NodeIterables.Map in
   let module NodeSet = NodeIterables.Set in
 
   let nodes =
@@ -122,55 +111,11 @@ let bellman_ford
            |> NodeSet.add from_
            |> NodeSet.add to_)
          (NodeSet.singleton src)
+    |> NodeSet.cardinal
   in
 
-  let node_to_index =
-    nodes
-    |> NodeSet.to_seq
-    |> Seq.fold_left
-         (fun (i, map) node ->
-           i + 1, NodeMap.add node i map)
-         (0, NodeMap.empty)
-    |> snd
-  in
-
-  let index_to_node =
-    NodeMap.fold
-      (fun node index acc -> Iterables.IntMap.add index node acc)
-      node_to_index
-      Iterables.IntMap.empty
-  in
-
-  let get_index node =
-    NodeMap.find node node_to_index
-  in
-
-  let indexed_edges =
-    edges
-    |> List.map (fun (from_, to_, weight) ->
-      get_index from_, get_index to_, weight)
-  in
-
-  let src_i = get_index src in
-
-  match find_paths_or_cycle ~src:src_i indexed_edges with
+  match find_paths_or_cycle ~src nodes edges with
   | `No_negative_cycle distances ->
-    let distances' =
-      Iterables.IntMap.fold
-        (fun index distance acc ->
-          let node = Iterables.IntMap.find index index_to_node in
-          (node, distance) :: acc)
-        distances
-        []
-    in
-    `No_negative_cycle distances'
-  | `Negative_cycle cycle_edges ->
-    let cycle_edges' =
-      cycle_edges
-      |> List.map (fun (from_i, to_i, weight) ->
-        let from_ = Iterables.IntMap.find from_i index_to_node in
-        let to_ = Iterables.IntMap.find to_i index_to_node in
-        from_, to_, weight)
-    in
-    `Negative_cycle cycle_edges'
+    `No_negative_cycle (List.of_seq @@ Hashtbl.to_seq distances)
+  | `Negative_cycle cycle_edges -> `Negative_cycle cycle_edges
 
