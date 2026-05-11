@@ -67,16 +67,22 @@ module Make (Node : Baby.OrderedType) = struct
 
   let find_predecessor (node : Node.t) (tbl : tbl) : Node.t option =
     Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge node tbl)
+    
+  let find_relaxed_node_opt (edges : Node.t edge list) (tbl : tbl) : Node.t option =
+    List.find_map (fun ((_, to_, _) as edge) ->
+      if relax_distance false edge tbl then
+        Some to_
+      else None)
+    edges
+
+  let find_relaxed_node (edges : Node.t edge list) (tbl : tbl) : Node.t =
+    match find_relaxed_node_opt edges tbl with
+    | Some node -> node
+    | None -> failwith "No relaxed node found"
 
   let find_cycle_entry_opt (edges : Node.t edge list) (tbl, num_nodes : t)
     : Node.t option =
-    let relaxed_predecessor = List.find_map
-      (fun ((_, to_, _) as edge) ->
-        if relax_distance false edge tbl then
-          Some to_
-        else None)
-      edges
-    in
+    let relaxed_predecessor = find_relaxed_node_opt edges tbl in
     match relaxed_predecessor with
     | None -> None
     | Some entry ->
@@ -95,16 +101,19 @@ module Make (Node : Baby.OrderedType) = struct
     | Some entry -> entry
     | None -> failwith "No negative cycle found"
 
-  let collect_cycle (start : Node.t) (tbl : tbl) : Node.t edge list =
-    let rec loop curr acc =
-      match find_predecessor_edge curr tbl with
-      | None -> acc
-      | Some ((from_, _, _) as pred_edge) ->
-        let acc = pred_edge :: acc in
-        if Node.compare from_ start = 0 then acc
-        else loop from_ acc
+  let collect_cycle (start : Node.t) (tbl, num_nodes : t) : Node.t edge list =
+    let rec loop curr n acc =
+      if n = 0 then
+        acc
+      else
+        match find_predecessor_edge curr tbl with
+        | None -> acc
+        | Some ((from_, _, _) as pred_edge) ->
+          let acc = pred_edge :: acc in
+          if Node.compare from_ start = 0 then acc
+          else loop from_ (n - 1) acc
     in
-    loop start []
+    loop start num_nodes []
 end
 
 let bellman_ford
@@ -124,4 +133,4 @@ let bellman_ford
     |> Seq.map (fun (node, (dist, _)) -> node, dist)
     |> List.of_seq
   )
-  | Some entry -> `Negative_cycle (collect_cycle entry tbl)
+  | Some entry -> `Negative_cycle (collect_cycle entry (tbl, num_nodes))

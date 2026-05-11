@@ -111,20 +111,37 @@ let () =
   ; ('c', 'a', 1)
   ; ('c', 'd', 3)
   ] in
-  let dist, _ = BellmanFord.find_distances ~src:'s' edges in
+  let dist = BellmanFord.find_distances ~src:'s' edges in
   let cycle_entry = BellmanFord.find_cycle_entry edges dist in
   Printf.printf "Cycle entry is: %c\n" cycle_entry;
   
   let edges =
-  [ ('c', 'd', 0)   (* outgoing edge from cycle to non-cycle node *)
-  ; ('s', 'a', 0)
-  ; ('a', 'b', 1)
-  ; ('b', 'c', -4)
-  ; ('c', 'a', 1)
-  ] in
-  let cycle_entry = BellmanFord.find_cycle_entry edges dist in
-  Printf.printf "Cycle entry is: %c\n" cycle_entry;
-  let cycle_edges = BellmanFord.collect_cycle cycle_entry dist in
+    [ ('c', 'd', 0)   (* outgoing edge from cycle to non-cycle node *)
+    ; ('s', 'a', 0)
+    ; ('a', 'b', 1)
+    ; ('b', 'c', -4)
+    ; ('c', 'a', 1)
+    ]
+  in
+  let cycle_entry = BellmanFord.find_relaxed_node edges (fst dist) in
+  Printf.printf "First relaxed node found: %c\n" cycle_entry;
+  let cycle_from_entry = BellmanFord.collect_cycle cycle_entry dist in
   List.iter (fun edge ->
     Printf.printf "- %s\n" (pp_edge edge))
-    cycle_edges
+    cycle_from_entry;
+
+  let edges =
+    [ ('s', 'a', 2)
+    ; ('a', 'b', 1)
+    ; ('b', 'c', -4)
+    ; ('c', 'a', 1)
+    ; ('c', 'd', 3)
+    ]
+  in
+  let dist = BellmanFord.find_distances ~src:'s' edges in
+  let cycle_entry = BellmanFord.find_cycle_entry edges dist in
+  let cycle_from_entry = BellmanFord.collect_cycle cycle_entry dist in
+  Printf.printf "Negative cycle found:\n";
+  List.iter (fun edge ->
+    Printf.printf "- %s\n" (pp_edge edge))
+    cycle_from_entry;

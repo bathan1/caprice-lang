@@ -425,7 +425,7 @@ graph LR
 `find_entry_opt` would return `b`:
 
 ```ocaml
-let dist, _ = BellmanFord.find_distances ~src:'s' edges in
+let dist = BellmanFord.find_distances ~src:'s' edges in
 let cycle_entry = BellmanFord.find_cycle_entry edges dist in
 Printf.printf "Cycle entry is: %c\n" cycle_entry;
 ```
@@ -473,19 +473,142 @@ To illustrate why `b` was chosen specifically, let's consider the 2 distance sta
       ...
     ```
     
-    Due to the presence of the negative cycle, `find_cycle_entry_opt` will end up being able to relax the distance for at least one node, so it will return the `Some to_` option:
+Due to the presence of the negative cycle, `find_cycle_entry_opt` will end up being able to relax the distance for at least one node after the `NUM_NODES - 1` iterations are done, so it will find `Some` predecessor node:
 
-    ```ocaml
-    let find_cycle_entry_opt (edges : Node.t edge list) (tbl : tbl)
-      : Node.t option =
-      List.find_map
-        (fun ((_, to_, _) as edge) ->
-          if relax_distance false edge tbl then
-            Some to_
-          else None)
-        edges
-    ```
+```ocaml
+let find_relaxed_node_opt (edges : Node.t edge list) (tbl : tbl) : Node.t option =
+  List.find_map (fun ((_, to_, _) as edge) ->
+    if relax_distance false edge tbl then
+      Some to_
+    else None)
+  edges
+
+let find_cycle_entry_opt (edges : Node.t edge list) (tbl, num_nodes : t)
+  : Node.t option =
+  let relaxed_predecessor = find_relaxed_node_opt edges tbl in
+  ...
+```
     
-`List.find_map` returns on the first match it finds. This means that the first edge from the `edges` list that it can relax will be the one chosen. In our case, that edge is `a -> b`, so `find_cycle_entry_opt` returns `b`.
+`List.find_map` returns on the first match it finds. This means that the first edge from the `edges` list that it can relax will be the one chosen. In our case, that edge is `a -> b`, so `relaxed_predecessor` is `Some b`.
 
-Then with an entry point into the cycle, Bellman Ford implementation concludes as follows
+While in this example, `b` is also in the negative cycle, it is possible for us to relax a node that is not in the cycle.
+
+Consider the cyclic graph, where we have the negative cycle of `a -> b -> c -> a`:
+
+```mermaid
+graph LR
+  c["c"] -->|"0"| d["d"]
+  s["s"] -->|"0"| a["a"]
+  a["a"] -->|"1"| b["b"]
+  b["b"] -->|"-4"| c["c"]
+  c["c"] -->|"1"| a["a"]
+```
+
+If we just used the node from `find_relaxed_node_opt` instead of a real node in the cycle, then we'd incorrectly include `c -> d` in the reconstructed cycle:
+
+```ocaml
+let edges =
+  [ ('c', 'd', 0)   (* outgoing edge from cycle to non-cycle node *)
+  ; ('s', 'a', 0)
+  ; ('a', 'b', 1)
+  ; ('b', 'c', -4)
+  ; ('c', 'a', 1)
+  ]
+in
+let cycle_entry = BellmanFord.find_relaxed_node edges (fst dist) in
+Printf.printf "First relaxed node found: %c\n" cycle_entry;
+let cycle_from_entry = BellmanFord.collect_cycle cycle_entry dist in
+List.iter (fun edge ->
+  Printf.printf "- %s\n" (pp_edge edge))
+  cycle_from_entry
+```
+
+```bash
+First relaxed node found: d
+- b -> c (-4)
+- c -> a (1)
+- a -> b (1)
+- b -> c (-4)
+- c -> d (0)
+```
+
+To find a node that is actually in the cycle, we just have to back track until we've backtracked `NUM_NODES` parents (because after following NUM_NODES predecessor links, the pigeonhole principle guarantees we have skipped any non-cycle tail and landed on a node inside the cycle.) *or* until we hit our start node again:
+
+```ocaml
+let find_cycle_entry_opt (edges : Node.t edge list) (tbl, num_nodes : t)
+  : Node.t option =
+  let relaxed_predecessor = find_relaxed_node_opt edges tbl in
+  match relaxed_predecessor with
+  | None -> None
+  | Some entry ->
+    let rec move_back node n =
+      if n = 0 then node
+      else if n < num_nodes && node = entry then node
+      else
+        match find_predecessor node tbl with
+        | None -> node
+        | Some from_ -> move_back from_ (n - 1)
+    in
+    Some (move_back entry num_nodes)
+```
+
+Then with this entry node found, we can terminate the algorithm by building the negative cycle. We build it by backtracking one more time along the predecessor edges starting from our entry node:
+
+```ocaml
+let collect_cycle (start : Node.t) (tbl, num_nodes : t) : Node.t edge list =
+  let rec loop curr n acc =
+    if n = 0 then
+      acc
+    else
+      match find_predecessor_edge curr tbl with
+      | None -> acc
+      | Some ((from_, _, _) as pred_edge) ->
+        let acc = pred_edge :: acc in
+        if Node.compare from_ start = 0 then acc
+        else loop from_ (n - 1) acc
+  in
+  loop start num_nodes []
+```
+
+And that's all Bellman Ford needs to return the negative cycle edges:
+
+```ocaml
+let bellman_ford
+  (type node)
+  (module Node : Baby.OrderedType with type t = node)
+ ~(src : node)
+  (edges : node edge list)
+  : [ `No_negative_cycle of (node * int) list
+    | `Negative_cycle of node edge list
+    ] =
+  let open Make (Node) in
+  let tbl, num_nodes = find_distances ~src edges in
+  match find_cycle_entry_opt edges (tbl, num_nodes) with
+  | None -> ...
+  | Some entry -> `Negative_cycle (collect_cycle entry (tbl, num_nodes))
+```
+
+```ocaml
+let edges =
+  [ ('s', 'a', 2)
+  ; ('a', 'b', 1)
+  ; ('b', 'c', -4)
+  ; ('c', 'a', 1)
+  ; ('c', 'd', 3)
+  ]
+in
+let dist = BellmanFord.find_distances ~src:'s' edges in
+let cycle_entry = BellmanFord.find_cycle_entry edges dist in
+let cycle_from_entry = BellmanFord.collect_cycle cycle_entry dist in
+Printf.printf "Negative cycle found:\n";
+List.iter (fun edge ->
+  Printf.printf "- %s\n" (pp_edge edge))
+  cycle_from_entry;
+```
+
+```bash
+Negative cycle found:
+- b -> c (-4)
+- c -> a (1)
+- a -> b (1)
+```

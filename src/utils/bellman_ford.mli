@@ -39,15 +39,19 @@ module Make (Node : Baby.OrderedType) : sig
 
   val find_distances : src:Node.t -> Node.t edge list -> t
 
+  val find_relaxed_node_opt : Node.t edge list -> tbl -> Node.t option
+  (** [find_relaxed_node_opt edges tbl] finds the first node from EDGES that is part of the negative cycle *and* applies the relaxation to [to_], if it exists in tbl from DIST otherwise it throws *)
+  
+  val find_relaxed_node : Node.t edge list -> tbl -> Node.t
+  (** [find_relaxed_node edges tbl] finds the [to_] node of the first edge from EDGES that is part of the negative cycle *and* applies the relaxation to [to_], if it exists in tbl from DIST otherwise it throws *)
+
   val find_cycle_entry_opt : Node.t edge list -> t -> Node.t option
-  (** [find_cycle_entry_opt edges dist] finds the first node from EDGES that is part of the negative cycle *and* applies the relaxation to [to_], if it exists in tbl from DIST otherwise it throws *)
 
   val find_cycle_entry : Node.t edge list -> t -> Node.t
-  (** [find_cycle_entry edges dist] finds the [to_] node of the first edge from EDGES that is part of the negative cycle *and* applies the relaxation to [to_], if it exists in tbl from DIST otherwise it throws *)
 
   val find_predecessor_edge : Node.t -> tbl -> Node.t edge option
 
   val find_predecessor : Node.t -> tbl -> Node.t option
 
-  val collect_cycle : Node.t -> tbl -> Node.t edge list
+  val collect_cycle : Node.t -> t -> Node.t edge list
 end
