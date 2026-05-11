@@ -3,11 +3,28 @@
     (differences) and nodes (variables) via the Bellman Ford algorithm. *)
 open Utils
 
-module Node = struct
+module Node : sig
+  type t = private
+    | Symbol_key of Uid.t
+    | Zero
+    | Root
+  val symbol_key : Uid.t -> t
+  val zero : t
+  val root : t
+
+  val compare : t -> t -> int
+  val equal : t -> t -> bool
+end = struct
   type t =
     | Symbol_key of Uid.t
     | Zero
     | Root
+
+  let symbol_key (uid : Uid.t) = Symbol_key uid
+
+  let zero = Zero
+
+  let root = Root
 
   let compare a b =
     match a, b with
@@ -20,32 +37,22 @@ module Node = struct
     | _, Zero -> 1
 
     | Symbol_key x, Symbol_key y -> Uid.compare x y
+
+  let equal a b = compare a b = 0
 end
 
 module NodeIterables = Set_map.Make_W (Node)
 module NodeMap = NodeIterables.Map
 
-type node = Node.t =
-  | Symbol_key of Uid.t
-  | Zero
-  | Root
-
-let nodes_equal n1 n2 =
-  match n1, n2 with
-  | Root, Root -> true
-  | Zero, Zero -> true
-  | Symbol_key u1, Symbol_key u2 -> Uid.equal u1 u2
-  | _ -> false
-
 let edges_equal (x1, y1, c1) (x2, y2, c2) =
-  c1 = c2 && nodes_equal x1 x2 && nodes_equal y1 y2
+  c1 = c2 && Node.equal x1 x2 && Node.equal y1 y2
 
-type diff = { x : node ; y : node ; c : int }
+type diff = { x : Node.t ; y : Node.t ; c : int }
 
 let diffs_equal (d1 : diff) (d2 : diff) =
   d1.c = d2.c
-  && nodes_equal d1.x d2.x
-  && nodes_equal d1.y d2.y
+  && Node.equal d1.x d2.x
+  && Node.equal d1.y d2.y
 
 type 'k diff_atom = { source : 'k Theory.literal ; diff : diff }
 
@@ -54,22 +61,22 @@ type 'k diff_literal =
   | Neg of 'k diff_atom
 
 type 'k constraint_graph =
-  { edges : node Bellman_ford.edge list
-  ; edge_sources : (node Bellman_ford.edge * 'k Theory.literal option) list
+  { edges : Node.t Bellman_ford.edge list
+  ; edge_sources : (Node.t Bellman_ford.edge * 'k Theory.literal option) list
   ; vars : Uid.t list
   }
 
 let leq_to_diff (left : Integer.affine) (right : Integer.affine) : diff =
   match left, right with
   | Var_plus_const (x, kx), Var_plus_const (y, ky) ->
-    { x = Symbol_key x; y = Symbol_key y; c = ky - kx }
+    { x = Node.symbol_key x ; y = Node.symbol_key y ; c = ky - kx }
   | Var_plus_const (x, kx), Const c ->
-    { x = Symbol_key x; y = Zero; c = c - kx }
+    { x = Node.symbol_key x ; y = Node.zero ; c = c - kx }
   | Const c, Var_plus_const (y, ky) ->
-    { x = Zero; y = Symbol_key y; c = ky - c }
+    { x = Node.zero ; y = Node.symbol_key y; c = ky - c }
   | Const c1, Const c2 ->
-    if c1 <= c2 then { x = Zero; y = Zero; c = 0 }
-    else { x = Zero; y = Zero; c = -1 }
+    if c1 <= c2 then { x = Node.zero ; y = Node.zero ; c = 0 }
+    else { x = Node.zero ; y = Node.zero ; c = -1 }
 
 let find_diffs
   : type a. (a * a * bool) Binop.t ->
@@ -133,18 +140,18 @@ let read_constraint_keys ({ x ; y ; _ } : diff) : Uid.t list =
 let edges_from_constraint
   (source : 'k Theory.literal)
   ({ x; y; c } : diff)
-  : (node Bellman_ford.edge * 'k Theory.literal option) list =
+  : (Node.t Bellman_ford.edge * 'k Theory.literal option) list =
   let mk from_ to_ =
     (from_, to_, c), Some source
   in
   match x, y with
   | Symbol_key x, Symbol_key y ->
     (* x - y <= c === y -> x *)
-    [mk (Symbol_key y) (Symbol_key x)]
+    [mk (Node.symbol_key y) (Node.symbol_key x)]
   | Symbol_key x, Zero ->
-    [mk Zero (Symbol_key x)]
+    [mk Node.zero (Node.symbol_key x)]
   | Zero, Symbol_key y ->
-    [mk (Symbol_key y) Zero]
+    [mk (Node.symbol_key y) Node.zero]
   | _ -> []
 
 (** [to_graph formula] returns the graph representation of FORMULA.
@@ -169,12 +176,12 @@ let to_graph (formula : 'k Theory.literal list) : 'k constraint_graph =
   in
 
   let graph_nodes =
-    Zero :: List.map (fun uid -> Symbol_key uid) vars
+    Node.zero :: List.map (fun uid -> Node.symbol_key uid) vars
   in
 
   let dummy_pairs =
     graph_nodes
-    |> List.map (fun node -> ((Root, node, 0), None))
+    |> List.map (fun node -> ((Node.root, node, 0), None))
   in
 
   let pairs = constraint_pairs @ dummy_pairs in
@@ -257,7 +264,7 @@ let solve_diff_logic (literals : 'k Theory.literal list)
   | _ :: _ as splits -> Theory.split splits
   | [] ->
     let { edges ; edge_sources ; vars } = to_graph lits in
-    match bellman_ford ~src:Root edges with
+    match bellman_ford ~src:Node.root edges with
     | `Negative_cycle edges ->
       let core =
         edges
@@ -274,12 +281,12 @@ let solve_diff_logic (literals : 'k Theory.literal list)
              NodeMap.empty
       in
 
-      let z0_dist = NodeMap.find Zero distances in
+      let z0_dist = NodeMap.find Node.zero distances in
 
       let local_model =
         vars
         |> List.map (fun uid ->
-          let var_dist = NodeMap.find (Symbol_key uid) distances in
+          let var_dist = NodeMap.find (Node.symbol_key uid) distances in
           uid, Model.Int (var_dist - z0_dist))
         |> Uid.Map.of_list
       in
