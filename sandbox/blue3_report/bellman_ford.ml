@@ -1,5 +1,6 @@
 open Utils
 
+
 let bellman_ford = Bellman_ford.bellman_ford (module Char)
 
 let pp_edge (from_, to_, weight) =
@@ -62,3 +63,5 @@ let () =
   print_bellman_ford ~label:"Augmented src a" ~src:'a' edges;
   print_bellman_ford ~label:"Augmented src 0" ~src:'0' edges;
   print_bellman_ford ~label:"Augmented src b" ~src:'b' edges;
+
+  let module BellmanFord = Bellman_ford.Make (Char) in
