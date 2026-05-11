@@ -13,8 +13,10 @@ let pp_result ~src result =
     List.iter (fun (node, distance) ->
       if node = src then ()
       else
-        Printf.printf "dist(%c) = %d\n" node distance)
-      distances
+        Printf.printf "dist(%c) = %s\n"
+          node
+          (if distance = Int.max_int then "∞" else Int.to_string distance)
+    ) distances
 
   | `Negative_cycle cycle_edges ->
     print_endline "Negative cycle found:";
@@ -65,3 +67,6 @@ let () =
   print_bellman_ford ~label:"Augmented src b" ~src:'b' edges;
 
   let module BellmanFord = Bellman_ford.Make (Char) in
+  let relax_distances = BellmanFord.relax_distances in
+
+  match relax_distances

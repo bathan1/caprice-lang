@@ -20,37 +20,27 @@ val bellman_ford :
   ]
 
 module Make (Node : Baby.OrderedType) : sig
-  (** (from, to, weight) *)
-  type edge = Node.t * Node.t * int
+  type key = Node.t
+  type value = int * Node.t edge
+  type tbl = (key, value) Hashtbl.t
+  type t = tbl * int
 
-  (** A predecessor records the edge used to reach a node, plus the previous tail node. *)
-  type pred
+  val count : Node.t edge list -> int
 
-  (** Represents the distance/predecessor tracking state. *)
-  type paths =
-    distance:(Node.t, int) Hashtbl.t
-    * predecessor:(Node.t, pred) Hashtbl.t
+  val create_tbl : src:Node.t -> Node.t edge list -> t
 
-  type loop = {
-    paths : paths;
-    is_updated : bool;
-  }
+  val update_edge : bool -> Node.t edge -> tbl -> bool
 
-  val relax_distance : loop -> edge -> loop
+  val update : Node.t edge list -> tbl -> bool
 
-  val relax_distances :
-    int ->
-    edge list ->
-    loop ->
-    int ->
-    [ `Continue of loop
-    | `Stop of paths
-    ]
+  val relax : Node.t edge list -> t -> int ->
+    [ `Continue of t | `Stop of tbl ]
 
-  val find_paths : src:Node.t -> int -> edge list -> paths
+  val find_distances : src:Node.t -> Node.t edge list -> t
 
-  val find_cycle_edge :
-    (Node.t, int) Hashtbl.t ->
-    edge list ->
-    (pred * Node.t) option
+  val find_cycle_edge_opt : Node.t edge list -> tbl -> Node.t edge option
+
+  val find_predecessor_opt : Node.t -> tbl -> Node.t option
+
+  val find_cycle_start : Node.t -> t -> Node.t
 end

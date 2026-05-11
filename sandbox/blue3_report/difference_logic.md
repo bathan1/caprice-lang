@@ -206,7 +206,7 @@ let relax_distance
 ... where we favor using `None` over an integer max to represent the initial distances, because this is OCaml.
 
 ## Bellman Ford as a Difference Logic solver
-Bellman Ford is useful because it solves our difference formulas. Recall that difference formulas are made of literals in the form:
+Bellman Ford is useful because it solves our difference formulas. Difference formulas are made of literals:
 
 ```
 (x - y) <> c
