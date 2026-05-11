@@ -1,6 +1,5 @@
 open Utils
 
-
 let bellman_ford = Bellman_ford.bellman_ford (module Char)
 
 let pp_edge (from_, to_, weight) =
@@ -66,7 +65,17 @@ let () =
   print_bellman_ford ~label:"Augmented src 0" ~src:'0' edges;
   print_bellman_ford ~label:"Augmented src b" ~src:'b' edges;
 
+  let edges = 
+    [ ('a', '0', 3)
+    ; ('0', 'a', -1)
+    ; ('z', '0', 5)
+    ; ('z', 'a', 5)
+    ]
+  in
   let module BellmanFord = Bellman_ford.Make (Char) in
-  let relax_distances = BellmanFord.relax_distances in
-
-  match relax_distances
+  let dist, _num_nodes = BellmanFord.find_distances ~src:'z' edges in
+  Printf.printf "Minimum distance to 'a' = %d\n" (fst @@ Hashtbl.find dist 'a');
+  let predecessor_edge_of_a = snd @@ Hashtbl.find dist 'a' in
+  Printf.printf "Predecessor edge is: %s\n" (pp_edge predecessor_edge_of_a);
+  let predecessor_edge_of_0 = snd @@ Hashtbl.find dist '0' in
+  Printf.printf "Predecessor edge is: %s\n" (pp_edge predecessor_edge_of_0);

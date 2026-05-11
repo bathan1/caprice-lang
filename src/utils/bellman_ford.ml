@@ -3,7 +3,7 @@ type 'node edge = 'node * 'node * int
 module Make (Node : Baby.OrderedType) = struct
   type key = Node.t
 
-  type value = int * Node.t edge
+  type value = int * Node.t edge option
   (** 2-tuple (distance, predecessor) has current shortest DISTANCE
       with the corresponding PREDECESSOR edge to some node key *)
 
@@ -24,33 +24,33 @@ module Make (Node : Baby.OrderedType) = struct
     let n = count edges in
     let tbl = Hashtbl.create n in
     let () =
-      Hashtbl.add tbl src (0, (src, src, 0))
+      Hashtbl.add tbl src (0, None)
     in
     tbl, n
 
-  let update_edge (last_updated : bool) (edge : Node.t edge) (tbl : tbl) : bool =
+  let relax_distance (last_updated : bool) (edge : Node.t edge) (tbl : tbl) : bool =
     let from_, to_, cost = edge in
     match Hashtbl.find_opt tbl from_, Hashtbl.find_opt tbl to_ with
     | Some (du, _), None ->
-        Hashtbl.replace tbl to_ (du + cost, edge);
-        last_updated || true
+      Hashtbl.replace tbl to_ (du + cost, Some edge);
+      last_updated || true
     | Some (du, _), Some (dv, _) when du + cost < dv ->
-        Hashtbl.replace tbl to_ (du + cost, edge);
-        last_updated || true
+      Hashtbl.replace tbl to_ (du + cost, Some edge);
+      last_updated || true
     | _ -> last_updated || false
 
-  let update (edges : Node.t edge list) (tbl : tbl) : bool =
+  let relax_distances (edges : Node.t edge list) (tbl : tbl) : bool =
     List.fold_left
-      (fun is_updated edge -> update_edge is_updated edge tbl)
+      (fun is_updated edge -> relax_distance is_updated edge tbl)
       false edges
-  
+
   let relax (edges : Node.t edge list) (tbl, num_nodes : t) (i : int)
     : [ `Continue of t | `Stop of tbl ] =
     if i = num_nodes - 1 then `Stop tbl
-    else if update edges tbl then `Continue (tbl, num_nodes)
+    else if relax_distances edges tbl then `Continue (tbl, num_nodes)
     else `Stop tbl
 
-  let find_distances ~(src : Node.t) (edges : Node.t edge list) = 
+  let find_distances ~(src : Node.t) (edges : Node.t edge list) =
     let tbl, num_nodes = create_tbl ~src edges in
     let vertices = List.init num_nodes Fun.id in
     let final_tbl = List_utils.fold_left_until
@@ -71,10 +71,9 @@ module Make (Node : Baby.OrderedType) = struct
         | _ -> None)
       edges
 
-  let find_predecessor_edge_opt (node : Node.t) (tbl : tbl) : Node.t edge option =
-    node
-    |> Hashtbl.find_opt tbl
-    |> Option.map (fun (_dist, edge) -> edge)
+  let find_predecessor_edge_opt (node : Node.t) (tbl : tbl)
+    : Node.t edge option =
+    snd @@ Hashtbl.find tbl node
 
   let find_predecessor_opt (node : Node.t) (tbl : tbl) : Node.t option =
     Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge_opt node tbl)
@@ -113,15 +112,15 @@ let bellman_ford
     let () =
       match Hashtbl.find_opt tbl from_ with
       | None -> ()
-      | Some (du, _) -> Hashtbl.replace tbl to_ (du + weight, edge)
+      | Some (du, _) -> Hashtbl.replace tbl to_ (du + weight, Some edge)
     in
     let start = find_cycle_start to_ (tbl, num_nodes) in
-    let rec collect curr seen acc =
-      if List.mem curr seen then acc
+    let rec collect curr n acc =
+      if n = 0 then acc
       else
         match find_predecessor_edge_opt curr tbl with
         | None -> acc
         | Some ((from_, _, _) as pred_edge) ->
-            collect from_ (curr :: seen) (pred_edge :: acc)
+            collect from_ (n - 1) (pred_edge :: acc)
     in
-    `Negative_cycle (collect start [] [])
+    `Negative_cycle (collect start num_nodes [])

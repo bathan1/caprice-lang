@@ -21,7 +21,7 @@ val bellman_ford :
 
 module Make (Node : Baby.OrderedType) : sig
   type key = Node.t
-  type value = int * Node.t edge
+  type value = int * Node.t edge option
   type tbl = (key, value) Hashtbl.t
   type t = tbl * int
 
@@ -29,9 +29,9 @@ module Make (Node : Baby.OrderedType) : sig
 
   val create_tbl : src:Node.t -> Node.t edge list -> t
 
-  val update_edge : bool -> Node.t edge -> tbl -> bool
+  val relax_distance : bool -> Node.t edge -> tbl -> bool
 
-  val update : Node.t edge list -> tbl -> bool
+  val relax_distances : Node.t edge list -> tbl -> bool
 
   val relax : Node.t edge list -> t -> int ->
     [ `Continue of t | `Stop of tbl ]
