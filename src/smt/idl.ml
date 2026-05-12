@@ -66,7 +66,7 @@ type 'k constraint_graph =
   ; vars : Uid.t list
   }
 
-let leq_to_diff (left : Integer.affine) (right : Integer.affine) : diff =
+let leq_to_diff (left : Ints.affine) (right : Ints.affine) : diff =
   match left, right with
   | Var_plus_const (x, kx), Var_plus_const (y, ky) ->
     { x = Node.symbol_key x ; y = Node.symbol_key y ; c = ky - kx }
@@ -84,7 +84,7 @@ let find_diffs
     (a, 'k) Formula.t ->
     diff list =
   fun binop left right ->
-    match Integer.affine_from_formula_opt left, Integer.affine_from_formula_opt right with
+    match Ints.affine_from_formula_opt left, Ints.affine_from_formula_opt right with
     | Some al, Some ar ->
       let diff = leq_to_diff al ar in
       begin match binop with
@@ -212,7 +212,7 @@ let find_split_opt (lit : 'k Theory.literal)
   let one = Formula.const_int 1 in
   match lit with
   | Neg Predicate (Equal, x, y) ->
-    begin match Integer.reflect_int_opt x, Integer.reflect_int_opt y with
+    begin match Ints.reflect_int_opt x, Ints.reflect_int_opt y with
     | Some x', Some y' ->
       let lower =
         Theory.Predicate (Less_than_eq, x', Formula.minus y' one)
@@ -255,9 +255,9 @@ let source_from_edge edge edge_sources =
 
 let bellman_ford = Bellman_ford.bellman_ford (module Node)
 
-(** [solve_diff_logic literals] finds a satisfying integer model for LITERALS,
+(** [solve_int_diff literals] finds a satisfying integer model for LITERALS,
     or returns an unsat core when the constraint graph contains a negative cycle. *)
-let solve_diff_logic (literals : 'k Theory.literal list)
+let solve_int_diff (literals : 'k Theory.literal list)
   : 'k Theory.theory_solution =
   let lits, remaining_splits = resolve_splits literals in
   match remaining_splits with
@@ -272,7 +272,6 @@ let solve_diff_logic (literals : 'k Theory.literal list)
         |> List.sort_uniq compare
       in
       Theory.unsat core
-
     | `No_negative_cycle distances ->
       let distances =
         distances
@@ -280,9 +279,7 @@ let solve_diff_logic (literals : 'k Theory.literal list)
              (fun acc (node, distance) -> NodeMap.add node distance acc)
              NodeMap.empty
       in
-
       let z0_dist = NodeMap.find Node.zero distances in
-
       let local_model =
         vars
         |> List.map (fun uid ->
@@ -290,6 +287,5 @@ let solve_diff_logic (literals : 'k Theory.literal list)
           uid, Model.Int (var_dist - z0_dist))
         |> Uid.Map.of_list
       in
-
       let model = Model.from_value_map local_model in
       Theory.sat model

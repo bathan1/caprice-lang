@@ -1,5 +1,0 @@
-(executable
- (name bellman_ford)
- (modules bellman_ford)
- (libraries utils)
-)

@@ -77,26 +77,10 @@ type int_constraint =
   { lower : int
   ; upper : int
   ; neq : int list
-  ; eq : int list
   }
 
-let bound_to_formula_clauses (uid, { lower ; upper ; neq ; eq } : Uid.t * int_constraint) =
-  let over_one_eq eq =
-    eq
-    |> List.sort_uniq Int.compare
-    |> function
-      | [] -> false
-      | _ :: [] -> false
-      | _ -> true
-  in
-  let has_conflicting_eqs neq =
-    List.exists (fun n -> List.mem n eq) neq
-  in
+let bound_to_formula_clauses (uid, { lower ; upper ; neq ; _ } : Uid.t * int_constraint) =
   if lower > upper
-    then [Formula.const_bool false]
-  else if over_one_eq eq
-    then [Formula.const_bool false]
-  else if has_conflicting_eqs neq
     then [Formula.const_bool false]
   else
     let variable = Formula.symbol (I uid) in
@@ -166,54 +150,45 @@ let prune_redundant (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t
       { lower = Int.min_int
       ; upper = Int.max_int
       ; neq = []
-      ; eq = []
       }
   in
   let collect_bounds =
     fun (acc, other) clause ->
       match clause with
       | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
-        let { lower ; upper ; neq ; eq } = find_or_default key acc in
+        let { lower ; upper ; neq ; } = find_or_default key acc in
         let next_neq_set = c :: neq in
         let next =
-          Uid.Map.add key { lower ; upper ; neq = next_neq_set ; eq } acc
-        in
-        (next, other)
-      (* eq case *)
-      | Formula.Binop (Equal, Const_int c, Key (I key))
-      | Formula.Binop (Equal, Key (I key), Const_int c) ->
-        let current = find_or_default key acc in
-        let next =
-            Uid.Map.add key { current with eq = c :: current.eq } acc
+          Uid.Map.add key { lower ; upper ; neq = next_neq_set } acc
         in
         (next, other)
       (* lower bounds *)
       | Binop (Less_than_eq, Const_int c, Key (I key)) ->
-        let { lower ; upper ; neq ; eq } = find_or_default key acc in
+        let { lower ; upper ; neq ; } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower = max lower c ; upper ; neq ; eq } acc
+          Uid.Map.add key { lower = max lower c ; upper ; neq } acc
         in
         (next, other)
       | Binop (Less_than, Const_int c, Key (I key)) ->
-      let { lower ; upper ; neq ; eq } = find_or_default key acc in
+      let { lower ; upper ; neq ; } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower = max lower (c + 1) ; upper ; neq ; eq }
+            { lower = max lower (c + 1) ; upper ; neq }
             acc
         in
         (next, other)
       (* upper bounds *)
       | Binop (Less_than_eq, Key (I key), Const_int c) ->
-        let { lower ; upper ; neq ; eq } = find_or_default key acc in
+        let { lower ; upper ; neq ; } = find_or_default key acc in
         let next =
-          Uid.Map.add key { lower ; upper = min upper c ; neq ; eq } acc
+          Uid.Map.add key { lower ; upper = min upper c ; neq } acc
         in
         (next, other)
       | Binop (Less_than, Key (I key), Const_int c) ->
-        let { lower ; upper ; neq ; eq } = find_or_default key acc in
+        let { lower ; upper ; neq ; } = find_or_default key acc in
         let next =
           Uid.Map.add key
-            { lower ; upper = min upper (c - 1) ; neq ; eq }
+            { lower ; upper = min upper (c - 1) ; neq }
             acc
         in
         (next, other)

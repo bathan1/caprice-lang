@@ -212,5 +212,4 @@ let sanity_check () =
     List.iter print_failure failures
     end
 
-let () =
-  Benchmark.benchmark 100
+let () = Benchmark.benchmark 200

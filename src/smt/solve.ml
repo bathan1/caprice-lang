@@ -173,10 +173,10 @@ let implied_concretization : 'k simplifier = fun next expr ->
     next simplified
 
 let linearize next expr =
-  next (Integer.linearize expr)
+  next (Ints.linearize expr)
 
 let drop_redundant_ineqs next expr =
-  next (Integer.drop_redundant_ineqs expr)
+  next (Ints.drop_redundant_ineqs expr)
 
 let add_metadata (simplifier : 'k simplifier)
   : 'k simplifier_meta =
@@ -219,7 +219,7 @@ let main_solve (module Oracle : SOLVABLE) : 'k solver =
     linearize
     @> implied_concretization
     @> drop_redundant_ineqs
-    @> Blue3.blue3 ~solver:Idl.solve_diff_logic
+    @> Blue3.blue3 ~solver:Idl.solve_int_diff
   in
   pipeline (direct_solve (module Oracle))
 
@@ -229,7 +229,7 @@ let main_solve_with_metadata (module Oracle : SOLVABLE)
     add_metadata linearize
     @@> add_metadata implied_concretization
     @@> add_metadata drop_redundant_ineqs
-    @@> add_metadata (Blue3.blue3 ~solver:Idl.solve_diff_logic)
+    @@> add_metadata (Blue3.blue3 ~solver:Idl.solve_int_diff)
   in
 
   pipeline
