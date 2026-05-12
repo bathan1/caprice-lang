@@ -136,7 +136,7 @@ Otherwise we just `OR` the boolean state value with a `false`:
 
 Notice how once we return a `true` flag, subsequent calls to relax_distance will *always* return `true` because even if a subsequent call doesn't relax a distance, or-ing a `false` with a `true` is still `true`:
 
-So the parent `relax_edges` just checks that boolean flag at the end of each iteration to decide wheter it should continue or stop.
+So the parent `relax_edges` just checks that boolean flag at the end of each iteration to decide whether it should continue or stop.
 
 ```ocaml
 let relax_edges (edges : Node.t edge list) (dist : tbl) (i : int)
@@ -183,7 +183,7 @@ let create_tbl ~(src : Node.t) (edges : Node.t edge list) =
 
 ## Predecessors and the Minimum Distance Path
 
-You can think of `find_shortest_paths` as the "raw" Bellman Ford implementation that returns the final distance table regardless of whether a negative cycle exists. When there is no negative cycle, then the table is our effective return value of the `bellman_ford` implementation:
+You can think of `find_shortest_paths` as the "raw" Bellman Ford implementation that returns the final distance table regardless of whether a negative cycle exists. When there is no negative cycle, then the table is effectively our return value of the `bellman_ford` implementation:
 
 ```ocaml
 let bellman_ford
@@ -249,7 +249,7 @@ let find_predecessor (node : Node.t) (tbl : tbl) : Node.t option =
   Option.map (fun (from_, _, _) -> from_) (find_predecessor_edge node tbl)
 ```
 
-> The typical implementation of Bellman Ford keeps two *separate* tables for both distance and the predecessor *node*. This is usualy the better option, but I felt that in a functional language like OCaml, it would be more idiomatic to merge them into 1 table because they are dependent on the same state (not unlike the [grouping related state pattern](https://react.dev/learn/choosing-the-state-structure#group-related-state) from React).
+> The typical implementation of Bellman Ford keeps two *separate* tables for both distance and the predecessor *node*. This is usually the better option, but I felt that in a functional language like OCaml, it would be more idiomatic to merge them into 1 table because they are dependent on the same state (not unlike the [grouping related state pattern](https://react.dev/learn/choosing-the-state-structure#group-related-state) from React).
 
 Revisiting our `OK cycle` example of a non-negative cyclic graph where we set `src` to `z`:
 
@@ -316,11 +316,7 @@ let bellman_ford
   | None -> `No_negative_cycle (
     tbl
     |> Hashtbl.to_seq
-    |> Seq.map (fun (node, entry) ->
-      match fst entry with
-      | None -> node, Int.max_int
-      | Some dist -> node, dist
-    )
+    |> Seq.map (fun node -> node, find_distance node tbl)
 ```
 
 The predecessor becomes useful when `find_cycle_entry_opt` returns the other `Negative_cycle` case:
