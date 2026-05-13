@@ -7,6 +7,12 @@ open Sandbox
 
 module AsciiSymbol = Symbol.AsciiSymbol
 
+let sat_formula_to_string (formula : Sat.Formula.formula) : string =
+  Format.asprintf
+    "%a"
+    (Sat.Formula.pp_formula ~uid:AsciiSymbol.to_string)
+    formula
+
 let make_bool = AsciiSymbol.make_bool
 let make_int = fun x -> x |> AsciiSymbol.make_int |> Formula.symbol
 
@@ -212,4 +218,43 @@ let sanity_check () =
     List.iter print_failure failures
     end
 
-let () = Benchmark.benchmark 200
+let sat_clause_is_2sat (clause : Sat.Formula.clause) : bool =
+  List.length clause <= 2
+
+let sat_lit_is_positive (lit : Sat.Formula.literal) : bool =
+  match lit with
+  | Pos _ -> true
+  | Neg _ -> false
+
+let sat_clause_is_horn (clause : Sat.Formula.clause) : bool =
+  clause
+  |> List.filter sat_lit_is_positive
+  |> List.length
+  |> fun positive_count -> positive_count <= 1
+
+let sat_formula_is_2sat (sat_formula : Sat.Formula.formula) : bool =
+  List.for_all sat_clause_is_2sat sat_formula
+
+let sat_formula_is_horn (sat_formula : Sat.Formula.formula) : bool =
+  List.for_all sat_clause_is_horn sat_formula
+
+let print_drop_redundant_ineqs () =
+  let fs = Boolean.from_stdin () in
+
+  fs
+  |> List.iteri (fun i f_text ->
+    let before =
+      Boolean.parse f_text
+    in
+
+    let after =
+      Ints.drop_redundant_ineqs before
+    in
+
+    Printf.printf
+      "\n--- Formula %d ---\nbefore: %s\nafter:  %s\n"
+      (i + 1)
+      (Formula.to_string ~key before)
+      (Formula.to_string ~key after))
+
+let () = Benchmark.benchmark 100

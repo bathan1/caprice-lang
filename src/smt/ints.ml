@@ -1,4 +1,5 @@
 open Utils
+open Utils.Iterables
 
 type affine =
   | Const of int
@@ -76,35 +77,31 @@ let formula_from_affine_comparison
 type int_constraint =
   { lower : int
   ; upper : int
-  ; neq : int list
+  ; neq : IntSet.t
   }
 
-let bound_to_formula_clauses (uid, { lower ; upper ; neq ; _ } : Uid.t * int_constraint) =
+let bound_to_formula_clauses (uid, { lower ; upper ; neq } : Uid.t * int_constraint) =
   if lower > upper
     then [Formula.const_bool false]
   else
     let variable = Formula.symbol (I uid) in
-    let neq_formulas =
-      neq
-      |> List.filter (fun v -> lower <= v && v <= upper)
-      |> List.map (fun v ->
-        Formula.binop Not_equal variable (Formula.const_int v))
-    in
+    let valid_neqs = IntSet.filter (fun v -> lower <= v && v <= upper) neq in
+    let neq_formulas = IntSet.fold (fun v acc ->
+      Formula.binop Not_equal variable (Formula.const_int v) :: acc
+    ) valid_neqs [] in
     if lower = upper then
       Formula.binop Equal variable (Formula.const_int lower)
       :: neq_formulas
     else
-      let lower_neq = List.find_opt (fun v -> v = lower) neq in
-      let upper_neq = List.find_opt (fun v -> v = upper) neq in
       let resolved_lower, resolved_upper =
-        match (lower_neq, upper_neq) with
-        | None, None -> (lower, upper)
+        match IntSet.mem lower neq, IntSet.mem upper neq with
+        | false, false -> (lower, upper)
         (* drop neq and increment lower bound *)
-        | Some lower_bound_neq, None -> (lower_bound_neq + 1, upper)
+        | true, false -> (lower + 1, upper)
         (* drop neq and decrement upper bound *)
-        | None, Some upper_bound_neq -> (lower, upper_bound_neq - 1)
-        | Some lower_bound_eq, Some upper_bound_eq ->
-          (lower_bound_eq + 1, upper_bound_eq - 1)
+        | false, true -> (lower, upper - 1)
+        | true, true ->
+          (lower + 1, upper - 1)
       in
       let lower_bound =
         match resolved_lower with
@@ -120,6 +117,33 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; _ } : Uid.t * int_con
       | None, None -> neq_formulas
       | Some bound, None | None, Some bound -> bound :: neq_formulas
       | Some lb, Some ub -> lb :: ub :: neq_formulas
+
+let default_bound =
+  { lower = Int.min_int
+  ; upper = Int.max_int
+  ; neq = IntSet.empty
+  }
+
+let find_or_default key map =
+  match Uid.Map.find_opt key map with
+  | Some v -> v
+  | None -> default_bound
+
+let is_contradictory_bound { lower; upper; neq } =
+  lower > upper
+  || (lower = upper && IntSet.mem lower neq)
+
+let update_bound key bound acc other =
+  if is_contradictory_bound bound then
+    `Stop [ Formula.const_bool false ]
+  else
+    `Continue (Uid.Map.add key bound acc, other)
+
+let normalize_bound { lower; upper; neq } =
+  { lower
+  ; upper
+  ; neq = IntSet.filter (fun c -> lower <= c && c <= upper) neq
+  }
 
 (** [prune_redundant clauses] drops redundant inequalities and neqs from CLAUSES
 
@@ -142,65 +166,76 @@ let bound_to_formula_clauses (uid, { lower ; upper ; neq ; _ } : Uid.t * int_con
       Printf.printf "%s\n" (Formula.to_string pruned_formula)
       (* "(a >= 2)" *)
     ]} *)
-let prune_redundant (clauses : (bool, 'k) Formula.t list) : (bool, 'k) Formula.t list =
-  let find_or_default key map =
-    match Uid.Map.find_opt key map with
-    | Some v -> v
-    | None ->
-      { lower = Int.min_int
-      ; upper = Int.max_int
-      ; neq = []
-      }
+let prune_redundant (clauses : (bool, 'k) Formula.t list)
+  : (bool, 'k) Formula.t list =
+  let collect_bounds (acc, other) clause =
+    match clause with
+    | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
+      let { lower; upper; neq } =
+        find_or_default key acc
+      in
+      let bound =
+        { lower; upper; neq = IntSet.add c neq }
+      in
+      update_bound key bound acc other
+
+    (* lower bounds *)
+    | Binop (Less_than_eq, Const_int c, Key (I key)) ->
+      let { lower; upper; neq } =
+        find_or_default key acc
+      in
+      let bound =
+        { lower = max lower c; upper; neq }
+      in
+      update_bound key bound acc other
+
+    | Binop (Less_than, Const_int c, Key (I key)) ->
+      let { lower; upper; neq } =
+        find_or_default key acc
+      in
+      let bound =
+        { lower = max lower (c + 1); upper; neq }
+      in
+      update_bound key bound acc other
+
+    (* upper bounds *)
+    | Binop (Less_than_eq, Key (I key), Const_int c) ->
+      let { lower; upper; neq } =
+        find_or_default key acc
+      in
+      let bound =
+        { lower; upper = min upper c; neq }
+      in
+      update_bound key bound acc other
+
+    | Binop (Less_than, Key (I key), Const_int c) ->
+      let { lower; upper; neq } =
+        find_or_default key acc
+      in
+      let bound =
+        { lower; upper = min upper (c - 1); neq }
+      in
+      update_bound key bound acc other
+
+    | f ->
+      `Continue (acc, f :: other)
   in
-  let collect_bounds =
-    fun (acc, other) clause ->
-      match clause with
-      | Formula.Not (Binop (Equal, Key (I key), Const_int c)) ->
-        let { lower ; upper ; neq ; } = find_or_default key acc in
-        let next_neq_set = c :: neq in
-        let next =
-          Uid.Map.add key { lower ; upper ; neq = next_neq_set } acc
-        in
-        (next, other)
-      (* lower bounds *)
-      | Binop (Less_than_eq, Const_int c, Key (I key)) ->
-        let { lower ; upper ; neq ; } = find_or_default key acc in
-        let next =
-          Uid.Map.add key { lower = max lower c ; upper ; neq } acc
-        in
-        (next, other)
-      | Binop (Less_than, Const_int c, Key (I key)) ->
-      let { lower ; upper ; neq ; } = find_or_default key acc in
-        let next =
-          Uid.Map.add key
-            { lower = max lower (c + 1) ; upper ; neq }
-            acc
-        in
-        (next, other)
-      (* upper bounds *)
-      | Binop (Less_than_eq, Key (I key), Const_int c) ->
-        let { lower ; upper ; neq ; } = find_or_default key acc in
-        let next =
-          Uid.Map.add key { lower ; upper = min upper c ; neq } acc
-        in
-        (next, other)
-      | Binop (Less_than, Key (I key), Const_int c) ->
-        let { lower ; upper ; neq ; } = find_or_default key acc in
-        let next =
-          Uid.Map.add key
-            { lower ; upper = min upper (c - 1) ; neq }
-            acc
-        in
-        (next, other)
-      | f -> (acc, f :: other)
+
+  let finish (bounds_map, other_clauses) =
+    bounds_map
+    |> Uid.Map.to_list
+    |> List.concat_map (fun (uid, bound) ->
+      bound
+      |> normalize_bound
+      |> fun bound -> bound_to_formula_clauses (uid, bound))
+    |> List.append other_clauses
   in
-  let bounds_map, other_clauses =
-    List.fold_left collect_bounds (Uid.Map.empty, []) clauses
-  in
-  bounds_map
-  |> Uid.Map.to_list
-  |> List.concat_map bound_to_formula_clauses
-  |> fun rewritten -> rewritten @ other_clauses
+
+  List_utils.fold_until
+    collect_bounds
+    finish
+    (Uid.Map.empty, [])
+    clauses
 
 let reflect_int_opt : type a k. (a, k) Formula.t -> (int, k) Formula.t option = fun term ->
   term
