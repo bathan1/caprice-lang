@@ -1,3 +1,5 @@
+# Programming Blue3: An SMT solver for Caprice-Lang
+
 ## Intro
 Blue3 is a simple SMT solver implementation in OCaml. It was built to solve many of the simple SMT formulas that `ceval` outputs.
 
@@ -158,7 +160,7 @@ Many other problems would be solved as a consequence of solving $P = NP$ because
 
 Oversimplifying again, 3SAT asks:
 
-> Given some conjunctive propositional formula where each conjuncted term is in the form `(p v q v r)` with at most **3** variables disjuncted, can we determine its **satisfiability** quickly?
+> Given some conjunctive propositional formula in CNF with at most **3** variables per clause, can we determine its **satisfiability** quickly?
 
 The **satisfiability** property of a propositional **formula** tells you whether we can find some set of variable assignments so that the formula evaluates out to true. If we can find at least one set of assignments that makes the formula evaluate to `true`, then the formula is **satisfiable**. Otherwise, it is **unsatisfiable**.
 
@@ -180,7 +182,7 @@ is **satisfiable** because a valid model for the formula is:
 How can we *verify* that this is the case? We just plug in the model values:
 
 ```math
-(\text{true} \lor \text{false}) \land (\neg{\text{true}} \lor \neg{\text{false}}) = 
+(\text{true} \lor \text{false}) \land (\neg{\text{true}} \lor \neg{\text{false}}) = ?
 ```
 
 and see that it spits out $\text{true}$.
@@ -381,10 +383,8 @@ Don't worry if you can't remember all of these terms. All you really need to tak
 3. **literal**: the $\lor$-ed terms by the parent **clause**
 4. **atom**: the underlying identity of the literals
 
-and that there are 3 types of formulas we work with:
+and that we have 3 types of formulas to work with:
 
 1. **SAT** / boolean / propositional': $p \land q$
 2. **Theory**: $(a <= 2) \land (b + a = 5)$
 3. **SMT**: a conjunction of possible many **theory** formulas.
-
-With that out of the way, let's see how Blue3 handles the propositional formulas, and hopefully illustrate how closely the propositional solver is connected to the 3SAT problem.

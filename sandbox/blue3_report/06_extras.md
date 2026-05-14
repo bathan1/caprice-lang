@@ -1,4 +1,4 @@
-## An Extra IDL case
+## Extras
 Difference logic doesn't know anything about boolean logic, including `iff` statements that have difference encodable formula terms in them. Consider the unit clause:
 
 ```
