@@ -1,35 +1,60 @@
 ## Difference Logic
+Recall that the goal of Blue3 is to solve "simple" formulas that are overkill for the Z3 solver, such as:
 
-Integer Difference Logic, or IDL for short, is about solving **difference** formulas that operate on *integers*, and is a subtheory of the Linear Integer Arithmetic logic. There is a variant of IDL that works over the reals, but caprice only uses ints for its formulas, so we will describe the integer version here. Speaking more formally, a solver for IDL handles terms that take on the shape:
-
+```math
+(6 \leq a) \land (a \lt 0)
 ```
-(x - y) <> c
+
+A roadblock to implementing our solver was that we had no way to decide whether a formula was "simple". That was indicative of the more general issue of having no way to classify our generic formula AST type.
+
+Luckily, `caprice-lang`'s formula AST is simple and only works with formulas that only operate over `bool`s and `int`s. Although we did not have a way to classify formulas as "simple" or not yet, we could at least tell that these simple formulas tended to work with ints, such as:
+
+| formula_id |            formula             | 
+|------------|--------------------------------|
+| 9          | (0 < a) ^ ((a + 1) <= a)       |
+| 8          | (0 < a) ^ ((a + 1) <= 1)       |
+| 56         | (not (a = 0)) ^ ((a + 10) = 0) |
+| 11         | (1 < a) ^ (a < 0)              |
+| 88         | (0 < a) ^ (a < 1)              |
+| 36         | (2 < a) ^ (a < 0)              |
+| 64         | (0 < a) ^ (a < 0)              |
+| 6          | (0 <= a) ^ ((a + 1) < 0)       |
+| 29         | (6 <= a) ^ (a <= 0)            |
+| 63         | (a < 0) ^ (0 < a)              |
+
+Integer Difference Logic, or IDL for short, is about solving **difference** formulas with only `int` variables. Speaking in SMT-LIB terms, IDL is a "sub-logic" of the Linear Integer Arithmetic logic. There is a variant of IDL that works over the reals, but caprice only uses ints for its formulas, so we will describe the integer version here. More formally, a solver for IDL solves satisfiability for literals that take on the shape:
+
+```math
+(x \leq y) \text{<>} c
 ```
 
-Where `x` and `y` are either integer *variables* or the *constant* `0`, `c` is any integer *constant*, and `<>` is a binary operator that is one of `<`, `<=`, `>`, `>=`, and `=`. Specifically, it does *not* handle the `Not equal` operator `!=`, nor does it handle formulas where the left side is the *sum* `x + y`, or any other operator other than `-` for that matter.
+> The difference between a logic and a theory in SMT-LIB terms can be a bit confusing. One way to think about it is that a theory *takes* sub-formulas from a generic SMT formula, because it defines what types of expressions are allowed and gives them meaning. A logic *takes* from those theory sub-formulas to define an even stricter subset of expressions that allow solving by efficient algorithms.
 
-As it turns out, many of our "simple" cases are exactly in this difference form, including our example:
+Where $x$ and $y$ are either integer variables or the constant $0$, $c$ is any integer constant, and $<>$ is a binary operator that is one of $\lt, \leq, \gt, \geq$, and $=$. Specifically, it does *not* handle the `Not equal` operator $\neq$, nor does it handle formulas where the left side is the *sum* $x + y$, or any other operator other than $-$ for that matter.
 
-```
-(6 <= a) ^ (a < 0)
+As it turns out, many of our "simple" cases are in this difference form, including our example:
+
+```math
+(6 \leq a) \land (a \lt 0)
 ```
 
 Because we can rewrite this as:
 
-```
-(0 <= a - 6) ^ (a <= -1)
+```math
+(0 \leq a - 6) \land (a \leq -1)
 ```
 
-Then writing out out the difference with 0 explicitly...
-```
-(0 - a <= -6) ^ (a - 0 <= -1)
+Then writing out the difference with 0 explicitly:
+
+```math
+(0 - a \leq -6) \land (a - 0 \leq -1)
 ```
 
 As humans, all this rewriting may seem like extra work because we don't need to do all this to figure out this formula is UNSAT; we just "know" from looking at the formula that it is UNSAT.
 
-But Difference Logic allows us to encode how we "know" that this is UNSAT in a way a computer can understand. Moreover, it is able to handle the "simple" formula cases that we didn't even know were "simple", because it formalizes what type of formula it can solve.
+But Difference Logic allows us to encode how we "know" that this is UNSAT in a way a computer can understand. Moreover, it is able to handle the "simple" formula cases that we didn't even know were "simple", because it encodes what types of formulas it can solve.
 
-We get the computer to tell us whether formulas like `(6 <= a) ^ (a < 0)` are satisfiable through a familiar shortest distance graph algorithm.
+We get the computer to tell us whether formulas like $(6 \leq a) \land (a \lt 0)$ are satisfiable through a familiar shortest distance graph algorithm.
 
 ### Bellman Ford
 The Bellman Ford algorithm finds the shortest distance paths from a particular node to all others in a directed graph.
@@ -55,7 +80,7 @@ graph LR
   nz -->|"5"| na["a"]
 ```
 
-If we wanted to find the shortest distance paths from `z` to every other node,wWe can run bellman ford against the edge list and it will tell us:
+If we wanted to find the shortest distance paths from `z` to every other node,we can run bellman ford against the edge list and it will tell us:
 
 ```ocaml
 print_bellman_ford ~label:"OK cycle" ~src:'z' edges
@@ -397,7 +422,7 @@ graph LR
   c["c"] -->|"1"| a["a"]
 ```
 
-If we just used the node from `find_relaxed_node_opt` instead of a real node in the cycle, then we'd incorrectly include `c -> d` in the reconstructed cycle:
+If we use the node from `find_relaxed_node_opt` instead of a real node in the cycle, then we'd incorrectly include `c -> d` in the reconstructed cycle:
 
 ```ocaml
 let edges =
@@ -507,207 +532,285 @@ Negative cycle found:
 ```
 
 ### Bellman Ford as a Difference Logic solver
-Bellman Ford is useful because it solves our difference formulas. Difference formulas are made of literals:
+Bellman Ford is useful because it solves our difference formulas. You may remember that difference formulas are made of literals:
 
-```
-(x - y) <> c
-# Rewritten
-(x <> y + c)
-```
-
-where `x` and `y` are either an int variable or the constant `0`, `c` is some constant, and `<>` is an operator that is one of:
-
-```
-<, <=, >, >=, =
+```math
+(x - y) \text{<>} c \\
+(x \text{<>} y + c)
 ```
 
-We encode an edge *from* `y` *to* `x` with cost `c` like so:
+where $x$ and $y$ are either an int variable or the constant $0$, $c$ is some constant, and $<>$ is an operator that is one of:
+
+```math
+\lt, \leq, \gt, \geq, =
+```
+
+Our specific implementation normalizes everything to $\leq$, but it can be any of them just as long as you are consistent with it.
+
+Bellman Ford doesn't know anything about difference logic (it's just a graph algorithm), so we need to *encode* the difference literals into a graph. For the case of Bellman Ford, a graph is represented going from difference literals to an input graph is not too bad. For each difference literal, we just encode an edge *from* $y$ *to* $x$ with cost $c$ like so:
 
 ```mermaid
 graph LR
   ny["y"] -->|"c"| nx["x"]
 ```
 
-### Bellman Ford UNSAT Case
+And then add a dummy node that directs to every other node with weight $0$, and set that as the source node for Bellman Ford. Then we let Bellman Ford run against the graph and report SAT or UNSAT based on the result.
 
-Referring back to our simple UNSAT example formula:
+#### Case 1. SAT
+We'll go over the arguably less interesting case of a SAT solution. Let's say we wanted to show that the formula:
 
+```math
+(-a \leq 1) \land (a \leq 2) 
 ```
-(6 <= a) ^ (a < 0)
-(0 - a <= -6) ^ (a - 0 <= -1)
+
+was satisfiable, because we can set $a = 1$ and this will satisfy the equation. So would $a = 0$, and $a = -1$.
+
+$-a \leq 1$ is the difference $0 - a\leq 1$, which means we can use our generic map of $x - y \leq c$ to edge $(y, x, c)$, so that $x = 0$, $y = a$, and $c = 1$.
+
+To make clear when $0$ is a node versus an edge weight, let's denote the $x$ and $y$ cases as $0^*$
+
+```math
+\text{encode\_literal}(-a \leq 1) = (a, 0^*, 1)
 ```
 
-We can map `6 <= a` to the edge `('a', '0', -6)`...
+$a \leq 2$ is the difference $(a - 0) \leq 2$, so just like we did with $-a \leq 1$, we can map this to the edge $(0, a, 2)$.
+
+Our edges are $(a, 0^*, 1)$ and $(0^*, a, 2)$. Now we add our dummy source node, let's call it $s$, and connect it our $a$ and $0$ nodes. Our final edge set is:
+
+```math
+\text{Edges} = \set{(a, 0^*, 1), (0^*, a, 2), (s, a, 0), (s, 0^*, 0)}
+```
+
+So the graph looks like:
 
 ```mermaid
 graph LR
-  n0["0"]
-  na["a"]
-
-  na -->|"-6"| n0
+  na["a"] -->|"1"| n0["0"]
+  n0["0*"] -->|"2"| na["a"]
+  ns["s"] -->|"0"| na["a"]
+  ns["s"] -->|"0"| n0["0*"]
 ```
-
-...because rewritten in the difference form it is `0 - a <= -6` or `0 <= a - 6`.
-
-So our `x` is `0`, `y` is `a`, and `c` is `-6`:
-
-| Difference | Formula |
-| ---------- | ------- |
-|    `x`     |   `0`   |
-|    `y`     |   `a`   |
-|    `c`     |  `-6`   |
-|    `<>`    |  `<=`   |
-
-We can similarly map the `a < 0` clause to the edge `('0', 'a', -1)`:
-
-```mermaid
-graph LR
-  n0["0"]
-  na["a"]
-
-  n0 -->|"-1"| na
-```
-
-| Difference | Formula |
-| ---------- | ------- |
-|    `x`     |   `a`   |
-|    `y`     |   `0`   |
-|    `c`     |  `-1`   |
-|    `<>`    |  `<=`   |
-
-Both clauses use the `<=` operator which means we can map this to our graph. The full graph looks something like this:
-
-```mermaid
-graph LR
-  n0["0"]
-  na["a"]
-
-  na -->|"-6"| n0
-  n0 -->|"-1"| na
-```
-
-Then running Bellman Ford on this with source node `src` set to `a`, it tells us:
 
 ```ocaml
-let edges =
-[ ('a', '0', -6)
-; ('0', 'a', -1)
-]
-in
-print_bellman_ford ~label:"Negative Cycle src a" ~src:'a' edges;
+let sat_graph () =
+  let edges =
+    [ ("a", "0*", 1)
+    ; ("0*", "a", 2)
+    ; ("s", "0*", 0)
+    ; ("s", "a", 0)
+  ] in
+  print_bellman_ford ~label:"SAT Graph" ~src:"s" edges
 ```
 
+This prints:
 ```bash
-Example: [Negative Cycle src a]
-Negative cycle found:
-- a -> 0 (-6)
-- 0 -> a (-1)
-```
-
-Changing the `src` to `0` doesn't affect the outcome:
-
-```ocaml
-print_bellman_ford ~label:"Negative Cycle src 0" ~src:'0' edges;
-```
-
-```bash
-Example: [Negative Cycle src 0]
-Negative cycle found:
-- a -> 0 (-6)
-- 0 -> a (-1)
-```
-
-In other words this is a negative cycle made up of the edges `('a', '0', -6)`, `('0', 'a', -1)`, which are all the edges from our input edge list. These edges map directly to our difference formula `0 - a <= -6` or `0 <= a - 6`, which is our rewritten version of the original formula:
-
-```
-(6 <= a) ^ (a < 0)
-```
-
-Returning to the original task of finding a full SMT solution for this formula, we would map the `Negative cycle` result to `UNSAT`, which is exactly what we wanted our solver to find. Speaking in terms of the SMT architecture, Blue3 *uses* the IDL solver to find a final solution, and the IDL solver *uses* Bellman Ford so Blue3 can find that the formula is UNSAT.
-
-```mermaid
-flowchart TD
-    subgraph Part_1["IDL flow part 1"]
-        B["Blue3"]
-        I["IDL"]
-        BF["Bellman Ford"]
-
-        B -->|"solve (6 <= a) ^ (a < 0)"| I
-        I -->|"run ('a', '0', -6), ('0', 'a', -1)"| BF
-    end
-```
-
-```mermaid
-flowchart TD
-    subgraph Part_2["IDL flow part 2"]
-        B["Blue3"]
-        I["IDL"]
-        BF["Bellman Ford"]
-
-        BF -->|"Negative cycle ('a', '0', -6), ('0', 'a', -1)"| I
-        I -->|"UNSAT"| B
-    end
-```
-
-Before discussing the SAT case, let's see what happens if we adjust our working graph slightly.
-
-Let's add one node `b` to our graph and one edge `('0', 'b', 5)`:
-
-```ocaml
-let edges =
-  [ ('a', '0', -6)
-  ; ('0', 'a', -1)
-  ; ('0', 'b', 5)
-  ]
-in
-print_bellman_ford ~label:"Augmented src a" ~src:'a' edges;
-print_bellman_ford ~label:"Augmented src 0" ~src:'0' edges;
-```
-
-```mermaid
-graph LR
-  n0["0"]
-  na["a"]
-  nb["b"]
-
-  na -->|"-6"| n0
-  n0 -->|"-1"| na
-  n0 -->|"5"| nb
-```
-
-Bellman Ford can still find the negative cycle in the graph if we search from either `a` and `0`:
-
-```bash
-Example: [Augmented src a]
-Negative cycle found:
-- 0 -> a (-1)
-- a -> 0 (-6)
-
-Example: [Augmented src 0]
-Negative cycle found:
-- 0 -> a (-1)
-- a -> 0 (-6)
-```
-
-But if we searched from `b` instead, we would not find the negative cycle:
-
-```ocaml
-print_bellman_ford ~label:"Augmented src b" ~src:'b' edges;
-```
-
-```bash
-Example: [Augmented src b]
 No negative cycle found.
-dist(a) = ∞
-dist(0) = ∞
 ```
 
-We ended up with shortest distances of infinity because `r` has no outgoing edges, so bellman ford terminates after the first iteration over the edges, which is always called on the initial distance table state:
+| Node | Distance |
+|------|----------|
+| $a$  |   $0$    |
+| $0^*$  |   $0$    |
+
+At this point, we know the original formula is **SAT**. We can *prove* that by returning a model that maps the variables to concrete values, which are all `int`s here.
+
+To create a model, we use the distance table returned by bellman ford. Bellman ford returns the *minimum* distances to each node from our source. We used a dummy node $s$ with $0$-weight edges to every other node, including the $0$ node, as our source node.
+
+When the minimum distance to the $0$ node remains $0$, we can just return the distance table as our model, such as our example:
+
+```math
+\text{distance}[a] = 0 \implies \\
+(-a \leq 1) \land (a \leq 2) = \\
+(0 \leq 1) \land (0 \leq 2) = \\
+\text{true} \land \text{true} = \\
+\text{true}
+```
+
+```math
+(0 \leq 1) \land (0 \leq 2) = \text{true} \land \text{true} = \text{true}
+```
+
+On the other hand, if we used the distance table for a formula like:
+
+```math
+(0 \leq (a - 1)) \land (a \leq 2)
+```
 
 ```ocaml
-let relax (edges : Node.t edge list) (tbl, num_nodes : t) (i : int)
-  : [ `Continue of t | `Stop of tbl ] =
-  if i = num_nodes - 1 then `Stop tbl
-  else if update edges tbl then `Continue (tbl, num_nodes)
-  else `Stop tbl
+let sat_graph_offset () =
+  let edges =
+    [ ('a', '0', -1)
+    ; ('0', 'a', 2)
+    ; ('s', '0', 0)
+    ; ('s', 'a', 0)
+  ] in
+  print_bellman_ford ~label:"SAT Graph (with offset)" ~src:'s' edges
 ```
+
+```bash
+No negative cycle found.
+```
+
+| Node | Distance |
+|------|----------|
+| $a$  |   $0$    |
+| $0^*$  |   $-1$    |
+
+Then we wouldn't be able to just use $a = 0$ as our model value:
+
+```math
+(0 \leq (0 - 1)) \land (0 \leq 2) = (0 \leq -1) \land \text{true} = (0 \leq -1) = \text{false}
+```
+
+We also need to treat the implicit $0^*$ node as a variables too. If we plugged in the distance table's value for $0^*$ as well:
+
+```math
+(0^* \leq (a - 1)) \land ((a - 0^*)\leq 2) = \\
+(-1 \leq (a - 1)) \land ((a - -1) \leq 2) = \\
+(-1 \leq (a - 1)) \land ((a + 1) \leq 2)
+```
+
+Then plug in $a = 0$:
+
+```math
+(-1 \leq (0 - 1)) \land ((0 + 1) \leq 2) = \\
+(-1 \leq -1) \land (1 \leq 2) = \\
+\text{true}
+```
+
+Now it works out. From math, we know that we can add and subtract from an inequality just as long as we do it from both sides:
+
+```math
+3 \leq 4 \equiv \\
+3 + 1 \leq 4 + 1 \equiv \\
+4 \leq 5 \equiv \\
+\text{true}
+```
+
+Since we'd like to assign our $0^*$ variable to, well, $0$, we can just subtract its value by itself:
+
+```math
+\text{distance}[0^*] - \text{distance}[0^*] = 0
+```
+
+And do the same with the rest of our distances:
+
+```math
+\text{distance}[a] - \text{distance}[0^*] = 0 - (-1) = 0 + 1 = 1
+```
+
+Now plugging that back in, we see it is *SAT*:
+
+```math
+(0^* \leq (a - 1)) \land ((a - 0^*)\leq 2) = \\
+(0 \leq (1 - 1)) \land ((1 - 0) \leq 2) = \\
+(0 \leq 0) \land (1 \leq 2) = \text{true}
+```
+
+and are able to our original formula with $0 = 0$.
+
+The implementation looks like this, where we subtract the `z0_dist` from each variable to get our final model:
+
+```ocaml
+let solve_int_diff (literals : 'k Theory.literal list)
+  ...
+  let distance_map = NodeMap.of_list distances in
+  let z0_dist = NodeMap.find Node.zero distance_map in
+  let local_model =
+    vars
+    |> List.map (fun uid ->
+      let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
+      uid, Model.Int (var_dist - z0_dist))
+    |> Uid.Map.of_list
+  in
+  let model = Model.from_value_map local_model in
+  Theory.sat model
+```
+
+#### Case 2. UNSAT
+
+Referring back to our example UNSAT formula:
+
+```math
+(6 \leq a) \land (a \lt 0)
+```
+
+Encoding this as a constraint graph looks something like:
+
+```mermaid
+graph LR
+  n0["0*"]
+  na["a"]
+  nr["r"]
+
+  na -->|"-6"| n0
+  n0 -->|"-1"| na
+  nr -->|"0"| n0
+  nr -->|"0"| na
+```
+
+Then running Bellman Ford on this with source node `src` set to `r`, it tells us:
+
+```bash
+Negative cycle found!
+```
+
+```mermaid
+graph LR
+  n0*["0*"] -->|"-1"| na["a"]
+  na["a"] -->|"-6"| n0*["0*"]
+```
+
+In other words this is a negative cycle made up of edges `('a', '0*', -6)`, `('0*', 'a', -1)`, which is our encoded difference literals.
+
+We are able to map a negative cycle to an `UNSAT` solution, which is exactly what we wanted our solver to find.
+
+```mermaid
+flowchart TD
+    subgraph IDL["IDL flow"]
+        B["Blue3"]
+        I["IDL"]
+        BF["Bellman Ford"]
+
+        B -->|"(1) solve (6 <= a) ^ (a < 0)"| I
+        I -->|"(2) run (a, 0*, -6), (0*, a, -1)"| BF
+        BF -->|"(3) Negative cycle (a, 0*, -6), (0*, a, -1)"| I
+        I -->|"(4) UNSAT"| B
+    end
+```
+
+We can do more than just return that the formula is `UNSAT`. We can also return the *reason* why it's UNSAT, which in this case, is because there was a negative cycle at edges $(a, 0^*, -6), (0^*, a, -1)$:
+
+```mermaid
+flowchart TD
+    subgraph IDL["IDL flow (step 3)"]
+        direction RL
+
+        I["IDL"]
+        BF["Bellman Ford"]
+
+        BF -->|"(3) Negative cycle (a, 0*, -6), (0*, a, -1)"| I
+    end
+```
+
+That maps back to the formula literals:
+
+```math
+(a, 0^*, -6) \implies (6 \leq a) \\
+(0^*, a, -1) \implies (a \lt 0)
+```
+
+So the IDL solver would tell Blue3:
+
+```mermaid
+flowchart TD
+    subgraph Part_2["IDL flow (step 4)"]
+        direction RL
+        B["Blue3"]
+        I["IDL"]
+
+        I -->|"UNSAT ((6 <= a) ^ (a < 0))"| B
+    end
+```
+
+We refer the `reason` literals as the UNSAT core, or just core for short. Returning the core allows our SAT solver to make some "smart" heuristics in its otherwise brute-force search.

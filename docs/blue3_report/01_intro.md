@@ -1,6 +1,4 @@
 # Programming Blue3: An SMT solver for Caprice-Lang
-
-## Intro
 Blue3 is a simple SMT solver implementation in OCaml. It was built to solve many of the simple SMT formulas that `ceval` outputs.
 
 Before Blue3, [Z3](https://www.microsoft.com/en-us/research/project/z3-3/) was in charge of handling the SMT solving. It's still in charge of SMT solving, but now is used as a "fallback" for when Blue3 cannot solve the formula.
@@ -17,14 +15,28 @@ Many of the formulas `ceval` needs solved are simple / trivial like this. It's f
 
 In other words, using Z3 to solve our simple formulas felt like using a bazooka to swat a fly.
 
-Because of this along with the overhead of invoking the external Z3 C++ bindings from OCaml (since `caprice-lang` is written in OCaml), the team felt as if an in-house solver that can handle our trivial cases could improve the performance of `ceval` significantly. 
+This with the overhead of invoking the external Z3 C++ bindings from OCaml (since `caprice-lang` is written in OCaml) made the team feel as if an in-house solver, one that can handle our trivial cases, could improve the performance of `ceval`. 
 
-This report introduces Blue3, a minimal SMT solver for the caprice-lang. It may be small but has a full solve pipeline that uses modern techniques (the best it can, at least). We'll start by going over the theory solver we built to handle the "simple" cases programatically. From there, the rest of the report will follow its integration into the solve pipeline.
+## Intro
+This report introduces Blue3, a minimal SMT solver for the caprice-lang. It may be small but has a full solve pipeline that uses modern solver techniques. Our benchmarks showed that the Blue3 'frontend' Z3 was just over ~60% faster than Z3.
 
+| avg_blue3 | avg_z3   |
+|-----------|----------|
+| 222.0μs   | 329.0μs  |
+
+When Blue3 is given a formula it can't solve, it will pass the formula off to Z3, which is slower than just calling Z3 without Blue3. On average, it adds a cost of around 20.24μs:
+
+| num_slow_cases | avg_slower_by | avg_percent_slower |
+|----------------|---------------|--------------------|
+| 38             | 20.24μs       | 4.59%              |
+
+Which is about 5% slower than calling Z3 by itself. That's not a bad tradeoff for being able to solve the "simple" formulas 60% faster than Z3.
+
+But before going into Blue3 and the benchmarks, let's talk a little about the $P = NP$ problem. 
 
 ### P = NP and the Boolean Satisfiability Problem
 
-Before going into Blue3, let's talk a little about the $P = NP$ problem. Oversimplifying, $P = NP$ asks:
+Oversimplifying, $P = NP$ asks:
 
 > If we can check a solution to some problem quickly, can we also solve the problem quickly?
 
@@ -154,7 +166,9 @@ Paraphrasing the above video again, one of the reasons $P = NP$ is an important 
 
 In other words, the world would look a lot different if we were able to prove $P = NP$.
 
-Many other problems would be solved as a consequence of solving $P = NP$ because it was proven that [all problems in $NP$ are reducible, ***in polynomial time***, to $\text{NP-complete}$ problems]() by some very smart people. $\text{NP-complete}$ problems are the special subset of $NP$ problems for which all problems in $NP$ are reducible to in polynomial time. This means that if we can solve any $NP-complete$ problem in polynomial time, then we have effectively shown that $P = NP$, because we can just reduce the $NP$ problem into a problem we have shown to be solvable in polynomial time. There are many problems classified as $NP-Complete$, including the famous [21 seemingly unrelated problems]() that Richard Karp proved to be reducible from 3SAT, the very first problem proven to be $\text{NP-complete}$.
+Many other problems would be solved as a consequence of solving $P = NP$ because it was proven that [all problems in $NP$ are reducible, ***in polynomial time***, to $\text{NP-complete}$ problems](https://dl.acm.org/doi/10.1145/800157.805047). $\text{NP-complete}$ problems are the special subset of $NP$ problems for which all problems in $NP$ are reducible to in polynomial time.
+
+This means that if we can solve any $NP-complete$ problem in polynomial time, then we have effectively shown that $P = NP$, because we can just reduce the $NP$ problem into a problem we have shown to be solvable in polynomial time. There are many problems classified as $NP-Complete$, including the famous [21 seemingly unrelated problems](https://cgi.di.uoa.gr/~sgk/teaching/grad/handouts/karp.pdf) that Richard Karp proved to be reducible from 3SAT.
 
 ### 3SAT and Boolean Satisfiability
 

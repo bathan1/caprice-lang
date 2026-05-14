@@ -154,13 +154,13 @@ let edges_from_constraint
     [mk (Node.symbol_key y) Node.zero]
   | _ -> []
 
-(** [to_graph formula] returns the graph representation of FORMULA.
+(** [encode_graph formula] returns the graph representation of FORMULA.
 
     Since [Bellman_ford] now indexes arbitrary nodes internally, this graph
     stores edges directly as [(node, node, int)] triples instead of translating
     nodes to integers here.
 *)
-let to_graph (formula : 'k Theory.literal list) : 'k constraint_graph =
+let encode_graph (formula : 'k Theory.literal list) : 'k constraint_graph =
   let constraints = collect_constraints formula in
 
   let vars =
@@ -263,7 +263,7 @@ let solve_int_diff (literals : 'k Theory.literal list)
   match remaining_splits with
   | _ :: _ as splits -> Theory.split splits
   | [] ->
-    let { edges ; edge_sources ; vars } = to_graph lits in
+    let { edges ; edge_sources ; vars } = encode_graph lits in
     match bellman_ford ~src:Node.root edges with
     | `Negative_cycle edges ->
       let core =
@@ -273,17 +273,12 @@ let solve_int_diff (literals : 'k Theory.literal list)
       in
       Theory.unsat core
     | `No_negative_cycle distances ->
-      let distances =
-        distances
-        |> List.fold_left
-             (fun acc (node, distance) -> NodeMap.add node distance acc)
-             NodeMap.empty
-      in
-      let z0_dist = NodeMap.find Node.zero distances in
+      let distance_map = NodeMap.of_list distances in
+      let z0_dist = NodeMap.find Node.zero distance_map in
       let local_model =
         vars
         |> List.map (fun uid ->
-          let var_dist = NodeMap.find (Node.symbol_key uid) distances in
+          let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
           uid, Model.Int (var_dist - z0_dist))
         |> Uid.Map.of_list
       in
