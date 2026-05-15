@@ -29,8 +29,8 @@ let rec eval_clause clause model =
       | `Undecided lits -> `Undecided (lit :: lits)
       end
     | Some lit' ->
-        if lit = lit' then `Satisfied
-        else eval_clause clause' model
+      if lit = lit' then `Satisfied
+      else eval_clause clause' model
 
 (** [is_tautology formula model] returns true if subbing in
     the literals from MODEL results in the empty formula. *)

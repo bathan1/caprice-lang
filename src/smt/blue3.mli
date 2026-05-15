@@ -1,3 +1,20 @@
+(* Blue3 is the 'glue' layer between the CDCL SAT solver and
+   the Theory layer. It is responsible for mapping the propositional SAT formula atoms with those from the SMT formula. *)
+
+open Utils
+
+type 'k t
+
+val make : int -> 'k t
+
+val abstract : ?uid:(int -> Uid.t) -> 'k Theory.formula -> 'k t -> Sat.Formula.formula
+
+val abstract_clause : ?uid:(int -> Uid.t) -> 'k Theory.clause -> 'k t -> Sat.Formula.clause
+
+val make_theory_literals : Sat.Model.model -> 'k t -> 'k Theory.literal list
+
+val theory_learn : 'k Theory.core -> 'k t -> Sat.Formula.clause
+
 (** [cdcl_T ~theory_solver formula] runs the non-incremental CDCL (T) loop
     using a single THEORY_SOLVER against FORMULA, or the so-called
     "simple" CDCL (T) loop from the
