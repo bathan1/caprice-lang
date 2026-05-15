@@ -21,8 +21,7 @@ let pp_next ~uid fd (next : next) : unit =
     - [Implication (clause, lit)]
     - [Conflict clause] when applying TRAIL to clause is inconsistent (i.e. substitution returns [Some] empty list)
 *)
-let unit_propagate formula trail =
-  let model = Trail.to_model trail in
+let unit_propagate formula model =
   let rec search_empty
     (clauses : Formula.formula)
     (reason_clause : literal list)
@@ -46,15 +45,15 @@ let unit_propagate formula trail =
   in
   search_unit formula
 
-let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Model.model option =
-  begin match unit_propagate formula trail with
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  begin match unit_propagate formula model with
   | Decide ->
-    let model = Trail.to_model trail in
     let atoms = List.map Formula.atom_from_literal model in
     begin match Formula.find_free_variable_opt atoms formula with
     | None ->
-      if Model.is_tautology formula model then Some model
-      else None
+      if Model.is_tautology formula model then SAT model
+      else UNSAT
     | Some x ->
         decide ~lit:(Formula.pos x) level trail formula
         (* [Formula.pos x] is arbitrary. It doesn't matter because the
@@ -64,10 +63,8 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Mo
     end
   | Conflict clause ->
     let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
-    if backtrack_lvl < 0 then
-      None (* UNSAT *)
-    else
-      backtrack_learn ~level:backtrack_lvl clause' trail formula
+    if backtrack_lvl < 0 then UNSAT
+    else backtrack_learn ~level:backtrack_lvl clause' trail formula
   | Implication (clause, lit) ->
     let trail' = Trail.imply ~reason:clause level lit trail in
     bcp level trail' formula

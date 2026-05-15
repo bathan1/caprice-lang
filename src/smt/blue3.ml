@@ -7,8 +7,8 @@ let cdcl_T ~(solver : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
   let propositional = Connector.abstract (Theory.from_smt_formula formula) conn in
   let rec loop conn sat_formula =
     match Sat.Cdcl.cdcl sat_formula with
-    | None -> Solution.Unsat
-    | Some model ->
+    | UNSAT -> Solution.Unsat
+    | SAT model ->
       let theory_lits =
         Connector.make_theory_literals model conn
       in

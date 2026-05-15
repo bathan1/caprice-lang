@@ -16,19 +16,14 @@ Luckily, `caprice-lang`'s formula AST is simple and only works with formulas tha
 | 56         | (not (a = 0)) ^ ((a + 10) = 0) |
 | 11         | (1 < a) ^ (a < 0)              |
 | 88         | (0 < a) ^ (a < 1)              |
-| 36         | (2 < a) ^ (a < 0)              |
-| 64         | (0 < a) ^ (a < 0)              |
-| 6          | (0 <= a) ^ ((a + 1) < 0)       |
-| 29         | (6 <= a) ^ (a <= 0)            |
-| 63         | (a < 0) ^ (0 < a)              |
 
-Integer Difference Logic, or IDL for short, is about solving **difference** formulas with only `int` variables. Speaking in SMT-LIB terms, IDL is a "sub-logic" of the Linear Integer Arithmetic logic. There is a variant of IDL that works over the reals, but caprice only uses ints for its formulas, so we will describe the integer version here. More formally, a solver for IDL solves satisfiability for literals that take on the shape:
+Integer Difference Logic, or IDL for short, is about solving **difference** formulas with only `int` variables. Speaking in SMT-LIB terms, IDL is a "sub-logic" of the Linear Integer Arithmetic logic which operates under the linear arithmetic theory, known as the `Ints` theory.
+
+There is a variant of IDL that works over the reals, but caprice only uses ints for its formulas, so we will describe the integer version here. More formally, a solver for IDL solves satisfiability for literals that take on the shape:
 
 ```math
 (x \leq y) \text{<>} c
 ```
-
-> The difference between a logic and a theory in SMT-LIB terms can be a bit confusing. One way to think about it is that a theory *takes* sub-formulas from a generic SMT formula, because it defines what types of expressions are allowed and gives them meaning. A logic *takes* from those theory sub-formulas to define an even stricter subset of expressions that allow solving by efficient algorithms.
 
 Where $x$ and $y$ are either integer variables or the constant $0$, $c$ is any integer constant, and $<>$ is a binary operator that is one of $\lt, \leq, \gt, \geq$, and $=$. Specifically, it does *not* handle the `Not equal` operator $\neq$, nor does it handle formulas where the left side is the *sum* $x + y$, or any other operator other than $-$ for that matter.
 
@@ -88,10 +83,12 @@ print_bellman_ford ~label:"OK cycle" ~src:'z' edges
 
 ```bash
 No negative cycle found.
-dist(z) = 0
-dist(a) = 4
-dist(0) = 5
 ```
+
+| Node | Distance |
+|------|----------|
+| $a$  |   $4$    |
+| $0$  |   $5$    |
 
 The shortest distance path from `z` to `0` is just the direct edge `z -> 0` with weight `5`.
 
@@ -122,11 +119,14 @@ graph LR
 
 ...then Bellman Ford will tell us:
 
+```bash
+Negative cycle found!
 ```
-Example: [Negative Cycle]
-Negative cycle found:
-- 0 -> a (-1)
-- a -> 0 (-6)
+
+```mermaid
+graph LR
+  n0*["0*"] -->|"-1"| na["a"]
+  na["a"] -->|"-6"| n0*["0*"]
 ```
 
 After going from `z` to `0` for cost `5`, going to `0` from `a` costs us `-1`, which leads us to total cost of `4`. And now going from `a` *back* to `0` would cost us `-6` weight for a total sum of `-2`, which is less than our previous path to `a`. We can do this as many times as we want and will end up with lower and lower weights.
@@ -555,6 +555,45 @@ graph LR
 ```
 
 And then add a dummy node that directs to every other node with weight $0$, and set that as the source node for Bellman Ford. Then we let Bellman Ford run against the graph and report SAT or UNSAT based on the result.
+
+#### Case 0. Split
+Before getting into the main `SAT` and `UNSAT` cases, we'll go over a third "case" that we call a Split case. We said earlier that difference logic allows for comparison operators other than $\neq$. Whenever our IDL solver finds any $x \neq y$ cases, it will return the split cases:
+
+```math
+x \neq y \implies (x \leq (y - 1)) ^ ((y + 1) \leq x)
+```
+
+```ocaml
+let solve_int_diff (literals : 'k Theory.literal list)
+  : 'k Theory.theory_solution =
+  let lits, remaining_splits = resolve_splits literals in
+  match remaining_splits with
+  | _ :: _ as splits -> Theory.split splits
+```
+
+In our implementation, we split the literal like so:
+
+```ocaml
+let find_split_opt (lit : 'k Theory.literal)
+  : 'k split_neq_case option =
+  let one = Formula.const_int 1 in
+  match lit with
+  | Neg Predicate (Equal, x, y) ->
+    begin match Ints.reflect_int_opt x, Ints.reflect_int_opt y with
+    | Some x', Some y' ->
+      let lower =
+        Theory.Predicate (Less_than_eq, x', Formula.minus y' one)
+      in
+      let upper =
+        Theory.Predicate (Less_than_eq, Formula.plus y' one, x')
+      in
+      let eq = Theory.Predicate (Equal, x, y) in
+      Some (~lower:(Pos lower), ~upper:(Pos upper), ~eq:(Pos eq))
+```
+
+We include the `Pos eq` case as well because we don't want our IDL solver to assume that the SMT solver is "locked" into asserting $x \neq y$ and can also try the $x = y$ case, where we'd treat that as the *inequalities* $(x \leq y) \land (y \leq x)$.
+
+For most if not all of our cases, we *are* locked into asserting $x \neq y$ because they tend to show up as unit clauses, which will make more sense once we get to the next section on the SAT solver. For now, just know that the disequality operator $\neq$ is where IDL case splits.
 
 #### Case 1. SAT
 We'll go over the arguably less interesting case of a SAT solution. Let's say we wanted to show that the formula:

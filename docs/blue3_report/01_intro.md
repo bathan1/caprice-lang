@@ -276,6 +276,14 @@ So when we say "formula" here, we'll be referring specifically to an expression 
   ```math
   (s \lor t \lor ~u)
   ```
+  
+  A **unit clause** is a clause with exactly 1 literal:
+
+  ```math
+  p \land q \land (r \lor s)
+  ```
+  
+  Where $p$ and $q$ are unit clauses, but $r \lor s$ is not.
 
 - A **literal** is the individual predicate / condition that is disjuncted (ORed) to form a clause and represents "unit" boolean values that make up the formula. It is either an atom or the negation of an atom. The **literals** from above are:
 

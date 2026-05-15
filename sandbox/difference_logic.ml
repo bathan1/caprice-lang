@@ -164,5 +164,5 @@ let run_bellman_ford () =
   sat_graph ();
   print_newline ();
   sat_graph_offset ();
-  
-intro_graph_neg_cycle ();
+  intro_graph_neg_cycle ();
+  intro_graph ();
