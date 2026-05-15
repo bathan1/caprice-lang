@@ -1,99 +1,96 @@
 .headers on
 .mode markdown
 
-.print "#### What were the average runtimes from both solvers?"
+.print "#### Average runtimes"
 SELECT 
-    ROUND(AVG(time_us_blue3)) || 'μs' as avg_blue3,
-    ROUND(AVG(time_us_z3)) || 'μs' as avg_z3
+    ROUND(AVG(time_us_blue3)) || 'μs' AS blue3,
+    ROUND(AVG(time_us_z3)) || 'μs' AS z3
 FROM benchmarks;
 
-.print "\n#### How many formulas were solved by blue3 only?"
-SELECT COUNT(DISTINCT formula_id) AS blue3_only_formula_count
+.print "\n#### Blue3-only count"
+SELECT COUNT(DISTINCT formula_id) AS count
 FROM benchmarks
 WHERE was_backend_used = 'false';
 
-.print "\n#### How many formulas had to be deferred to z3?"
-SELECT COUNT(DISTINCT formula_id) AS z3_deferred_formula_count
+.print "\n#### Z3-deferred count"
+SELECT COUNT(DISTINCT formula_id) AS count
 FROM benchmarks
 WHERE was_backend_used = 'true';
 
-.print "\n#### On average, how much slower were the deferred cases than just calling z3 by itself?"
+.print "\n#### Deferred overhead"
 SELECT
-  COUNT(*) AS num_deferred_cases,
-  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS avg_slower_by,
-  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_z3), 2) || '%' AS avg_percent_slower_than_z3
+  COUNT(*) AS cases,
+  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS diff,
+  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_z3), 2) || '%' AS pct
 FROM benchmarks
 WHERE was_backend_used = 'true';
 
-.print "\n#### How much faster were the fast cases on average?"
-
+.print "\n#### Fast cases"
 SELECT
-  COUNT(*) AS num_fast_cases,
-  ROUND(AVG(time_us_z3 - time_us_blue3), 2) || 'μs' AS avg_faster_by,
-  ROUND(AVG(((time_us_z3 - time_us_blue3) * 100.0) / time_us_z3), 2) || '%' AS avg_percent_faster
+  COUNT(*) AS cases,
+  ROUND(AVG(time_us_z3 - time_us_blue3), 2) || 'μs' AS diff,
+  ROUND(AVG(((time_us_z3 - time_us_blue3) * 100.0) / time_us_z3), 2) || '%' AS pct
 FROM benchmarks
 WHERE time_us_blue3 < time_us_z3;
 
-.print "\n#### How much slower were the slow cases on average?"
-
+.print "\n#### Slow cases"
 SELECT
-  COUNT(*) AS num_slow_cases,
-  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS avg_slower_by,
-  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_blue3), 2) || '%' AS avg_percent_slower
+  COUNT(*) AS cases,
+  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS diff,
+  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_blue3), 2) || '%' AS pct
 FROM benchmarks
 WHERE time_us_blue3 > time_us_z3;
 
-.print "\n#### Top 10 fastest blue3-only cases"
+.print "\n#### Top 5 fastest Blue3-only cases"
 SELECT
-  formula_id,
+  formula_id AS id,
   formula,
-  ROUND(AVG(time_us_blue3), 2) || 'μs' AS avg_time_us_blue3,
-  ROUND(AVG(time_us_z3), 2) || 'μs' AS avg_time_us_z3,
-  ROUND(AVG(time_us_blue3) - AVG(time_us_z3), 2) || 'μs' AS avg_slower_by
+  ROUND(AVG(time_us_blue3), 2) || 'μs' AS blue3,
+  ROUND(AVG(time_us_z3), 2) || 'μs' AS z3,
+  ROUND(AVG(time_us_blue3) - AVG(time_us_z3), 2) || 'μs' AS diff
 FROM benchmarks
 WHERE was_backend_used = 'false'
 GROUP BY formula_id, formula
 ORDER BY AVG(time_us_blue3) ASC
-LIMIT 10;
+LIMIT 5;
 
-.print "\n#### Top 10 slowest blue3-only cases"
-
+.print "\n#### Top 5 slowest Blue3-only cases"
 SELECT
-  formula_id,
+  formula_id AS id,
   formula,
-  ROUND(AVG(time_us_blue3), 2) || 'μs' AS avg_time_us_blue3,
-  ROUND(AVG(time_us_z3), 2) || 'μs' AS avg_time_us_z3,
-  ROUND(AVG(time_us_blue3) - AVG(time_us_z3), 2) || 'μs' AS avg_slower_by
+  ROUND(AVG(time_us_blue3), 2) || 'μs' AS blue3,
+  ROUND(AVG(time_us_z3), 2) || 'μs' AS z3,
+  ROUND(AVG(time_us_blue3) - AVG(time_us_z3), 2) || 'μs' AS diff
 FROM benchmarks
 WHERE was_backend_used = 'false'
 GROUP BY formula_id, formula
 ORDER BY AVG(time_us_blue3) DESC
-LIMIT 10;
+LIMIT 5;
 
-.print "\n#### What was the max time difference blue3 beat z3 by?"
+.print "\n#### Biggest Blue3 win"
 WITH diffs AS (
-    SELECT time_us_z3 - time_us_blue3 as diff
+    SELECT time_us_z3 - time_us_blue3 AS diff
     FROM benchmarks
 )
 SELECT 
-    ROUND(MAX(diff)) || 'μs' as max_diff
+    ROUND(MAX(diff)) || 'μs' AS diff
 FROM diffs;
 
-.print "\n#### What was the max time difference z3 beat blue3 by?"
+.print "\n#### Biggest Z3 win"
 WITH diffs AS (
-    SELECT time_us_blue3 - time_us_z3 as diff
+    SELECT time_us_blue3 - time_us_z3 AS diff
     FROM benchmarks
 )
 SELECT 
-    ROUND(MAX(diff)) || 'μs' as max_diff
+    ROUND(MAX(diff)) || 'μs' AS diff
 FROM diffs;
 
-.print "\n#### What formulas did z3 beat blue3 on?"
+.print "\n#### Cases Z3 beat Blue3"
 SELECT
-  b.formula_id,
+  b.formula_id AS id,
   b.formula,
-  b.time_us_blue3,
-  b.time_us_z3
+  ROUND(b.time_us_blue3, 2) AS blue3,
+  ROUND(b.time_us_z3, 2) AS z3
 FROM benchmarks b
 WHERE time_us_z3 < time_us_blue3
 ORDER BY time_us_blue3 DESC

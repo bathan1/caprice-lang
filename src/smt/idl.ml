@@ -212,7 +212,7 @@ let find_split_opt (lit : 'k Theory.literal)
   let one = Formula.const_int 1 in
   match lit with
   | Neg Predicate (Equal, x, y) ->
-    begin match Ints.reflect_int_opt x, Ints.reflect_int_opt y with
+    begin match Ints.reflect_opt x, Ints.reflect_opt y with
     | Some x', Some y' ->
       let lower =
         Theory.Predicate (Less_than_eq, x', Formula.minus y' one)

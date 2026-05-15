@@ -15,9 +15,9 @@ type affine =
     more than one variable. *)
 val affine_from_formula_opt : ('a, 'k) Formula.t -> affine option
 
-(** [reflect_int_opt formula] returns the FORMULA itself as
-    a concrete Int sorted [Formula.t] type if FORMULA is an int formula *)
-val reflect_int_opt : ('a, 'k) Formula.t -> (int, 'k) Formula.t option
+(** [reflect_opt formula] returns the FORMULA itself as a concrete Int
+    sorted [Formula.t] type if FORMULA is an int formula *)
+val reflect_opt : ('a, 'k) Formula.t -> (int, 'k) Formula.t option
 
 (** [linearize formula] performs a few int-based heuristics to reduce FORMULA to an equisatisfiable formula. *)
 val linearize : (bool, 'k) Formula.t -> (bool, 'k) Formula.t

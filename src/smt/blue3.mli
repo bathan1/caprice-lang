@@ -34,7 +34,7 @@ val theory_learn : 'k Theory.core -> 'k connector -> Sat.Formula.clause
     Maybe by somebody else in the future... *)
 val cdcl_T : solver:'k Theory.theory_solver -> (bool, 'k) Formula.t -> 'k Solution.t
 
-(** [blue3 ~solver next formula] attempts to find a Satifisable model 
+(** [blue3 ~solver next formula] attempts to find a Satifisable model
     for FORMULA that is consistent with theory SOLVER. If SOLVER returns [Theory_unknown],
     then this immediately calls NEXT *)
 val blue3 :

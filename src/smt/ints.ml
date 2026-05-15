@@ -237,7 +237,7 @@ let prune_redundant (clauses : (bool, 'k) Formula.t list)
     (Uid.Map.empty, [])
     clauses
 
-let reflect_int_opt : type a k. (a, k) Formula.t -> (int, k) Formula.t option = fun term ->
+let reflect_opt : type a k. (a, k) Formula.t -> (int, k) Formula.t option = fun term ->
   term
   |> affine_from_formula_opt
   |> Option.map formula_from_affine

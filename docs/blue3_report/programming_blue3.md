@@ -1,35 +1,30 @@
 # Programming Blue3: An SMT solver for Caprice-Lang
-Blue3 is an SMT solver for JHU's [`caprice-lang`](https://github.com/JHU-PL-Lab/caprice-lang). It is used by its typechecker known as the [Concolic Evaluator](https://github.com/JHU-PL-Lab/caprice-lang/blob/main/docs/caprice.md), or `ceval`.
 
-Before Blue3, `ceval` used [Z3](https://www.microsoft.com/en-us/research/project/z3-3/) to solve SMT formulas. `ceval` still uses Z3, but is now used as a fallback rather than being the sole solver for when Blue3 cannot solve the formula.
+Blue3 is an SMT solver for JHU's [`caprice-lang`](https://github.com/JHU-PL-Lab/caprice-lang). It is used by the typechecker's [Concolic Evaluator](https://github.com/JHU-PL-Lab/caprice-lang/blob/main/docs/caprice.md), or `ceval`.
 
-Z3 is more than capable of solving our formulas, of course, but the JHU Programming Language lab felt it was overkill for many of the cases. For instance, `ceval` might output something like:
+Before Blue3, `ceval` used [Z3](https://www.microsoft.com/en-us/research/project/z3-3/) directly. Z3 is powerful, but often overkill for simple formulas like:
 
 $$
 (6 \leq a) \land (a < 0)
 $$
 
-We say this formula is **unsatisfiable**, or UNSAT, because $a$ can't be $6$ or more while also being less than $0$.
-
-The non-insigificant overhead of calling Z3 made an in-house solver for trivial cases seem like a promising way to improve `ceval`'s performance.
+This formula is **UNSAT**, because $a$ cannot be at least $6$ and less than $0$ at the same time. Since calling Z3 has overhead, Blue3 was built to solve simple cases internally and fall back to Z3 when needed.
 
 ## Intro
 
-This report introduces Blue3, a minimal SMT solver for caprice-lang. Although small, Blue3 implements a full solver pipeline using modern SAT/SMT techniques. In benchmarks, Blue3's frontend was just over 60% faster than Z3 on simple formulas.
+Blue3 is a small SMT solver with a full SAT/SMT pipeline. In benchmarks, Blue3's frontend was just over 60% faster than Z3 on simple formulas.
 
 | avg_blue3 | avg_z3 |
 |-----------|--------|
 | 222.0μs | 329.0μs |
 
-When Blue3 cannot solve a formula, it falls back to Z3. This adds about 20.24μs of overhead on average, or roughly 5% compared to calling Z3 directly.
+When Blue3 cannot solve a formula, it falls back to Z3. This adds about 20.24μs of overhead on average, or roughly 5%.
 
 | num_slow_cases | avg_slower_by | avg_percent_slower |
 |----------------|---------------|--------------------|
 | 38 | 20.24μs | 4.59% |
 
-This is a reasonable tradeoff: Blue3 solves simple formulas much faster, while still using Z3 as a backup.
-
-Before discussing Blue3 itself, we first need some context on $P = NP$, SAT, and 3SAT.
+So Blue3 gives a good tradeoff: faster simple cases, with Z3 as a backup.
 
 ### P = NP and Boolean Satisfiability
 
@@ -37,31 +32,15 @@ Oversimplifying, $P = NP$ asks:
 
 > If we can check a solution quickly, can we also find that solution quickly?
 
-Some problems are easy to solve and easy to check. For example, sorting a list like:
-
-$$
-[5, 2, 9, 1]
-$$
-
-into:
-
-$$
-[1, 2, 5, 9]
-$$
-
-can be done efficiently. Problems solvable in polynomial time are in the class $P$.
-
-Other problems are harder to solve but easy to verify. Sudoku is the classic example: finding the solution may require search, but checking a completed board is straightforward. Problems whose solutions can be verified in polynomial time are in $NP$.
+Problems solvable in polynomial time are in $P$. Problems whose solutions can be verified in polynomial time are in $NP$.
 
 So another way to state $P = NP$ is:
 
-> If a solution can be verified in polynomial time, can it also be found in polynomial time?
+> If a solution can be verified efficiently, can it also be found efficiently?
 
-We do not know the answer. Most computer scientists believe $P \neq NP$, but no one has proven it.
+We do not know. Most computer scientists believe $P \neq NP$, but no one has proven it.
 
-This matters because some problems are **NP-complete**: they are in $NP$, and every other problem in $NP$ can be reduced to them in polynomial time. If we found a polynomial-time algorithm for one NP-complete problem, then every problem in $NP$ could be solved efficiently.
-
-That would have massive consequences for optimization, science, and cryptography.
+This matters because some problems are **NP-complete**: every problem in $NP$ can be reduced to them in polynomial time. If we found a polynomial-time algorithm for one NP-complete problem, every problem in $NP$ could be solved efficiently.
 
 ### 3SAT and Boolean Satisfiability
 
@@ -69,63 +48,43 @@ That would have massive consequences for optimization, science, and cryptography
 
 > Given a propositional formula in CNF with at most 3 literals per clause, is there some assignment that makes it true?
 
-A formula is **satisfiable** if at least one assignment makes it true. For example:
+For example:
 
 $$
 (p \lor q) \land (\neg p \lor \neg q)
 $$
 
-is satisfiable because this model works:
+is satisfiable because $p = \text{true}$ and $q = \text{false}$ makes the formula true.
 
-```json
-{
-  "p": true,
-  "q": false
-}
-```
-
-Plugging those values in gives:
-
-$$
-(\text{true} \lor \text{false}) \land (\neg \text{true} \lor \neg \text{false})
-$$
-
-which evaluates to true.
-
-But this formula is unsatisfiable:
+But:
 
 $$
 (p \lor q) \land (\neg p \lor q) \land (p \lor \neg q) \land (\neg p \lor \neg q)
 $$
 
-No assignment of $p$ and $q$ can make every clause true at once.
+is unsatisfiable because no assignment of $p$ and $q$ can satisfy every clause.
 
-3SAT is important because it is NP-complete. So if we could solve 3SAT in polynomial time, we would prove $P = NP$.
+3SAT is important because it is NP-complete. If we could solve 3SAT in polynomial time, we would prove $P = NP$.
 
 Blue3 obviously does not solve $P = NP$. Instead, it uses practical SAT/SMT techniques to solve many real formulas efficiently.
 
-SMT solvers extend SAT by allowing richer theory constraints. For example:
+SMT extends SAT with theory constraints. For example:
 
 $$
 (6 \leq a) \land (a < 0)
 $$
 
-is not purely propositional, because it talks about integer inequalities. Blue3 maps theory atoms like these into propositional variables:
+can be abstracted into:
 
 $$
 p \land q
 $$
 
-where:
-
-- $p$ represents $(6 \leq a)$
-- $q$ represents $(a < 0)$
-
-The SAT solver handles the propositional structure, while the theory solver checks whether the underlying constraints are actually consistent.
+where $p$ represents $(6 \leq a)$ and $q$ represents $(a < 0)$. The SAT solver handles the boolean structure, while the theory solver checks whether the constraints are actually consistent.
 
 ### Useful Terminology
 
-A **formula** is a boolean-valued expression. In this report, unless stated otherwise, "formula" usually means a formula in **CNF**.
+A **formula** is a boolean-valued expression. In this report, "formula" usually means a formula in **CNF**.
 
 A formula in **CNF** is an AND of clauses:
 
@@ -133,71 +92,25 @@ $$
 (p \lor q \lor r) \land (s \lor t \lor \neg u)
 $$
 
-A **clause** is one OR-group:
-
-$$
-(p \lor q \lor r)
-$$
-
-A **literal** is an atom with a sign. For example:
-
-$$
-p
-$$
-
-and:
-
-$$
-\neg p
-$$
-
-are both literals.
-
-An **atom** is the unsigned condition underneath a literal. So $p$ and $\neg p$ refer to the same atom: $p$.
-
-In SMT, atoms can be theory constraints, such as:
-
-$$
-a = 1
-$$
-
-or:
-
-$$
-a \neq 1
-$$
+A **clause** is one OR-group. A **literal** is an atom with a sign, like $p$ or $\neg p$. An **atom** is the unsigned condition underneath a literal.
 
 We will use three main formula categories:
 
-1. A **SAT formula** is purely propositional:
+1. A **SAT formula** is purely propositional.
+2. A **theory formula** is handled by a theory solver.
+3. An **SMT formula** combines propositional logic with theory constraints.
 
-   $$
-   p \land q
-   $$
-
-2. A **theory formula** is handled by a theory solver:
-
-   $$
-   (6 \leq a) \land (a < 0)
-   $$
-
-3. An **SMT formula** combines propositional logic with theory constraints:
-
-   $$
-   (6 \leq a) \land (a < 0) \land (r \lor s)
-   $$
-
-Finally, a **solver** takes a formula and returns either **SAT**, usually with a satisfying model, or **UNSAT**, meaning no satisfying assignment exists.
+A **solver** takes a formula and returns either **SAT**, usually with a satisfying model, or **UNSAT**.
 
 ## Difference Logic
 
-Recall that Blue3 is meant to handle formulas that are too simple to justify calling Z3, such as:
+Blue3 is meant for formulas too simple to justify calling Z3, such as:
 
 $$
 (6 \leq a) \land (a < 0)
 $$
 
-The first challenge was deciding what “simple” meant for `caprice-lang` formulas. Since its formula AST only works over `bool`s and `int`s, we focused on the integer-heavy formulas that appeared often in our benchmarks:
+In our benchmarks, many of these formulas were integer-heavy:
 
 | formula_id |            formula             | 
 |------------|--------------------------------|
@@ -207,52 +120,46 @@ The first challenge was deciding what “simple” meant for `caprice-lang` form
 | 11         | (1 < a) ^ (a < 0)              |
 | 88         | (0 < a) ^ (a < 1)              |
 
-This led us to **Integer Difference Logic**, or **IDL**, a fragment of linear integer arithmetic where constraints compare the difference between two integer terms. In SMT-LIB terms, IDL is a sub-logic of Linear Integer Arithmetic over the `Ints` theory.
+This led us to **Integer Difference Logic**, or **IDL**, a fragment of linear integer arithmetic where constraints compare differences between integer terms.
 
-More formally, an IDL solver decides satisfiability for literals shaped like:
+IDL literals have the shape:
 
 $$
-(x \leq y) \text{<>} c
+x - y \leq c
 $$
 
-Here, $x$ and $y$ are integer variables or the constant $0$, $c$ is an integer constant, and $<>$ is one of $<, \leq, >, \geq,$ or $=$. IDL does **not** directly handle $\neq$, nor sums like $x + y$ or any other operator other than $-$ for that matter.
+where $x$ and $y$ are integer variables or $0$, and $c$ is an integer constant.
 
-Many of our “simple” formulas fit this difference form, including:
+For example:
 
 $$
 (6 \leq a) \land (a < 0)
 $$
 
-We can rewrite it as:
+can be rewritten as:
 
 $$
 ((0 - a) \leq -6) \land ((a - 0) \leq -1)
 $$
 
-This rewriting looks unnecessary to us because we can immediately see the contradiction: $a$ cannot be both at least $6$ and less than $0$. But IDL gives our computer a precise way to recognize that contradiction mechanically.
+IDL gives Blue3 a mechanical way to recognize contradictions like this.
 
-It turns out there is a natural graph interpretation of IDL, where each difference constraint becomes an edge, and satisfiability can be checked with a shortest-path algorithm.
+## Bellman-Ford
 
-### Bellman-Ford
-
-Bellman-Ford finds the shortest paths from one source node to every other node in a directed weighted graph. It also detects **negative cycles**, which are cycles whose total weight is negative.
+Bellman-Ford finds shortest paths in a directed weighted graph. It also detects **negative cycles**, which are cycles whose total weight is negative.
 
 For example:
 
-```{.ocaml #simple-no-neg-intro}
+```ocaml
 let simple_no_neg =
-  [ ("a", "0*", 3) ; ("0*", "a", -1)
-  ; ("r", "0*", 9) ; ("r", "a", 5)
-  ] in
-print_mermaid_lr ~id:"simple-no-neg" simple_no_neg;
+  [ ("a", "0*", 3); ("0*", "a", -1)
+  ; ("r", "0*", 9); ("r", "a", 5) ]
 ```
 
-```{.mermaid #simple-no-neg-mermaid}
+```mermaid
 graph LR
-  na["a"] -->|"3"| n0_["0*"]
-  n0_["0*"] -->|"-1"| na["a"]
-  nr["r"] -->|"9"| n0_["0*"]
-  nr["r"] -->|"5"| na["a"]
+  na["a"] -->|"3"| n0_["0*"]; n0_["0*"] -->|"-1"| na["a"]
+  nr["r"] -->|"9"| n0_["0*"]; nr["r"] -->|"5"| na["a"]
 ```
 
 Running Bellman-Ford from `r` gives:
@@ -262,66 +169,37 @@ Running Bellman-Ford from `r` gives:
 | $a$ | $5$ |
 | $0^*$ | $8$ |
 
-The shortest path to `a` is:
-
-$$
-r \to a
-$$
-
-with cost $5$. The shortest path to $0^*$ is:
-
-$$
-r \to a \to 0^*
-$$
-
-with cost:
-
-$$
-5 + 3 = 8
-$$
-
-This beats the direct edge $r \to 0^*$, which costs $9$.
-
-The cycle between `a` and $0^*$ has cost:
+The shortest path to $0^*$ is $r \to a \to 0^*$, with cost $5 + 3 = 8$. The cycle between `a` and $0^*$ has cost:
 
 $$
 3 + (-1) = 2
 $$
 
-Since the cycle is positive, looping only makes paths more expensive. So there is **no negative cycle**.
+Since the cycle is positive, looping only makes paths more expensive.
 
-Now change the edge $0^* \to a$ from $-1$ to $-4$:
-
-```{.ocaml #print-simple-neg}
-let simple_neg =
-  [ ("a", "0*", 3) ; ("0*", "a", -4)
-  ; ("r", "0*", 9) ; ("r", "a", 5)
-  ] in
-print_mermaid_lr ~id:"simple-neg-mermaid" simple_neg;
-print_bellman_ford ~label:"simple-neg-bf" ~src:"r" simple_neg
-```
-
-Now the cycle cost is:
+Now change the edge $0^* \to a$ from $-1$ to $-4$. The cycle cost becomes:
 
 $$
 3 + (-4) = -1
 $$
 
-Each loop makes the path cheaper, so there is no true shortest path. Bellman-Ford reports:
+Each loop makes the path cheaper, so Bellman-Ford reports a negative cycle.
 
-```txt
-Negative cycle found!
+```ocaml
+let simple_neg =
+  [ ("a", "0*", 3); ("0*", "a", -4)
+  ; ("r", "0*", 9); ("r", "a", 5) ]
 ```
 
-```{.mermaid #simple-neg-bf}
+```mermaid
 graph LR
   n0*["0*"] -->|"-4"| na["a"]
   na["a"] -->|"3"| n0*["0*"]
 ```
 
-#### Relaxing Edges
+### Relaxing Edges
 
-Bellman-Ford repeatedly loops over every edge and tries to improve the known distance to each node. This update step is called **relaxation**.
+Bellman-Ford repeatedly tries to improve distances. This is called **relaxation**.
 
 An edge is relaxed when:
 
@@ -329,184 +207,70 @@ $$
 dist[from] + cost < dist[to]
 $$
 
-In code:
-
-```{.ocaml #relax-edge-cases}
-let relax_edge tbl was_updated edge =
-  let from_, to_, cost = edge in
-  match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
-  | (Some du, _), (None, _) ->
-    set_distance to_ tbl ~min:(du + cost) ~pred:edge
-  | (Some du, _), (Some dv, _) when du + cost < dv ->
-    set_distance to_ tbl ~min:(du + cost) ~pred:edge
-  | _ -> was_updated
+```ocaml
+match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
+| (Some du, _), (None, _) -> set_distance to_ tbl ~min:(du + cost) ~pred:edge
+| (Some du, _), (Some dv, _) when du + cost < dv ->
+  set_distance to_ tbl ~min:(du + cost) ~pred:edge
+| _ -> was_updated
 ```
 
-The table starts with every node at infinity, represented by `None`, except the source, which starts at distance `0`.
+The source starts at distance `0`; every other node starts at infinity. Bellman-Ford relaxes edges at most $N - 1$ times, where $N$ is the number of nodes. We also stop early if a full pass does not update anything.
 
-```{.ocaml #create-distance-table}
-let create_tbl ~src edges =
-  let tbl =
-    edges
-    |> to_node_list
-    |> ...
-  in
-  Hashtbl.replace tbl src (Some 0, None);
-  tbl
+```ocaml
+let is_dist_updated =
+  List.fold_left (relax_edge dist) false edges
+in
+if is_dist_updated then `Continue dist else `Stop dist
 ```
 
-Bellman-Ford relaxes all edges at most $N - 1$ times, where $N$ is the number of nodes:
+### Predecessors and Negative Cycles
 
-```{.ocaml #relax-edges-stop-case}
-let relax_edges edges dist i =
-  if i >= Hashtbl.length dist - 1 then `Stop dist
-  else ...
-```
-
-We also stop early if a full pass over the edge list does not update anything:
-
-```{.ocaml #relax-edges-early-stop}
-let is_dist_updated = List.fold_left (relax_edge dist) false edges in
-if is_dist_updated then `Continue dist
-else `Stop dist
-```
-
-So the core algorithm is:
-
-```{.ocaml #find-shortest-paths}
-let find_shortest_paths ~src edges =
-  let dist = create_tbl ~src edges in
-  ...
-  List_utils.fold_until
-    (relax_edges edges)
-    Fun.id
-    dist
-    vertices
-```
-
-#### Predecessors
-
-Each table entry stores both the current shortest-known distance and the predecessor edge that produced it:
-
-```{.ocaml #distance-predecessor-state}
-(distance, predecessor_edge)
-```
-
-The distance tells us the cost from `src`; the predecessor edge lets us reconstruct the path.
-
-For the earlier graph, the shortest path to `a` is direct:
-
-```txt
-Minimum distance to "a" = 5
-Predecessor edge of "a" is = r -> a (5)
-```
-
-The shortest path to $0^*$ goes through `a`:
-
-```txt
-Minimum distance to "0*" = 8
-Predecessor edge of "0*" is = a -> 0* (3)
-```
-
-Tracing predecessors gives:
+Each table entry stores:
 
 $$
-r \to a \to 0^*
+(\text{distance}, \text{predecessor edge})
 $$
 
-So one predecessor edge per node is enough to reconstruct a shortest path.
+The distance gives the shortest-known cost from the source. The predecessor edge lets us reconstruct the path.
 
-#### Detecting Negative Cycles
+After the normal relaxation loop, Bellman-Ford runs one extra pass. If any edge can still be relaxed, the graph has a negative cycle.
 
-After the normal relaxation loop, Bellman-Ford runs one extra pass over the edges. If any edge can still be relaxed, then the graph has a negative cycle.
-
-```{.ocaml #find-relaxed-node-opt}
-let find_relaxed_node_opt edges dist =
-  List.find_map
-    (fun ((_, to_, _) as edge) ->
-      if relax_edge dist false edge then Some to_
-      else None)
-    edges
+```ocaml
+List.find_map
+  (fun ((_, to_, _) as edge) ->
+    if relax_edge dist false edge then Some to_ else None)
+  edges
 ```
 
-The relaxed node proves a negative cycle exists, but it may not itself be inside the cycle. For example:
+The relaxed node may not itself be inside the cycle:
 
-```{.ocaml #relnode-not-in-neg-cycle}
-let relnode_not_in_neg_cycle =
-  [ ("c", "d", 0) ; ("s", "a", 0)
-  ; ("a", "b", 1) ; ("b", "c", -4)
-  ; ("c", "a", 1)
-  ] in
-print_mermaid_lr ~id:"relnode-not-in-neg-cycle-mermaid" relnode_not_in_neg_cycle;
-```
-
-```{.mermaid #relnode-not-in-neg-cycle-mermaid}
+```mermaid
 graph LR
+  ns["s"] -->|"0"| na["a"]; na["a"] -->|"1"| nb["b"]
+  nb["b"] -->|"-4"| nc["c"]; nc["c"] -->|"1"| na["a"]
   nc["c"] -->|"0"| nd["d"]
-  ns["s"] -->|"0"| na["a"]
-  na["a"] -->|"1"| nb["b"]
-  nb["b"] -->|"-4"| nc["c"]
-  nc["c"] -->|"1"| na["a"]
 ```
 
-Here, the first relaxed node can be `d`, even though `d` is only reached from the cycle:
+So we walk backward through predecessor links `NUM_NODES` times. By the pigeonhole principle, this lands inside the cycle. Then we collect predecessor edges until we loop back to the start.
 
-```txt
-Relaxed: d
+```ocaml
+let rec move_back node n =
+  if n = 0 then node else
+  match find_predecessor node tbl with
+  | None -> node | Some from_ -> move_back from_ (n - 1)
 ```
 
-To guarantee we land inside the cycle, we follow predecessor links `NUM_NODES` times. By the pigeonhole principle, this skips any non-cycle tail.
+In short:
 
-```{.ocaml #find-cycle-entry-opt}
-let find_cycle_entry_opt edges (tbl, num_nodes) =
-  match find_relaxed_node_opt edges tbl with
-  | None -> None
-  | Some entry ->
-    let rec move_back node n =
-      if n = 0 then node
-      else
-        match find_predecessor node tbl with
-        | None -> node
-        | Some from_ -> move_back from_ (n - 1)
-    in
-    Some (move_back entry num_nodes)
-```
-
-Then we collect predecessor edges until we return to the start node:
-
-```{.ocaml #collect-cycle}
-let collect_cycle start (tbl, num_nodes) =
-  let rec loop curr n acc =
-    if n = 0 then acc
-    else
-      match find_predecessor_edge curr tbl with
-      | None -> acc
-      | Some ((from_, _, _) as pred_edge) ->
-        let acc = pred_edge :: acc in
-        if Node.compare from_ start = 0 then acc
-        else loop from_ (n - 1) acc
-  in
-  loop start num_nodes []
-```
-
-In short, Bellman Ford's steps are:
-
-1. Compute the distance table.
+1. Compute distances.
 2. Run one extra relaxation pass.
-3. If nothing changes, return the distances.
+3. If nothing changes, return distances.
 4. If something changes, backtrack predecessors and return the negative cycle.
 
-### Bellman-Ford as a Difference Logic Solver
+## Bellman-Ford as a Difference Logic Solver
 
-Bellman-Ford works for difference logic because each constraint can be encoded as a graph edge.
-
-Difference logic literals have the general shape:
-
-$$
-x - y \leq c
-$$
-
-where $x$ and $y$ are integer variables or the special constant node $0^*$.
+Bellman-Ford solves difference logic because each constraint can be encoded as a graph edge.
 
 We encode:
 
@@ -514,47 +278,37 @@ $$
 x - y \leq c
 $$
 
-as an edge:
+as:
 
 $$
 (y, x, c)
 $$
-
-or visually:
 
 ```mermaid
 graph LR
   ny["y"] -->|"c"| nx["x"]
 ```
 
-Then we add a dummy source node with $0$-weight edges to every other node and run Bellman-Ford. If Bellman-Ford finds a negative cycle, the formula is **UNSAT**. Otherwise, it is **SAT**.
+Then we add a dummy source node with $0$-weight edges to every node and run Bellman-Ford. If it finds a negative cycle, the formula is **UNSAT**. Otherwise, it is **SAT**.
 
-#### Case 0. Split
+### Case 0. Split
 
-IDL can directly solve inequalities like $\leq$, but disequality needs a case split.
-
-For integers:
+IDL can solve inequalities like $\leq$, but disequality needs a split:
 
 $$
 x \neq y \implies (x \leq y - 1) \lor (y + 1 \leq x)
 $$
 
-In our implementation, the solver returns these split cases when it sees a negated equality:
+We also include the equality case, because the SAT solver may still need to explore $x = y$ depending on context.
 
 ```ocaml
-let find_split_opt (lit : 'k Theory.literal)
-  ...
-  match lit with
-  | Neg Predicate (Equal, x, y) ->
-    begin match Ints.reflect_int_opt x, Ints.reflect_int_opt y with
-    | Some x', Some y' ->
-      ...
-      Some (~lower:(Pos lower), ~upper:(Pos upper), ~eq:(Pos eq))
+match lit with
+| Neg Predicate (Equal, x, y) ->
+  Some (~lower:(Pos lower), ~upper:(Pos upper), ~eq:(Pos eq))
+| _ -> None
 ```
 
-We also include the equality case, because the SAT solver may still need to explore $x = y$ depending on the propositional context.
-
-#### Case 1. SAT
+### Case 1. SAT
 
 Consider:
 
@@ -562,7 +316,7 @@ $$
 (-a \leq 1) \land (a \leq 2)
 $$
 
-This is satisfiable. Encoding each literal as an edge gives:
+Encoding each literal gives:
 
 $$
 -a \leq 1 \equiv 0^* - a \leq 1 \implies (a, 0^*, 1)
@@ -572,7 +326,7 @@ $$
 a \leq 2 \equiv a - 0^* \leq 2 \implies (0^*, a, 2)
 $$
 
-After adding dummy source edges, the full graph is:
+After adding dummy source edges:
 
 $$
 \text{Edges} = (a, 0^*, 1), (0^*, a, 2), (s, a, 0), (s, 0^*, 0)
@@ -580,67 +334,31 @@ $$
 
 ```mermaid
 graph LR
-  na["a"] -->|"1"| n0["0*"]
-  n0["0*"] -->|"2"| na["a"]
-  ns["s"] -->|"0"| na["a"]
-  ns["s"] -->|"0"| n0["0*"]
+  na["a"] -->|"1"| n0["0*"]; n0["0*"] -->|"2"| na["a"]
+  ns["s"] -->|"0"| na["a"]; ns["s"] -->|"0"| n0["0*"]
 ```
 
-Running Bellman-Ford prints:
+Bellman-Ford finds no negative cycle, so the formula is **SAT**.
 
-```bash
-No negative cycle found.
-```
-
-So the formula is **SAT**.
-
-Bellman-Ford returns minimum distances from the dummy source. These distances can be turned into a model by normalizing around the special $0^*$ node:
+To get a concrete model, we normalize distances around the special $0^*$ node:
 
 $$
 \text{model}[x] = \text{distance}[x] - \text{distance}[0^*]
 $$
 
-For example, if:
-
-$$
-\text{distance}[a] = 0
-$$
-
-and:
-
-$$
-\text{distance}[0^*] = -1
-$$
-
-then:
-
-$$
-a = 0 - (-1) = 1
-$$
-
-We do this normalization in our solver as well:
-
-```{.ocaml #z0-normalize}
-Model.Int (var_dist - z0_dist)
+```ocaml
+let z0_dist = NodeMap.find Node.zero distance_map in
+let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
+uid, Model.Int (var_dist - z0_dist)
 ```
-
-So when we have a SAT case, we propagate up the distance table through each layer's type wrappers:
 
 ```mermaid
 flowchart TD
-    subgraph IDL["IDL no-negative-cycle flow"]
-        B["Blue3"]
-        I["IDL"]
-        BF["Bellman-Ford"]
-
-        B -->|"(1) solve (6 <= a) ^ (a < 0)"| I
-        I -->|"(2) encode as graph edges"| BF
-        BF -->|"(3) SAT (distances)"| I
-        I -->|"(4) SAT (distances)"| B
-    end
+  B["Blue3"] -->|"(1) solve formula"| I["IDL"] -->|"(2) encode as graph"| BF["Bellman-Ford"]
+  BF -->|"(3) SAT distances"| I -->|"(4) SAT model"| B
 ```
 
-#### Case 2. UNSAT
+### Case 2. UNSAT
 
 Now consider:
 
@@ -652,21 +370,11 @@ This encodes to:
 
 ```mermaid
 graph LR
-  n0["0*"]
-  na["a"]
-  nr["r"]
-
-  na -->|"-6"| n0
-  n0 -->|"-1"| na
-  nr -->|"0"| n0
-  nr -->|"0"| na
+  na["a"] -->|"-6"| n0["0*"]; n0["0*"] -->|"-1"| na["a"]
+  nr["r"] -->|"0"| n0["0*"]; nr["r"] -->|"0"| na["a"]
 ```
 
-Bellman-Ford reports:
-
-```bash
-Negative cycle found!
-```
+Bellman-Ford finds this negative cycle:
 
 ```mermaid
 graph LR
@@ -674,19 +382,7 @@ graph LR
   na["a"] -->|"-6"| n0*["0*"]
 ```
 
-The negative cycle contains:
-
-$$
-(a, 0^*, -6)
-$$
-
-and:
-
-$$
-(0^*, a, -1)
-$$
-
-Mapping these edges back gives:
+The cycle edges map back to:
 
 $$
 (a, 0^*, -6) \implies 6 \leq a
@@ -700,27 +396,17 @@ So the original formula is **UNSAT**.
 
 ```mermaid
 flowchart TD
-    subgraph IDL["IDL negative cycle flow"]
-        B["Blue3"]
-        I["IDL"]
-        BF["Bellman-Ford"]
-
-        B -->|"(1) solve (6 <= a) ^ (a < 0)"| I
-        I -->|"(2) encode as graph edges"| BF
-        BF -->|"(3) negative cycle"| I
-        I -->|"(4) UNSAT core"| B
-    end
+  B["Blue3"] -->|"(1) solve formula"| I["IDL"] -->|"(2) encode as graph"| BF["Bellman-Ford"]
+  BF -->|"(3) negative cycle"| I -->|"(4) UNSAT core"| B
 ```
 
-The negative cycle is also the **UNSAT core**, meaning the specific literals responsible for the contradiction. Blue3 passes this core back to the SAT solver so it can learn from the failed assignment.
+The negative cycle is also the **UNSAT core**, meaning the specific literals responsible for the contradiction.
 
 ## SAT
 
-3SAT was the first problem shown to be $\text{NP-complete}$: it is in $\text{NP}$, and every problem in $\text{NP}$ can be reduced to it in polynomial time.
+3SAT was the first problem shown to be $\text{NP-complete}$. More generally, $\text{k-SAT}$ asks:
 
-More generally, $\text{k-SAT}$ asks:
-
-> Given a formula with at most $k$ literals per clause, can we determine whether it is satisfiable?
+> Given a formula with at most $k$ literals per clause, is it satisfiable?
 
 For example:
 
@@ -728,44 +414,32 @@ $$
 (p \lor q \lor \neg r) \land (\neg p \lor r) \land (q \lor r) \land \neg r
 $$
 
-This formula is satisfiable because:
+is satisfiable with $p = \text{false}, q = \text{true}, r = \text{false}$.
 
-```json
-{
-  "p": false,
-  "q": true,
-  "r": false
-}
-```
-
-makes the whole formula evaluate to `true`.
-
-At the time of writing, no polynomial-time SAT algorithm is known. So practical SAT solvers are still, at a high level, very smart brute-force search algorithms.
+No polynomial-time SAT algorithm is known, so practical SAT solvers are still very smart search algorithms.
 
 ### Conflict-Driven Clause Learning
 
-Blue3 uses **Conflict-Driven Clause Learning**, or `CDCL`, to solve boolean formulas.
+Blue3 uses **Conflict-Driven Clause Learning**, or `CDCL`, for boolean solving.
 
-The rough CDCL loop is:
+The loop is:
 
-1. Infer any assignments that must be true.
-2. If nothing can be inferred, guess.
-3. If a contradiction appears, learn from it.
+1. Infer forced assignments.
+2. If nothing is forced, guess.
+3. If there is a contradiction, learn from it.
 4. Repeat until `SAT` or `UNSAT`.
 
-In Blue3, this loop is implemented in `bcp`:
-
 ```ocaml
-let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
-  begin match unit_propagate formula trail with
-  ...
+let rec bcp level trail formula =
+  match unit_propagate formula (Trail.to_model trail) with
+  | Decide -> ...
+  | Conflict clause -> ...
+  | Implication (clause, lit) -> ...
 ```
-
-The first step is `unit_propagate`.
 
 ### Unit Propagation
 
-Unit propagation finds literals that are forced.
+Unit propagation finds literals that must be true.
 
 For example:
 
@@ -773,7 +447,7 @@ $$
 p \land \neg q \land (\neg p \lor q \lor \neg r)
 $$
 
-immediately forces:
+forces:
 
 $$
 p = \text{true}
@@ -785,87 +459,38 @@ $$
 q = \text{false}
 $$
 
-because $p$ and $\neg q$ appear as unit clauses.
+because $p$ and $\neg q$ are unit clauses.
 
-A **unit clause** is a clause with exactly one unassigned literal and no already-satisfied literal. Since every clause in CNF must be true, that last remaining literal must be assigned.
-
-In Blue3:
+The main `unit_propagate` result is one of three useful cases: `Decide`, `Conflict`, or `Implication`.
 
 ```ocaml
-let unit_propagate formula model =
-  let rec search_empty
-    ...
-  in
-  let rec search_unit (formula : Formula.formula) : next =
-    ...
-  in
-  search_unit formula
+match Model.eval_clause clause model with
+| `Falsified -> Conflict clause
+| `Undecided [lit] -> Implication (clause, lit)
+| _ -> search_unit clauses'
 ```
 
-The main scan is:
-
-```ocaml
-match formula with
-| [] -> Decide
-| clause :: clauses' ->
-  match Model.eval_clause clause model with
-  | `Falsified -> Conflict clause
-  | `Undecided [lit] -> search_empty clauses' clause lit
-  | _ -> search_unit clauses'
-```
-
-There are three cases:
-
-1. No clauses are left, so CDCL must `Decide`.
-2. A clause is falsified, so CDCL reports a `Conflict`.
-3. A clause has one remaining literal, so CDCL returns an `Implication`.
-
-For example, if we have:
+For example, if:
 
 $$
 (\neg p \lor q \lor r)
 $$
 
-and the model says:
-
-```json
-{
-  "p": true,
-  "q": false
-}
-```
-
-then the clause becomes:
-
-$$
-(\text{false} \lor \text{false} \lor r)
-$$
-
-so unit propagation forces:
+and the model says $p = \text{true}$ and $q = \text{false}$, then unit propagation forces:
 
 $$
 r = \text{true}
 $$
 
-Blue3 stops once it finds one implication, but it still scans the rest of the formula to make sure there is no conflict that should take priority.
+### Deciding and Conflicts
 
-### Deciding
-
-Sometimes unit propagation cannot infer anything.
-
-For example:
+Sometimes nothing is forced:
 
 $$
 (p \lor q) \land (\neg p \lor r)
 $$
 
-has no unit clauses at the start. So `unit_propagate` returns:
-
-```ocaml
-Decide
-```
-
-This tells CDCL to pick an unassigned variable and guess a value.
+So CDCL makes a **decision**, meaning it guesses an unassigned variable.
 
 If CDCL guesses:
 
@@ -879,83 +504,27 @@ $$
 (\neg p \lor r)
 $$
 
-becomes:
-
-$$
-(\text{false} \lor r)
-$$
-
-so unit propagation now forces:
+forces:
 
 $$
 r = \text{true}
 $$
 
-This is the basic CDCL rhythm: guess, propagate, and repeat.
-
-### Conflicts
-
-Sometimes a guess leads to a contradiction.
-
-Consider:
+But guesses can lead to conflicts. For example:
 
 $$
 (p \lor q) \land (\neg p \lor q) \land (p \lor \neg q) \land (\neg p \lor \neg q)
 $$
 
-There are no unit clauses at the start, so CDCL guesses. Suppose it decides:
+If CDCL guesses $p = \text{true}$, then it is forced to set $q = \text{true}$. But then $(\neg p \lor \neg q)$ becomes false.
 
-$$
-p = \text{true}
-$$
-
-Then:
-
-$$
-(\neg p \lor q)
-$$
-
-forces:
-
-$$
-q = \text{true}
-$$
-
-But now:
-
-$$
-(\neg p \lor \neg q)
-$$
-
-becomes:
-
-$$
-(\text{false} \lor \text{false})
-$$
-
-so we have a conflict.
-
-A plain backtracking solver would just try another branch. CDCL does more: it analyzes the conflict and learns a new clause to avoid repeating the same mistake.
-
-In this case, the bad combination was:
-
-$$
-p = \text{true}
-$$
-
-and:
-
-$$
-q = \text{true}
-$$
-
-so CDCL can learn:
+CDCL learns from this conflict instead of blindly backtracking. In this case, it can learn:
 
 $$
 \neg p \lor \neg q
 $$
 
-In larger formulas, learned clauses are often not present in the original formula, which is what makes CDCL powerful.
+which prevents the same bad assignment from being repeated.
 
 ### A Full Example
 
@@ -965,105 +534,21 @@ $$
 (p \lor q) \land (\neg p \lor r) \land (\neg r \lor q)
 $$
 
-Blue3 starts with:
-
-```ocaml
-let cdcl formula = bcp 0 [] formula
-```
-
-where `0` is the starting decision level and `[]` is the empty trail.
-
-Inside `bcp`, Blue3 builds a model from the trail and calls `unit_propagate`:
-
-```ocaml
-let rec bcp level trail formula =
-  let model = Trail.to_model trail in
-  begin match unit_propagate formula model with
-  | Decide -> ...
-  | Conflict clause -> ...
-  | Implication (clause, lit) -> ...
-  end
-```
-
-At the start, there are no unit clauses, so Blue3 decides. Suppose it makes the bad decision:
+Suppose Blue3 makes the bad decision:
 
 $$
 q = \text{false}
 $$
 
-This is added to the trail:
-
-```ocaml
-and decide ~lit level trail =
-  let next_lvl = level + 1 in
-  let trail' = Trail.decided ~lit next_lvl trail in
-  bcp next_lvl trail'
-```
+Then $(p \lor q)$ forces $p = \text{true}$, and $(\neg p \lor r)$ forces $r = \text{true}$.
 
 Now:
-
-$$
-(p \lor q)
-$$
-
-forces:
-
-$$
-p = \text{true}
-$$
-
-Then:
-
-$$
-(\neg p \lor r)
-$$
-
-forces:
-
-$$
-r = \text{true}
-$$
-
-So the model is now:
-
-```json
-{
-  "q": false,
-  "p": true,
-  "r": true
-}
-```
-
-But the third clause:
 
 $$
 (\neg r \lor q)
 $$
 
-is now false, so Blue3 gets a conflict.
-
-The conflict branch is:
-
-```ocaml
-| Conflict clause ->
-  let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
-  if backtrack_lvl < 0 then UNSAT
-  else backtrack_learn ~level:backtrack_lvl clause' trail formula
-```
-
-The trail stores each assignment, its decision level, and why it was made:
-
-```ocaml
-type reason =
-  | Decided
-  | Propagated of literal list
-
-type step = { level : int ; lit : literal ; reason : reason }
-
-type trail = step list
-```
-
-This lets `analyze_conflict` walk backward through the trail and resolve the conflict against the reasons for propagated literals.
+is false, so Blue3 gets a conflict.
 
 Here, the conflict clause is:
 
@@ -1071,204 +556,70 @@ $$
 (\neg r \lor q)
 $$
 
-Since $r$ was propagated from:
-
-$$
-(\neg p \lor r)
-$$
-
-resolving gives:
+Since $r$ came from $(\neg p \lor r)$, resolving gives:
 
 $$
 (q \lor \neg p)
 $$
 
-Since $p$ was propagated from:
-
-$$
-(p \lor q)
-$$
-
-resolving again gives:
+Since $p$ came from $(p \lor q)$, resolving again gives:
 
 $$
 q
 $$
 
-So Blue3 learns the unit clause:
+So Blue3 learns:
 
 $$
 q
 $$
-
-Then it backjumps and adds the learned clause:
 
 ```ocaml
-and backtrack_learn ~level clause trail formula =
-  let trail' = Trail.backjump ~level trail in
-  let formula' = clause :: formula in
-  bcp level trail' formula'
+let trail' = Trail.backjump ~level trail in
+let formula' = clause :: formula in
+bcp level trail' formula'
 ```
 
-Now the formula effectively becomes:
+The formula effectively becomes:
 
 $$
 q \land (p \lor q) \land (\neg p \lor r) \land (\neg r \lor q)
 $$
 
-So Blue3 has learned:
+So Blue3 has learned that $q = \text{false}$ cannot work. After backtracking, $q = \text{true}$ is forced, and the formula becomes satisfiable.
 
-> The branch where $q = \text{false}$ cannot work.
-
-After backtracking, the learned unit clause forces:
-
-$$
-q = \text{true}
-$$
-
-Then the formula is satisfiable. For example:
-
-```json
-{
-  "q": true,
-  "p": false
-}
-```
-
-works regardless of $r$.
-
-The key idea is that a conflict does not always mean the formula is UNSAT. It may only mean the current branch is impossible. CDCL learns from that branch, backjumps, and continues.
-
-### From SAT to SMT
-
-So far, the solver only understands boolean variables like $p$, $q$, and $r$.
-
-But Blue3 solves formulas with theory constraints too, such as:
-
-$$
-(6 \le a) \land (a < 0)
-$$
-
-A SAT solver alone does not know what these inequalities mean. It can only treat each one as a boolean atom.
-
-So Blue3 connects the SAT solver to a theory solver. The SAT solver handles the boolean structure, while the theory solver checks whether the selected theory constraints are actually consistent.
-
-This is where Blue3 moves from SAT solving to SMT solving.
+The key idea is that a conflict may only mean the current branch is impossible. CDCL learns from the branch, backjumps, and continues.
 
 ## SMT
 
-So far, Blue3 has two main pieces:
+Blue3 has two main pieces:
 
-1. The **SAT solver**, which handles boolean structure:
+1. The **SAT solver**, which handles boolean structure.
+2. The **IDL solver**, which handles difference constraints.
 
-$$
-p \land (\neg p \lor q)
-$$
+The SMT layer connects them:
 
-2. The **IDL solver**, which handles integer difference constraints:
+> SAT handles boolean structure; the theory solver checks whether the selected theory literals are consistent.
 
-$$
-x - y \le c
-$$
+### Theory atoms and results
 
-But Blue3 needs to solve formulas that mix both:
+Blue3 represents theory-level boolean expressions as `Theory.atom`s. Theory literals are signed atoms, either positive or negative. A theory solver receives a conjunction of these literals and returns one of:
 
-$$
-(6 \le a) \land (a < 0)
-$$
-
-A SAT solver sees `6 <= a` and `a < 0` as plain boolean atoms. It does not know they contradict each other. The SMT layer connects the SAT solver to a theory solver:
-
-> SAT handles boolean structure; the theory solver checks whether the chosen theory literals are actually consistent.
-
-In Blue3, this is the `cdcl_T` loop.
-
-### Theory atoms
-
-Blue3 represents theory-level boolean expressions as `Theory.atom`s:
-
-```ocaml
-type 'k atom =
-  | Bool_key of (bool, 'k) Symbol.t
-  | Predicate : ('a * 'a * bool) Binop.t * ('a, 'k) Formula.t * ('a, 'k) Formula.t -> 'k atom
-```
-
-A plain boolean variable like:
-
-$$
-p
-$$
-
-becomes:
-
-```ocaml
-Bool_key p
-```
-
-An arithmetic predicate like:
-
-$$
-a < 0
-$$
-
-becomes:
-
-```ocaml
-Predicate (Less_than, a, 0)
-```
-
-Theory literals are signed atoms:
-
-```ocaml
-type 'k literal =
-  | Pos of 'k atom
-  | Neg of 'k atom
-```
-
-So a theory solver receives a list of literals:
-
-```ocaml
-type 'k theory_solver = 'k literal list -> 'k theory_solution
-```
-
-This list is interpreted as a conjunction:
-
-$$
-lit_1 \land lit_2 \land lit_3
-$$
-
-### Theory results
-
-A theory solver returns:
+- `Theory_sat`: the literals are consistent.
+- `Theory_unsat`: the literals are inconsistent, with a core explaining why.
+- `Theory_split`: the solver needs more case splits.
+- `Theory_unknown`: Blue3 should fall back to the next solver.
 
 ```ocaml
 type 'k theory_solution =
-  | Theory_unknown
-  | Theory_sat of 'k Model.t
+  | Theory_unknown | Theory_sat of 'k Model.t
   | Theory_unsat of 'k core
   | Theory_split of 'k formula
 ```
 
-The meanings are:
-
-- `Theory_sat model`: the theory literals are consistent.
-- `Theory_unsat core`: the literals are inconsistent, and `core` explains why.
-- `Theory_split formula`: the solver needs more SAT-level case splits.
-- `Theory_unknown`: Blue3 should fall back to the next solver.
-
 ### Boolean abstraction
 
-The SAT solver cannot directly reason about theory atoms, so Blue3 abstracts each theory atom into a fresh SAT atom.
-
-This is handled by the connector:
-
-```ocaml
-type 'k connector =
-  { to_sat : ('k Theory.atom, Sat.Formula.atom) Hashtbl.t
-  ; from_sat : (Sat.Formula.atom, 'k Theory.atom) Hashtbl.t
-  ; mutable count : int
-  }
-```
+The SAT solver cannot directly reason about theory atoms, so Blue3 maps them to fresh SAT atoms.
 
 For example:
 
@@ -1277,7 +628,7 @@ p1 := (6 <= a)
 p2 := (a < 0)
 ```
 
-Then:
+So:
 
 $$
 (6 \le a) \land (a < 0)
@@ -1289,70 +640,36 @@ $$
 p_1 \land p_2
 $$
 
-The mapping is created by `abstract_atom`:
+Blue3 keeps both directions of this mapping so it can move between SAT literals and theory literals.
 
 ```ocaml
-let abstract_atom ?uid atom conn =
-  match Hashtbl.find_opt conn.to_sat atom with
-  | Some uid -> uid
-  | None ->
-      let sat_atom = next_uid ?uid conn in
-      Hashtbl.add conn.to_sat atom sat_atom;
-      Hashtbl.add conn.from_sat sat_atom atom;
-      sat_atom
+Hashtbl.add conn.to_sat atom sat_atom;
+Hashtbl.add conn.from_sat sat_atom atom;
+sat_atom
 ```
-
-If an atom was seen before, Blue3 reuses its SAT variable. Otherwise, it creates a fresh one.
 
 ### The CDCL(T) loop
 
 The main SMT loop is:
 
-```ocaml
-let cdcl_T ~(solver : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
-  : 'k Solution.t =
-  let conn = make 64 in
-  let propositional = abstract (Theory.from_smt_formula formula) conn in
-  let rec loop conn sat_formula =
-    match Sat.Cdcl.cdcl sat_formula with
-    | UNSAT -> Solution.Unsat
-    | SAT model ->
-      let theory_lits = make_theory_literals model conn in
-      match solver theory_lits with
-      | Theory_unknown -> Solution.Unknown
-      | Theory_unsat core ->
-        let learned = theory_learn core conn in
-        let sat_formula' = Sat.Formula.conjoin1 learned sat_formula in
-        loop conn sat_formula'
-      | Theory_sat model -> Solution.Sat model
-      | Theory_split clauses ->
-        let sat_formula' =
-          List.fold_left
-            (fun acc clause ->
-              let sat_clause = abstract_clause clause conn in
-              Sat.Formula.conjoin1 sat_clause acc)
-            sat_formula
-            clauses
-        in
-        loop conn sat_formula'
-  in
-  loop conn propositional
-```
-
-At a high level:
-
-1. Abstract the SMT formula into SAT.
+1. Abstract SMT into SAT.
 2. Run CDCL.
-3. If SAT returns `UNSAT`, the whole formula is `UNSAT`.
-4. If SAT returns a model, convert it back into theory literals.
-5. Ask the theory solver whether those literals are consistent.
-6. If theory says `SAT`, return the model.
-7. If theory says `UNSAT`, learn a clause and retry.
-8. If theory says `SPLIT`, add split clauses and retry.
+3. Convert the SAT model back into theory literals.
+4. Ask the theory solver whether they are consistent.
+5. If theory says `UNSAT`, learn a clause and retry.
+6. If theory says `SPLIT`, add split clauses and retry.
 
 This is CDCL plus a theory solver: `CDCL(T)`.
 
-### Example
+```ocaml
+match Sat.Cdcl.cdcl sat_formula with
+| UNSAT -> Solution.Unsat
+| SAT model ->
+  let theory_lits = make_theory_literals model conn in
+  match solver theory_lits with ...
+```
+
+### Example and Theory Learning
 
 Consider:
 
@@ -1367,28 +684,19 @@ p1 := (6 <= a)
 p2 := (a < 0)
 ```
 
-So the SAT formula is:
+The SAT formula is:
 
 $$
 p_1 \land p_2
 $$
 
-The SAT solver can satisfy this with:
-
-```json
-{
-  "p1": true,
-  "p2": true
-}
-```
-
-Blue3 then maps the SAT model back to theory literals:
+SAT can satisfy this with both $p_1$ and $p_2$ set to true. But when Blue3 maps that model back to theory literals, IDL sees:
 
 $$
 (6 \le a) \land (a < 0)
 $$
 
-The IDL solver normalizes these into difference constraints:
+which normalizes to:
 
 $$
 0 - a \le -6
@@ -1400,7 +708,7 @@ $$
 a - 0 \le -1
 $$
 
-which encode as graph edges:
+These encode as graph edges:
 
 $$
 (a, 0, -6)
@@ -1412,60 +720,23 @@ $$
 (0, a, -1)
 $$
 
-Bellman-Ford finds a negative cycle, so the theory solver returns:
-
-```ocaml
-Theory_unsat core
-```
-
-where the core is:
+Bellman-Ford finds a negative cycle, so the theory solver returns `Theory_unsat` with this core:
 
 $$
 (6 \le a) \land (a < 0)
 $$
 
-### Learning from theory conflicts
-
-When the theory solver returns `Theory_unsat core`, Blue3 learns a SAT clause:
-
-```ocaml
-| Theory_unsat core ->
-  let learned = theory_learn core conn in
-  let sat_formula' = Sat.Formula.conjoin1 learned sat_formula in
-  loop conn sat_formula'
-```
-
-The learning function negates each literal in the core:
-
-```ocaml
-let theory_learn (Core core : 'k Theory.core) conn =
-  core
-  |> List.map (fun lit -> abstract_literal lit conn)
-  |> List.map Sat.Formula.negate
-```
-
-So if the conflict was:
-
-$$
-(6 \le a) \land (a < 0)
-$$
-
-and the abstraction was:
-
-```text
-p1 := (6 <= a)
-p2 := (a < 0)
-```
-
-then Blue3 learns:
+Since the core was $p_1 \land p_2$, Blue3 learns:
 
 $$
 \neg p_1 \lor \neg p_2
 $$
 
-This means:
-
-> Do not choose both `(6 <= a)` and `(a < 0)` again.
+```ocaml
+core
+|> List.map (fun lit -> abstract_literal lit conn)
+|> List.map Sat.Formula.negate
+```
 
 The SAT formula becomes:
 
@@ -1473,17 +744,11 @@ $$
 p_1 \land p_2 \land (\neg p_1 \lor \neg p_2)
 $$
 
-Now CDCL sees the boolean abstraction itself is impossible, so it returns `UNSAT`.
+Now CDCL can prove the boolean abstraction itself is impossible.
 
-### Theory splitting
+### Theory Splitting
 
-Sometimes the theory solver needs to split a literal into cases. This happens with integer disequality:
-
-$$
-x \ne y
-$$
-
-IDL does not solve disequality directly. Over integers:
+Disequality needs a split:
 
 $$
 x \ne y
@@ -1507,195 +772,140 @@ $$
 (x = y) \lor (x \le y - 1) \lor (y + 1 \le x)
 $$
 
-In the SMT loop:
+So the theory solver gives SAT more structure, and the loop continues.
 
 ```ocaml
 | Theory_split clauses ->
-  let sat_formula' =
-    List.fold_left
-      (fun acc clause ->
-        let sat_clause = abstract_clause clause conn in
-        Sat.Formula.conjoin1 sat_clause acc)
-      sat_formula
-      clauses
-  in
+  let sat_formula' = abstract_clauses clauses conn sat_formula in
   loop conn sat_formula'
 ```
 
-So the theory solver gives Blue3 more structure, and the SAT solver continues with the new clauses.
-
 ### The final Blue3 wrapper
 
-The public solver is:
-
-```ocaml
-let blue3
-  : type k. solver:k Theory.theory_solver -> k solver -> (bool, k) Formula.t -> k Solution.t =
-  fun ~solver next formula ->
-  let solve formula = cdcl_T ~solver formula in
-  if contains_unsolvable formula then next formula
-  else
-    match formula with
-    | Const_bool true -> Solution.Sat Model.empty
-    | Const_bool false -> Solution.Unsat
-    | _ ->
-      match solve formula with
-      | Solution.Unknown -> next formula
-      | solution -> solution
-```
-
-Blue3 first checks whether the formula contains operations it cannot solve internally:
+Blue3 falls back if the formula contains operations outside its internal fragment, like multiplication, division, modulus, or general addition.
 
 ```ocaml
 let contains_unsolvable formula =
-  Formula.contains_binops [Times ; Divide ; Modulus ; Plus] formula
+  Formula.contains_binops [Times; Divide; Modulus; Plus] formula
 ```
 
-If so, it falls back to the next solver. Otherwise, it handles trivial constants or runs `cdcl_T`.
+So the final architecture is:
 
-### Putting it together
-
-The SAT solver handles boolean structure.
-
-The IDL solver handles difference constraints.
-
-The SMT layer connects them:
-
-> SAT proposes a boolean assignment. The theory solver checks it. If it fails, Blue3 learns a new SAT clause from the theory conflict.
-
-That is the core of Blue3's SMT strategy.
+```text
+Formula -> Blue3 checks -> CDCL(T)
+CDCL(T) -> SAT abstraction -> CDCL -> Theory solver
+Theory solver -> learning / splitting
+Result -> SAT / UNSAT / fallback
+```
 
 ## Benchmarks and Last Words
-To finish this writeup, let's go over one instance of our benchmark script output.
 
-Measurements were taken using the [Benchmark](https://ocaml.org/p/benchmark/1.7) library and compared the Blue3 solver with all of its ad-hoc rewrite heuristics + the cdcl loop against the Z3 solver by itself and used the 179 `f2.txt` formulas list outputted from a real run of the concolic evaluator.
-
-The measurements below are averages across 100 trial runs, where each formula was solved 100 times by each solver, and then their average across those 100 runs were saved into the database. We recorded whether or not Z3 had to be called or not to determine which types of formulas Blue3 was able to solve by itself vs. which formulas had to be parsed by Blue3 just to send it to Z3 because it determined it can't solve it.
+These measurements use the [Benchmark](https://ocaml.org/p/benchmark/1.7) library on 179 formulas from a real `ceval` run. Each formula was solved 100 times by each solver, and the averages were saved.
 
 ### Measurements
 
-#### What were the average runtimes from both solvers?
+#### Average runtimes
+|  blue3  |   z3    |
+|---------|---------|
+| 227.0μs | 339.0μs |
 
-| avg_blue3 | avg_z3  |
-|-----------|---------|
-| 225.0μs   | 334.0μs |
+#### Blue3-only count
+| count |
+|-------|
+| 89    |
 
-On average, Blue3 was faster than calling Z3 directly on this benchmark set. This does not mean Blue3 is a better general-purpose SMT solver than Z3, but it does show that for the restricted formulas it was designed around, the extra simplification and CDCL(T)-style loop can pay off.
+#### Z3-deferred count
+| count |
+|-------|
+| 90    |
 
-#### How many formulas were solved by Blue3 only?
+#### Deferred overhead
+| cases |   diff   |  pct   |
+|-------|----------|--------|
+| 90    | -15.83μs | -2.07% |
 
-| blue3_only_formula_count |
-|--------------------------|
-| 89                       |
+#### Fast cases
+| cases |   diff   |  pct   |
+|-------|----------|--------|
+| 142   | 144.23μs | 63.08% |
 
-Blue3 solved 89 of the 179 formulas without having to defer to Z3. This is the most important number for the project, because it shows that Blue3 was not just acting as a wrapper around Z3; it was actually able to solve a substantial portion of the concolic evaluator’s formulas on its own.
+#### Slow cases
+| cases |  diff   |  pct  |
+|-------|---------|-------|
+| 37    | 13.95μs | 3.67% |
 
-#### How many formulas had to be deferred to Z3?
+#### Top 5 fastest Blue3-only cases
+| id |         formula          | blue3  |    z3    |   diff    |
+|----|--------------------------|--------|----------|-----------|
+| 9  | (0 < a) ^ ((a + 1) <= a) | 0.12μs | 90.44μs  | -90.32μs  |
+| 8  | (0 < a) ^ ((a + 1) <= 1) | 0.13μs | 87.94μs  | -87.81μs  |
+| 11 | (1 < a) ^ (a < 0)        | 0.26μs | 106.73μs | -106.47μs |
+| 88 | (0 < a) ^ (a < 1)        | 0.27μs | 110.35μs | -110.08μs |
+| 36 | (2 < a) ^ (a < 0)        | 0.28μs | 111.81μs | -111.53μs |
 
-| z3_deferred_formula_count |
-|---------------------------|
-| 90                        |
+#### Top 5 slowest Blue3-only cases
+| id  |                           formula                            |  blue3   |    z3    |   diff    |
+|-----|--------------------------------------------------------------|----------|----------|-----------|
+| 167 | (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a | 191.59μs | 459.57μs | -267.98μs |
+|     |  = 97)) ^ (not (a = 61)) ^ (not (a = 45)) ^ (not (a = 43)) ^ |          |          |           |
+|     |  (not (a = 42)) ^ (not (a = 41)) ^ (not (a = 40)) ^ (not (a  |          |          |           |
+|     | = 32)) ^ (48 <= a)                                           |          |          |           |
+| 168 | (48 <= a) ^ (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98 | 178.27μs | 428.93μs | -250.66μs |
+|     | )) ^ (not (a = 97)) ^ (not (a = 61)) ^ (not (a = 45)) ^ (not |          |          |           |
+|     |  (a = 43)) ^ (not (a = 42)) ^ (not (a = 41)) ^ (not (a = 40) |          |          |           |
+|     | ) ^ (not (a = 32)) ^ (57 < a)                                |          |          |           |
+| 172 | (65 <= a) ^ (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a | 104.84μs | 450.14μs | -345.3μs  |
+|     |  = 105)) ^ (not (a = 98)) ^ (not (a = 97)) ^ (not (a = 61))  |          |          |           |
+|     | ^ (not (a = 45)) ^ (not (a = 43)) ^ (not (a = 42)) ^ (not (a |          |          |           |
+|     |  = 41)) ^ (not (a = 40)) ^ (not (a = 32)) ^ (90 < a)         |          |          |           |
+| 170 | (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a = 105)) ^ ( | 101.19μs | 446.47μs | -345.28μs |
+|     | not (a = 98)) ^ (not (a = 97)) ^ (not (a = 61)) ^ (not (a =  |          |          |           |
+|     | 45)) ^ (not (a = 43)) ^ (not (a = 42)) ^ (not (a = 41)) ^ (n |          |          |           |
+|     | ot (a = 40)) ^ (not (a = 32)) ^ (65 <= a)                    |          |          |           |
+| 175 | (65 <= a) ^ (48 <= a) ^ (90 < a) ^ (57 < a) ^ (not (a = 108) | 68.94μs  | 455.22μs | -386.28μs |
+|     | ) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a = 97)) ^ (not |          |          |           |
+|     |  (a = 61)) ^ (not (a = 45)) ^ (not (a = 43)) ^ (not (a = 42) |          |          |           |
+|     | ) ^ (not (a = 41)) ^ (not (a = 40)) ^ (not (a = 32)) ^ (97 < |          |          |           |
+|     | = a)                                                         |          |          |           |
 
-Blue3 deferred 90 formulas to Z3. This makes sense because Blue3 intentionally avoids formulas outside its current theory-solving scope, especially formulas involving operations like multiplication, division, and modulus. :contentReference[oaicite:3]{index=3}
+#### Biggest Blue3 win
+|  diff   |
+|---------|
+| 630.0μs |
 
-#### On average, how much slower were the deferred cases than just calling Z3 by itself?
+#### Biggest Z3 win
+|  diff   |
+|---------|
+| 105.0μs |
 
-| num_deferred_cases | avg_slower_by | avg_percent_slower_than_z3 |
-|--------------------|---------------|----------------------------|
-| 90                 | -10.14μs      | -0.91%                     |
+#### Cases Z3 beat Blue3
+| id  |                           formula                            |  blue3  |   z3    |
+|-----|--------------------------------------------------------------|---------|---------|
+| 109 | (c <= (b % a)) ^ (c <= a) ^ (b <= ((b * a) / c)) ^ (0 < c) ^ | 1865.03 | 1816.62 |
+|     |  (0 < a) ^ (0 < b) ^ (not ((b % a) = 0)) ^ (not (c = 0)) ^ ( |         |         |
+|     | not (a = 0)) ^ (((b * a) / c) < a)                           |         |         |
+| 94  | (b <= a) ^ (0 < b) ^ (0 < a) ^ (not ((a % b) = 0)) ^ (not (b | 1038.82 | 1031.07 |
+|     |  = 0)) ^ ((b + 1) <= c)                                      |         |         |
+| 103 | (0 < a) ^ (0 < b) ^ (0 < c) ^ (not ((c % b) = 0)) ^ (not (b  | 1025.34 | 920.57  |
+|     | = 0)) ^ (a <= b)                                             |         |         |
+| 105 | (0 < a) ^ (0 < b) ^ (0 < c) ^ (not ((c % b) = 0)) ^ (not (b  | 954.28  | 949.84  |
+|     | = 0)) ^ (b < a)                                              |         |         |
+| 99  | (0 < a) ^ (0 < b) ^ (not (a = 0)) ^ (not ((b % a) = 0))      | 889.68  | 885.48  |
 
-The deferred cases were not meaningfully slower than just calling Z3 directly. This suggests that Blue3’s initial parsing/checking overhead was small enough that even when it failed to solve a formula internally, it did not add a major penalty before handing the formula off.
-
-#### How much faster were the fast cases on average?
-
-| num_fast_cases | avg_faster_by | avg_percent_faster |
-|----------------|---------------|--------------------|
-| 136            | 148.85μs      | 65.42%             |
-
-In the cases where Blue3 was faster, it was much faster on average. This is likely because many benchmark formulas had simple contradictions, redundant bounds, or IDL-style structure that Blue3’s lightweight simplification passes could exploit before needing a heavy general-purpose solver.
-
-#### How much slower were the slow cases on average?
-
-| num_slow_cases | avg_slower_by | avg_percent_slower |
-|----------------|---------------|--------------------|
-| 43             | 14.87μs       | 3.94%              |
-
-When Blue3 was slower, it was only slightly slower on average. This is a good tradeoff for this prototype: the fast cases gained a lot, while the slow cases generally only lost a small amount
-
-#### Top 10 fastest Blue3-only cases
-
-| formula_id |            formula             | avg_time_us_blue3 | avg_time_us_z3 | avg_slower_by |
-|------------|--------------------------------|-------------------|----------------|---------------|
-| 9          | (0 < a) ^ ((a + 1) <= a)       | 0.1μs             | 90.78μs        | -90.68μs      |
-| 8          | (0 < a) ^ ((a + 1) <= 1)       | 0.14μs            | 88.31μs        | -88.17μs      |
-| 63         | (a < 0) ^ (0 < a)              | 0.28μs            | 113.9μs        | -113.62μs     |
-| 56         | (not (a = 0)) ^ ((a + 10) = 0) | 0.28μs            | 256.38μs       | -256.1μs      |
-| 88         | (0 < a) ^ (a < 1)              | 0.28μs            | 115.02μs       | -114.74μs     |
-| 11         | (1 < a) ^ (a < 0)              | 0.29μs            | 111.89μs       | -111.6μs      |
-| 159        | (a < 65) ^ (97 <= a)           | 0.29μs            | 127.14μs       | -126.85μs     |
-| 64         | (0 < a) ^ (a < 0)              | 0.3μs             | 114.37μs       | -114.07μs     |
-| 91         | (2 <= a) ^ (a <= 0)            | 0.3μs             | 122.11μs       | -121.81μs     |
-| 10         | (1 < a) ^ (a <= 0)             | 0.31μs            | 105.69μs       | -105.38μs     |
-
-The fastest Blue3-only cases are mostly simple contradictions or tight integer-bound formulas. These are exactly the kinds of formulas where a small custom solver can beat a general-purpose solver, because Blue3 can simplify them almost immediately instead of paying the cost of invoking a much larger solving pipeline.
-
-#### Top 10 slowest Blue3-only cases
-
-| formula_id |                           formula                            | avg_time_us_blue3 | avg_time_us_z3 | avg_slower_by |
-|------------|--------------------------------------------------------------|-------------------|----------------|---------------|
-| 168        | (48 <= a) ^ (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98... | 180.6μs           | 445.17μs       | -264.57μs     |
-| 167        | (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98)) ^ ...      | 174.7μs           | 425.32μs       | -250.62μs     |
-| 172        | (65 <= a) ^ (48 <= a) ^ (57 < a) ^ ...                       | 109.92μs          | 529.72μs       | -419.8μs      |
-| 170        | (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ ...                 | 105.11μs          | 458.29μs       | -353.18μs     |
-| 175        | (65 <= a) ^ (48 <= a) ^ (90 < a) ^ ...                       | 64.6μs            | 446.25μs       | -381.65μs     |
-| 127        | (b <= a) ^ (0 <= a) ^ (0 <= b) ^ (not (b = a)) ^ (a <= b)    | 28.06μs           | 159.42μs       | -131.36μs     |
-| 98         | (not (a = 0)) ^ (not (a = 1))                                | 18.66μs           | 192.11μs       | -173.45μs     |
-| 72         | (not (a = 0)) ^ (not ((a - 1) = 0))                          | 17.53μs           | 211.74μs       | -194.21μs     |
-| 125        | (b <= a) ^ (0 <= a) ^ (0 <= b) ^ (not (b = a))               | 14.14μs           | 281.65μs       | -267.51μs     |
-| 85         | (0 <= a) ^ (not (a = 0)) ^ (not (a = 1))                     | 13.82μs           | 269.83μs       | -256.01μs     |
-
-The slowest Blue3-only cases are still faster than Z3 in this benchmark, but they reveal where Blue3 does more work. Many of these formulas contain long lists of disequalities or redundant bounds, which means Blue3 has to spend more time simplifying, splitting, or pruning before it can conclude satisfiability or unsatisfiability.
-
-#### What was the max time difference Blue3 beat Z3 by?
-
-| max_diff |
-|----------|
-| 516.0μs  |
-
-The largest win shows the upside of building a specialized solver for a narrow formula fragment. When the formula matches Blue3’s strengths, the difference is not just a small constant-factor improvement; it can be hundreds of microseconds faster on a single formula.
-
-#### What was the max time difference Z3 beat Blue3 by?
-
-| max_diff |
-|----------|
-| 98.0μs   |
-
-The largest loss was much smaller than the largest win. This suggests that, at least on this benchmark set, Blue3’s downside risk was relatively limited compared to the potential speedup it got on formulas it could solve well.
-
-#### What formulas did Z3 beat Blue3 on?
-
-| formula_id |                           formula                            | time_us_blue3 | time_us_z3  |
-|------------|--------------------------------------------------------------|---------------|-------------|
-| 109        | (c <= (b % a)) ^ (c <= a) ^ (b <= ((b * a) / c)) ^ ...       | 1711.04908    | 1703.710556 |
-| 107        | (not (a = 0)) ^ (c <= (b % a)) ^ (c <= a) ^ ...              | 1085.107327   | 1058.518887 |
-| 103        | (0 < a) ^ (0 < b) ^ (0 < c) ^ ...                            | 970.878601    | 915.20071   |
-| 105        | (0 < a) ^ (0 < b) ^ (0 < c) ^ ...                            | 916.521549    | 895.490646  |
-| 99         | (0 < a) ^ (0 < b) ^ (not (a = 0)) ^ ...                      | 862.751007    | 854.830742  |
-
-The formulas where Z3 beats Blue3 involve operations like modulus, multiplication, and division. This is expected because Blue3 is not trying to be a full arithmetic solver; once formulas leave the IDL-style fragment, Z3’s general-purpose machinery becomes the right tool.
+Z3 wins on formulas involving modulus, multiplication, and division, which Blue3 intentionally leaves to a general-purpose solver.
 
 ### Last words
 
-$P = NP$ fascinates me because it gets at the core of what problem solving is. If checking a solution and finding a solution are secretly the same kind of task, then a huge part of what we call creativity, insight, or cleverness starts to look different...
+$P = NP$ fascinates me because it gets at the core of problem solving. If checking a solution and finding a solution are secretly the same kind of task, then creativity, insight, and cleverness start to look very different.
 
 Theoretical computer scientist Scott Aaronson once said:
 
-> “If P=NP, then the world would be a profoundly different place than we usually assume it to be. There would be no special value in ‘creative leaps,’ no fundamental gap between solving a problem and recognizing the solution once it's found. Everyone who could appreciate a symphony would be Mozart; everyone who could follow a step-by-step argument would be Gauss; everyone who could recognize a good investment strategy would be Warren Buffett.”
+> "If P=NP, then the world would be a profoundly different place than we usually assume it to be. There would be no special value in 'creative leaps,' no fundamental gap between solving a problem and recognizing the solution once it's found. Everyone who could appreciate a symphony would be Mozart; everyone who could follow a step-by-step argument would be Gauss; everyone who could recognize a good investment strategy would be Warren Buffett."
 
-For however long we don't know $P = NP$, you will always be able to make the case that there's something special about the way we as people approach our problems that a computer will never be able to fully replicate, and that there is something irreducible about the way we notice, create, and care about things.
+For however long we do not know whether $P = NP$, there is still room to believe that something about human problem solving is special and to believe there is something irreducible about how we notice, create, and care about things.
 
-Or maybe not, but if that were the case, we can't be certain about that, and that's a fact for as long as $P = NP$ hasn't been proven.
+Or maybe not. But until $P = NP$ is proven either way, we can't say for sure.
 
-And I think that's pretty poetic, because wanting to be special, even if just a little, is one of the most human things there is.
+And that's pretty poetic, because wanting to be special, even if just a little, is one of the most human things there is.
 
-Blue3 obviously didn't answer $P = NP$. It didn't even come close. But building it showed me why these questions matter, and I hope it did for you as well.
+Blue3 obviously did not answer $P = NP$, but building it showed me why these questions matter, and I hope it did for you as well.
