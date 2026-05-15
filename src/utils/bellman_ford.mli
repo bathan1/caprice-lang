@@ -24,20 +24,24 @@ val bellman_ford :
     to represent the nodes in the Bellman Ford search you want to run... *)
 module Make (Node : Baby.OrderedType) : sig
   (** Hashtbl key by [Node.t] indexes our current distance state to KEY node. *)
-  type key = Node.t
+  type tbl_key = Node.t
 
   (** [(distance, predecessor_edge)] means for some key-ed node, our minimum DISTANCE path to that 
       node from our source ends with edge PREDECESSOR_EDGE. We use options on both to represent infinity
       and the null parent respectively.
   *)
-  type value = int option * Node.t edge option
+  type tbl_entry = int option * Node.t edge option
 
   (** So we don't have to type out the full type each time... *)
-  type tbl = (key, value) Hashtbl.t
+  type tbl = (tbl_key, tbl_entry) Hashtbl.t
 
   (** [create_tbl ~src edges] returns the initial distance table state for a bellman ford run from
       SRC to all other nodes in EDGES *)
   val create_tbl : src:Node.t -> Node.t edge list -> tbl
+
+  (** [set_distance node ~min ~pred dist] updates NODE's entry in DIST
+      to new MIN with predecessor edge PRED and returns [true]. *)
+  val set_distance : tbl_key -> min:int -> pred:Node.t edge -> tbl -> bool
 
   (** [relax_edge dist was_updated edge] updates DIST's table state for the [to_] node from EDGE
       [(from_, to_, cost)] when [dist[from_] + cost < dist[to_]] and returns [true]. Otherwise this

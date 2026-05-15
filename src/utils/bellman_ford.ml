@@ -1,13 +1,13 @@
 type 'node edge = 'node * 'node * int
 
 module Make (Node : Baby.OrderedType) = struct
-  type key = Node.t
+  type tbl_key = Node.t
 
-  type value = int option * Node.t edge option
+  type tbl_entry = int option * Node.t edge option
   (** 2-tuple (distance, predecessor) has current shortest DISTANCE
       with the corresponding PREDECESSOR edge to some node key *)
 
-  type tbl = (key, value) Hashtbl.t
+  type tbl = (tbl_key, tbl_entry) Hashtbl.t
 
   let to_node_list (edges : Node.t edge list) : Node.t list =
     let module NodeSet = Set.Make (Node) in
@@ -32,36 +32,36 @@ module Make (Node : Baby.OrderedType) = struct
     in
     tbl
 
-  let relax_edge (dist : tbl) (was_updated : bool) (edge : Node.t edge) : bool =
-    let from_, to_, cost = edge in
-    match Hashtbl.find dist from_, Hashtbl.find dist to_ with
-    | (Some du, _), (None, _) ->
-      Hashtbl.replace dist to_ (Some (du + cost), Some edge);
-      was_updated || true
-    | (Some du, _), (Some dv, _) when du + cost < dv ->
-      Hashtbl.replace dist to_ (Some (du + cost), Some edge);
-      was_updated || true
-    | _ -> was_updated || false
+  let set_distance (node : tbl_key) ~(min : int) ~(pred : Node.t edge) (tbl : tbl) : bool =
+    Hashtbl.replace tbl node (Some min, Some pred);
+    true
 
-  let relax_edges (edges : Node.t edge list) (dist : tbl) (i : int)
+  let relax_edge (tbl : tbl) (was_updated : bool) (edge : Node.t edge) : bool =
+    let from_, to_, cost = edge in
+    match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
+    | (Some du, _), (None, _) ->
+      set_distance to_ tbl ~min:(du + cost) ~pred:edge
+    | (Some du, _), (Some dv, _) when du + cost < dv ->
+      set_distance to_ tbl ~min:(du + cost) ~pred:edge
+    | _ -> was_updated
+
+  let relax_edges (edges : Node.t edge list) (tbl : tbl) (i : int)
     : [ `Continue of tbl | `Stop of tbl ] =
-    let num_nodes = Hashtbl.length dist in
-    if i >= num_nodes - 1 then `Stop dist
+    if i >= (Hashtbl.length tbl) - 1 then `Stop tbl
     else
-      let is_dist_updated = List.fold_left (relax_edge dist) false edges
-      in
-      if is_dist_updated then `Continue dist
-      else `Stop dist
+      let is_dist_updated = List.fold_left (relax_edge tbl) false edges in
+      if is_dist_updated then `Continue tbl
+      else `Stop tbl
 
   let find_shortest_paths ~(src : Node.t) (edges : Node.t edge list) : tbl =
     let dist = create_tbl ~src edges in
     let num_nodes = Hashtbl.length dist in
-    let vertices = List.init num_nodes Fun.id in
+    let num_nodes_range = List.init num_nodes Fun.id in
     let final_tbl = List_utils.fold_until
       (relax_edges edges)
       Fun.id
       dist
-      vertices
+      num_nodes_range
     in
     final_tbl
 
