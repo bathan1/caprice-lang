@@ -47,3 +47,6 @@ _opam/
 
 # local config
 .editorconfig
+
+# python virtual environment
+venv

@@ -257,5 +257,4 @@ let print_drop_redundant_ineqs () =
       (Formula.to_string ~key before)
       (Formula.to_string ~key after))
 
-let () =
-  Difference_logic.run_bellman_ford ()
+let () = Benchmark.benchmark 100

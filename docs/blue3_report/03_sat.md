@@ -379,142 +379,428 @@ In this example, that clause already exists in the formula, but in larger exampl
 
 This is the "clause learning" part of Conflict-Driven Clause Learning.
 
-### A SAT Example
+### A full example
 
-Here is a small satisfiable formula:
+Let's consider an example where CDCL makes a bad decision, hits a conflict, backtracks, and then finds a satisfying assignment, to see how the loop works all together.
 
-```math
-(p \lor q) \land (\neg{p} \lor r)
-```
-
-At the beginning, there are no unit clauses, so CDCL makes a decision.
-
-Suppose it decides:
+Consider the satisfiable formula:
 
 ```math
-p = \text{true}
+(p \lor q) \land (\neg{p} \lor r) \land (\neg{r} \lor q)
 ```
 
-Then the first clause is satisfied:
+In Blue3, the CDCL loop starts here:
 
-```math
-(\text{true} \lor q)
+```ocaml
+let cdcl formula = bcp 0 [] formula
 ```
 
-and the second clause becomes unit:
+where `0` is the starting decision level and `[]` is the empty trail, meaning we have not assigned any literals yet.
 
-```math
-(\neg{\text{true}} \lor r)
-```
-
-which simplifies to:
-
-```math
-(\text{false} \lor r)
-```
-
-So unit propagation assigns:
-
-```math
-r = \text{true}
-```
-
-Now both clauses are satisfied:
-
-```math
-(\text{true} \lor q) \land (\text{false} \lor \text{true})
-```
-
-So CDCL can return:
-
-```json
-{
-    "p": true,
-    "r": true
-}
-```
-
-This is a satisfying model. Notice that $q$ does not even need to be assigned. The formula is already true regardless of whether $q$ is `true` or `false`.
-
-### An UNSAT Example
-
-Now consider this formula:
-
-```math
-p \land \neg{p}
-```
-
-This formula is obviously unsatisfiable, but it shows the simplest possible CDCL conflict.
-
-The first clause is a unit clause:
-
-```math
-p
-```
-
-So unit propagation assigns:
-
-```math
-p = \text{true}
-```
-
-Then the second clause is:
-
-```math
-\neg{p}
-```
-
-But since $p = \text{true}$, this becomes:
-
-```math
-\neg{\text{true}}
-```
-
-which is:
-
-```math
-\text{false}
-```
-
-So the clause is falsified, and CDCL finds a conflict.
-
-Since this conflict happens at decision level 0, there is no earlier decision to backtrack from. The contradiction was forced directly by the formula itself.
-
-So CDCL returns UNSAT:
+Inside `bcp`, we first turn the trail into a model and call `unit_propagate`:
 
 ```ocaml
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
   let model = Trail.to_model trail in
   begin match unit_propagate formula model with
-  ...
-  | Conflict clause ->
-    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
-    if backtrack_lvl < 0 then UNSAT
-    else backtrack_learn ~level:backtrack_lvl clause' trail formula
+  | Decide -> ...
+  | Conflict clause -> ...
+  | Implication (clause, lit) -> ...
+  end
 ```
 
-meaning there is no possible assignment of truth values that can make the formula true.
+At the beginning, there are no unit clauses, so `unit_propagate` returns:
 
-A slightly more interesting UNSAT example is:
+```ocaml
+Decide
+```
+
+That sends us into the `Decide` branch:
+
+```ocaml
+| Decide ->
+  let atoms = List.map Formula.atom_from_literal model in
+  begin match Formula.find_free_variable_opt atoms formula with
+  | None ->
+    if Model.is_tautology formula model then SAT model
+    else UNSAT
+  | Some x ->
+      decide ~lit:(Formula.pos x) level trail formula
+  end
+```
+
+Since the formula still has unassigned variables, CDCL chooses one. In this implementation, it just picks a free variable and tries its positive literal first:
+
+```ocaml
+decide ~lit:(Formula.pos x) level trail formula
+```
+
+As the comment in the code says, this choice is arbitrary:
+
+```ocaml
+(* [Formula.pos x] is arbitrary. It doesn't matter because the
+   learned conflicts forces the loop to terminate (at some point).
+
+   Smarter heuristics could be implemented in the future... *)
+```
+
+For this example, suppose CDCL makes the bad decision:
 
 ```math
-(p \lor q) \land (\neg{p} \lor q) \land (p \lor \neg{q}) \land (\neg{p} \lor \neg{q})
+q = \text{false}
 ```
 
-This formula rules out every possible assignment of $p$ and $q$:
+This is added to the trail as a decision at the next decision level:
 
-| $p$ | $q$ | Falsified clause |
-|---|---|---|
-| true | true | $\neg{p} \lor \neg{q}$ |
-| true | false | $\neg{p} \lor q$ |
-| false | true | $p \lor \neg{q}$ |
-| false | false | $p \lor q$ |
+```ocaml
+and decide ~lit level trail =
+  let next_lvl = level + 1 in
+  let trail' = Trail.decided ~lit next_lvl trail in
+  bcp next_lvl trail'
+```
 
-So no matter what values we pick for $p$ and $q$, at least one clause is falsified. CDCL may discover this through decisions, propagation, conflicts, and learned clauses, but the final result is the same:
+Now CDCL runs `bcp` again, but this time the model contains:
+
+```json
+{
+    "q": false
+}
+```
+
+With that assignment, the first clause:
+
+```math
+(p \lor q)
+```
+
+now only has one way left to become true: $p$ must be true. So `unit_propagate` returns an implication:
+
+```ocaml
+Implication (clause, lit)
+```
+
+Conceptually, this means:
+
+> Because of this clause, this literal must be assigned.
+
+In code, Blue3 records that implication in the trail:
+
+```ocaml
+| Implication (clause, lit) ->
+  let trail' = Trail.imply ~reason:clause level lit trail in
+  bcp level trail' formula
+```
+
+So after seeing:
+
+```math
+(p \lor \text{false})
+```
+
+the solver implies:
+
+```math
+p = \text{true}
+```
+
+Now the trail/model contains:
+
+```json
+{
+    "q": false,
+    "p": true
+}
+```
+
+Then the second clause:
+
+```math
+(\neg{p} \lor r)
+```
+
+also becomes unit, because $p = \text{true}$. So CDCL implies:
+
+```math
+r = \text{true}
+```
+
+Now the model is:
+
+```json
+{
+    "q": false,
+    "p": true,
+    "r": true
+}
+```
+
+But now the third clause is impossible to satisfy:
+
+```math
+(\neg{r} \lor q)
+```
+
+because $r = \text{true}$ and $q = \text{false}$. So the clause evaluates to false.
+
+At that point, `unit_propagate` returns:
+
+```ocaml
+Conflict clause
+```
+
+and `bcp` enters the conflict branch:
+
+```ocaml
+| Conflict clause ->
+  let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
+  if backtrack_lvl < 0 then UNSAT
+  else backtrack_learn ~level:backtrack_lvl clause' trail formula
+```
+
+This is the part that makes CDCL different from plain backtracking. What makes CDCL different from its predecessor DPLL is that in DPLL, we would just reverse the last decision of `r = true` and try `r = false`, when the real reason behind our contradiction was a previous decision of `q = false`.
+
+So it resolves that "real reason" via `analyze_conflict`:
+
+```ocaml
+Trail.analyze_conflict ~clause level trail
+```
+
+This analyzes the trail and returns two things:
+
+```ocaml
+let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail
+```
+
+The new learned clause, `clause'`, records what the solver learned from the conflict. The `backtrack_lvl` tells the solver which decision level it should jump back to.
+
+This works because Blue3's trail stores more than just the assigned literals. Each trail entry also records the decision level and the reason why that literal was assigned:
+
+```ocaml
+type reason =
+  | Decided
+  | Propagated of literal list
+
+type step = { level : int ; lit : literal ; reason : reason }
+
+type trail = step list
+```
+
+So when `analyze_conflict` receives the conflict clause, it can walk backward through the trail and ask: "Which literals in this conflict were assigned at the current decision level, and were they decided directly or propagated by another clause?" If there is more than one current-level literal involved in the conflict, Blue3 finds the propagation reason for one of them and resolves the conflict clause with that reason:
+
+```ocaml
+| current_level_lits ->
+  let reason = find_reason current_level_lits trail in
+  let clause' = Formula.resolve_pair clause reason in
+  analyze_conflict ~clause:clause' level trail
+```
+
+This repeats until the learned clause has exactly one literal from the current decision level:
+
+```ocaml
+match List.filter (fun lit -> find_level lit trail = level) clause with
+| [hd] ->
+  ...
+```
+
+At that point, the solver has found a useful learned clause. The clause itself becomes `clause'`, and the backtrack level is computed as the highest decision level among the remaining literals in that learned clause:
+
+```ocaml
+let new_lvl =
+  clause
+  |> List_utils.remove1 hd
+  |> List.fold_left
+      (fun lvl' lit ->
+        max lvl' (find_level lit trail)) 0
+in
+clause, new_lvl
+```
+
+So `analyze_conflict` returns:
+
+```ocaml
+clause, new_lvl
+```
+
+where `clause` is the learned clause, and `new_lvl` is the decision level Blue3 should jump back to.
+
+If the conflict is impossible to escape from, `backtrack_lvl` is negative:
+
+```ocaml
+if backtrack_lvl < 0 then UNSAT
+```
+
+That means the formula is unsatisfiable.
+
+But in this example, the formula is satisfiable. The issue was just the bad decision:
+
+```math
+q = \text{false}
+```
+
+So Blue3 backtracks and learns the new clause:
+
+```ocaml
+else backtrack_learn ~level:backtrack_lvl clause' trail formula
+```
+
+The implementation is short:
+
+```ocaml
+and backtrack_learn ~level clause trail formula =
+  let trail' = Trail.backjump ~level trail in
+  let formula' = clause :: formula in
+  bcp level trail' formula'
+```
+
+There are two key things happening here:
+
+1. `Trail.backjump ~level trail` removes assignments after the chosen backtrack level.
+2. `clause :: formula` adds the learned clause to the formula, so CDCL will not repeat the same bad branch.
+
+In this specific example, the learned clause `clause'` would be:
+
+```math
+q
+```
+
+Here is why. The conflict clause is:
+
+```math
+(\neg{r} \lor q)
+```
+
+because this was the clause that became false under:
+
+```json
+{
+    "q": false,
+    "p": true,
+    "r": true
+}
+```
+
+But `r = true` was not guessed directly. It was propagated from:
+
+```math
+(\neg{p} \lor r)
+```
+
+So conflict analysis resolves:
+
+```math
+(\neg{r} \lor q)
+```
+
+with:
+
+```math
+(\neg{p} \lor r)
+```
+
+which removes the opposite pair $r$ and $\neg{r}$, giving:
+
+```math
+(q \lor \neg{p})
+```
+
+Then `p = true` was also propagated, this time from:
+
+```math
+(p \lor q)
+```
+
+So conflict analysis resolves:
+
+```math
+(q \lor \neg{p})
+```
+
+with:
+
+```math
+(p \lor q)
+```
+
+which removes the opposite pair $p$ and $\neg{p}$, giving:
+
+```math
+q
+```
+
+So the learned clause is just:
+
+```math
+q
+```
+
+In code, this is the value that gets appended onto the formula:
+
+```ocaml
+let formula' = clause :: formula
+```
+
+So after conflict analysis, the formula effectively becomes:
+
+```math
+q \land (p \lor q) \land (\neg{p} \lor r) \land (\neg{r} \lor q)
+```
+
+This means Blue3 has learned:
+
+> The branch where `q = false` cannot work, so from now on `q` must be true.
+
+Then `Trail.backjump ~level trail` backjumps to level `0`, and the newly learned unit clause `q` immediately forces:
+
+```math
+q = \text{true}
+```
+
+After backtracking, CDCL continues solving now knowing that:
+
+```math
+q = \text{true}
+```
+
+With $q = \text{true}$, the first clause is satisfied:
+
+```math
+(p \lor \text{true})
+```
+
+and the third clause is also satisfied:
+
+```math
+(\neg{r} \lor \text{true})
+```
+
+Now the only clause that still matters is:
+
+```math
+(\neg{p} \lor r)
+```
+
+A satisfying model is:
+
+```json
+{
+    "q": true,
+    "p": false
+}
+```
+
+because then the formula becomes true regardless of what $r$ is.
+
+So after the conflict, backtracking, and learning step, CDCL eventually returns:
 
 ```text
-UNSAT
+SAT
 ```
+
+The important idea is that a conflict does not always mean the whole formula is unsatisfiable. Sometimes it only means:
+
+> The current branch of guesses cannot work.
+
+In that case, CDCL uses the conflict to learn a new clause, backjumps to an earlier decision level, and keeps searching from there.
 
 ### From SAT to SMT
 

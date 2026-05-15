@@ -3,17 +3,17 @@
 
 open Utils
 
-type 'k t
+type 'k connector
 
-val make : int -> 'k t
+val make : int -> 'k connector
 
-val abstract : ?uid:(int -> Uid.t) -> 'k Theory.formula -> 'k t -> Sat.Formula.formula
+val abstract : ?uid:(int -> Uid.t) -> 'k Theory.formula -> 'k connector -> Sat.Formula.formula
 
-val abstract_clause : ?uid:(int -> Uid.t) -> 'k Theory.clause -> 'k t -> Sat.Formula.clause
+val abstract_clause : ?uid:(int -> Uid.t) -> 'k Theory.clause -> 'k connector -> Sat.Formula.clause
 
-val make_theory_literals : Sat.Model.model -> 'k t -> 'k Theory.literal list
+val make_theory_literals : Sat.Model.model -> 'k connector -> 'k Theory.literal list
 
-val theory_learn : 'k Theory.core -> 'k t -> Sat.Formula.clause
+val theory_learn : 'k Theory.core -> 'k connector -> Sat.Formula.clause
 
 (** [cdcl_T ~theory_solver formula] runs the non-incremental CDCL (T) loop
     using a single THEORY_SOLVER against FORMULA, or the so-called
