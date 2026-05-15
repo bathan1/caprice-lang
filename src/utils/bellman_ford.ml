@@ -36,8 +36,7 @@ module Make (Node : Baby.OrderedType) = struct
     Hashtbl.replace tbl node (Some min, Some pred);
     true
 
-  let relax_edge (tbl : tbl) (was_updated : bool) (edge : Node.t edge) : bool =
-    let from_, to_, cost = edge in
+  let relax_edge (tbl : tbl) (was_updated : bool) ((from_, to_, cost) as edge : Node.t edge) : bool =
     match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
     | (Some du, _), (None, _) ->
       set_distance to_ tbl ~min:(du + cost) ~pred:edge

@@ -54,12 +54,11 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : So
     | None ->
       if Model.is_tautology formula model then SAT model
       else UNSAT
-    | Some x ->
-        decide ~lit:(Formula.pos x) level trail formula
-        (* [Formula.pos x] is arbitrary. It doesn't matter because the
-           learned conflicts forces the loop to terminate (at some point).
+    | Some x -> decide ~lit:(Formula.pos x) level trail formula
+      (* [Formula.pos x] is arbitrary. It doesn't matter because the
+          learned conflicts forces the loop to terminate (at some point).
 
-           Smarter heuristics could be implemented in the future... *)
+          Smarter heuristics could be implemented in the future... *)
     end
   | Conflict clause ->
     let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in

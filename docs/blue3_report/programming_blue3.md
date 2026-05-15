@@ -12,6 +12,8 @@ $$
 
 This formula is **UNSAT**, because $a$ cannot be at least $6$ and less than $0$ at the same time. Since calling Z3 has overhead, Blue3 was built to solve simple cases internally and fall back to Z3 when needed.
 
+I will reference both theory bits along with implementation details throughout the report, leaning a bit more on the implementation side since this paper is meant for a general computer science audience. The full source code can be found on the [`caprice-lang`](https://github.com/JHU-PL-Lab/caprice-lang) repository if want to see it for yourself.
+
 ## Intro
 
 Blue3 is a small SMT solver with a full SAT/SMT pipeline. In benchmarks, Blue3's frontend was just over 60% faster than Z3 on simple formulas.
@@ -114,7 +116,7 @@ $$
 
 In our benchmarks, many of these formulas were integer-heavy:
 
-| formula_id |            formula             | 
+| formula_id |            formula             |
 |------------|--------------------------------|
 | 9          | (0 < a) ^ ((a + 1) <= a)       |
 | 8          | (0 < a) ^ ((a + 1) <= 1)       |
@@ -209,21 +211,30 @@ $$
 dist[from] + cost < dist[to]
 $$
 
-```ocaml
-match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
-| (Some du, _), (None, _) -> set_distance to_ tbl ~min:(du + cost) ~pred:edge
-| (Some du, _), (Some dv, _) when du + cost < dv ->
-  set_distance to_ tbl ~min:(du + cost) ~pred:edge
-| _ -> was_updated
+In our implementation, we opt for `options` over explicit int-max values to represent the initial distances states; that first case where we find there is a min distance of `None` to the `to_` node represents the initial state.
+
+So in either the initial state or any state after, we are effectively checking for $dist[from] + cost < dist[to]$:
+
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+let relax_edge (tbl : tbl) (was_updated : bool) ((from_, to_, cost) as edge : Node.t edge) : bool =
+  match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
+  | (Some du, _), (None, _) ->
+    set_distance to_ tbl ~min:(du + cost) ~pred:edge
+  | (Some du, _), (Some dv, _) when du + cost < dv ->
+    set_distance to_ tbl ~min:(du + cost) ~pred:edge
+  | _ -> was_updated
 ```
 
-The source starts at distance `0`; every other node starts at infinity. Bellman-Ford relaxes edges at most $N - 1$ times, where $N$ is the number of nodes. We also stop early if a full pass does not update anything.
+The source starts at distance `0`; every other node starts at infinity. Bellman-Ford relaxes edges at most $N - 1$ times, where $N$ is the number of nodes, so we stop when we are at iteration number $N - 1$, or when a full pass does not update anything as a small optimization:
 
-```ocaml
-let is_dist_updated =
-  List.fold_left (relax_edge dist) false edges
-in
-if is_dist_updated then `Continue dist else `Stop dist
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+let relax_edges (edges : Node.t edge list) (tbl : tbl) (i : int)
+  : [ `Continue of tbl | `Stop of tbl ] =
+  if i >= (Hashtbl.length tbl) - 1 then `Stop tbl
+  else
+    let is_dist_updated = List.fold_left (relax_edge tbl) false edges in
+    if is_dist_updated then `Continue tbl
+    else `Stop tbl
 ```
 
 ### Predecessors and Negative Cycles
@@ -238,12 +249,18 @@ The distance gives the shortest-known cost from the source. The predecessor edge
 
 After the normal relaxation loop, Bellman-Ford runs one extra pass. If any edge can still be relaxed, the graph has a negative cycle.
 
-```ocaml
-List.find_map
-  (fun ((_, to_, _) as edge) ->
-    if relax_edge dist false edge then Some to_ else None)
+We invoke this extra pass via `find_relaxed_node_opt`:
+
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+let find_relaxed_node_opt (edges : Node.t edge list) (dist : tbl) : Node.t option =
+  List.find_map (fun ((_, to_, _) as edge) ->
+    if relax_edge dist false edge then
+      Some to_
+    else None)
   edges
 ```
+
+Where we just return the `to_` node of the first edge that was relaxed.
 
 The relaxed node may not itself be inside the cycle:
 
@@ -254,13 +271,49 @@ graph LR
   nc["c"] -->|"0"| nd["d"]
 ```
 
-So we walk backward through predecessor links `NUM_NODES` times. By the pigeonhole principle, this lands inside the cycle. Then we collect predecessor edges until we loop back to the start.
+So we have to walk backward through the predecessor links:
 
-```ocaml
+
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+let find_cycle_entry_opt (edges : Node.t edge list) (dist : tbl)
+  : Node.t option =
+  let num_nodes = Hashtbl.length dist in
+  let relaxed_predecessor = find_relaxed_node_opt edges dist in
+  match relaxed_predecessor with
+  | None -> None
+  | Some entry ->
+    let rec move_back node n =
+```
+
+By the pigeonhole principle, we need to backtrack a max of $N$ nodes to guarantee we land inside the cycle:
+
+Then we collect predecessor edges until we backtrack $N$ times:
+
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
 let rec move_back node n =
-  if n = 0 then node else
-  match find_predecessor node tbl with
-  | None -> node | Some from_ -> move_back from_ (n - 1)
+  if n = 0 then node
+  else if ...
+```
+
+Or until we loop back to the start:
+
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+let rec move_back node n =
+  if n = 0 then node
+  else if n < num_nodes && node = entry then node
+  ...
+```
+
+Otherwise we continue backtracking:
+
+```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+let rec move_back node n =
+  if n = 0 then node
+  else if n < num_nodes && node = entry then node
+  else
+    match find_predecessor node dist with
+    | None -> node
+    | Some from_ -> move_back from_ (n - 1)
 ```
 
 In short:
@@ -286,6 +339,18 @@ $$
 (y, x, c)
 $$
 
+It looks like this for Blue3:
+
+```ocaml {filename="smt/idl.ml" .numberLines}
+let leq_to_diff (left : Ints.affine) (right : Ints.affine) : diff =
+  match left, right with
+  | Var_plus_const (x, kx), Var_plus_const (y, ky) ->
+    { x = Node.symbol_key x ; y = Node.symbol_key y ; c = ky - kx }
+  ...
+```
+
+Where we pattern match to build our `diff` record.
+
 ```mermaid
 graph LR
   ny["y"] -->|"c"| nx["x"]
@@ -301,14 +366,41 @@ $$
 x \neq y \implies (x \leq y - 1) \lor (y + 1 \leq x)
 $$
 
-We also include the equality case, because the SAT solver may still need to explore $x = y$ depending on context.
+```ocaml {.numberLines filename="smt/idl.ml"}
+let find_split_opt (lit : 'k Theory.literal)
+  : 'k split_neq_case option =
+  let one = Formula.const_int 1 in
+  match lit with
+  | Neg Predicate (Equal, x, y) ->
+    ...
+```
 
-```ocaml
+Where on that case, we return both lower and upper bounds:
+
+```ocaml {.numberLines filename="smt/idl.ml"}
 match lit with
 | Neg Predicate (Equal, x, y) ->
-  Some (~lower:(Pos lower), ~upper:(Pos upper), ~eq:(Pos eq))
-| _ -> None
+  begin match Ints.reflect_opt x, Ints.reflect_opt y with
+  | Some x', Some y' ->
+    let lower =
+      Theory.Predicate (Less_than_eq, x', Formula.minus y' one)
+    in
+    let upper =
+      Theory.Predicate (Less_than_eq, Formula.plus y' one, x')
+    in ...
 ```
+
+We also include the equality case...
+
+```ocaml {.numberLines filename="smt/idl.ml"}
+begin match Ints.reflect_opt x, Ints.reflect_opt y with
+| Some x', Some y' ->
+  ...
+  let eq = Theory.Predicate (Equal, x, y) in
+  Some (~lower:(Pos lower), ~upper:(Pos upper), ~eq:(Pos eq))
+```
+
+...because the SAT solver may still need to explore $x = y$ depending on context.
 
 ### Case 1. SAT
 
@@ -348,11 +440,39 @@ $$
 \text{model}[x] = \text{distance}[x] - \text{distance}[0^*]
 $$
 
-```ocaml
-let z0_dist = NodeMap.find Node.zero distance_map in
-let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
-uid, Model.Int (var_dist - z0_dist)
+So all we need to do is get the the $0^*$ node's distance `z0_dist`:
+
+```ocaml {.numberLines filename="smt/idl.ml"}
+let solve_int_diff (literals : 'k Theory.literal list)
+  : 'k Theory.theory_solution =
+  ...
+    let { edges ; edge_sources ; vars } = encode_graph lits in
+    match bellman_ford ~src:Node.root edges with
+    | `Negative_cycle edges -> ...
+    | `No_negative_cycle distances ->
+      let distance_map = NodeMap.of_list distances in
+      let z0_dist = NodeMap.find Node.zero distance_map in
 ```
+
+And then subtract it from every other value with `var_dist - z0_dist`:
+
+```ocaml {.numberLines filename="smt/idl.ml"}
+...
+| `No_negative_cycle distances ->
+    let distance_map = NodeMap.of_list distances in
+    let z0_dist = NodeMap.find Node.zero distance_map in
+    let local_model =
+    vars
+    |> List.map (fun uid ->
+        let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
+        uid, Model.Int (var_dist - z0_dist))
+    |> Uid.Map.of_list
+    in
+    let model = Model.from_value_map local_model in
+    Theory.sat model
+```
+
+So the SAT flow looks like this:
 
 ```mermaid
 flowchart TD
@@ -384,6 +504,17 @@ graph LR
   na["a"] -->|"-6"| n0*["0*"]
 ```
 
+And returns the edges of the cycle:
+
+```ocaml {.numberLines filename="smt/idl.ml"}
+let solve_int_diff (literals : 'k Theory.literal list)
+  : 'k Theory.theory_solution =
+  ...
+    let { edges ; edge_sources ; vars } = encode_graph lits in
+    match bellman_ford ~src:Node.root edges with
+    | `Negative_cycle edges -> ...
+```
+
 The cycle edges map back to:
 
 $$
@@ -393,6 +524,17 @@ $$
 $$
 (0^*, a, -1) \implies a < 0
 $$
+
+```ocaml {.numberLines filename="smt/idl.ml"}
+match bellman_ford ~src:Node.root edges with
+| `Negative_cycle edges ->
+  let core =
+    edges
+    |> List.filter_map (fun edge -> source_from_edge edge edge_sources)
+    |> List.sort_uniq compare
+  in
+  Theory.unsat core
+```
 
 So the original formula is **UNSAT**.
 
@@ -431,13 +573,42 @@ The loop is:
 3. If there is a contradiction, learn from it.
 4. Repeat until `SAT` or `UNSAT`.
 
-```ocaml
-let rec bcp level trail formula =
-  match unit_propagate formula (Trail.to_model trail) with
+Our `cdcl` function takes care of the main recursive loop by calling the "actual" `bcp` function:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let cdcl formula = bcp 0 [] formula
+```
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  match unit_propagate formula model with
   | Decide -> ...
   | Conflict clause -> ...
   | Implication (clause, lit) -> ...
 ```
+
+Depending on the result of `unit_propagate`, we will either `backtrack_learn`:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+...
+and backtrack_learn ~level clause trail formula =
+  let trail' = Trail.backjump ~level trail in
+  let formula' = clause :: formula in
+  bcp level trail' formula'
+```
+
+or `decide`:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+and decide ~lit level trail =
+  let next_lvl = level + 1 in
+  let trail' = Trail.decided ~lit next_lvl trail in
+  bcp next_lvl trail'
+```
+
+So let's take a look at what `unit_propagate` does.
 
 ### Unit Propagation
 
@@ -465,11 +636,13 @@ because $p$ and $\neg q$ are unit clauses.
 
 The main `unit_propagate` result is one of three useful cases: `Decide`, `Conflict`, or `Implication`.
 
-```ocaml
-match Model.eval_clause clause model with
-| `Falsified -> Conflict clause
-| `Undecided [lit] -> Implication (clause, lit)
-| _ -> search_unit clauses'
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let unit_propagate formula model =
+    ...
+    match Model.eval_clause clause model with
+    | `Falsified -> Conflict clause
+    | `Undecided [lit] -> Implication (clause, lit)
+    | _ -> search_unit clauses'
 ```
 
 For example, if:
@@ -492,9 +665,21 @@ $$
 (p \lor q) \land (\neg p \lor r)
 $$
 
-So CDCL makes a **decision**, meaning it guesses an unassigned variable.
+So CDCL makes a **decision**, meaning it guesses an unassigned variable:
 
 If CDCL guesses:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  begin match unit_propagate formula model with
+  | Decide ->
+    let atoms = List.map Formula.atom_from_literal model in
+    begin match Formula.find_free_variable_opt atoms formula with
+    | None -> ...
+    | Some x -> decide ~lit:(Formula.pos x) level trail formula
+  ...
+```
 
 $$
 p = \text{true}
@@ -526,6 +711,19 @@ $$
 \neg p \lor \neg q
 $$
 
+through:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  begin match unit_propagate formula model with
+  ...
+  | Conflict clause ->
+    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
+    if backtrack_lvl < 0 then UNSAT
+    else backtrack_learn ~level:backtrack_lvl clause' trail formula
+```
+
 which prevents the same bad assignment from being repeated.
 
 ### A Full Example
@@ -552,6 +750,15 @@ $$
 
 is false, so Blue3 gets a conflict.
 
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  begin match unit_propagate formula model with
+  ...
+  | Conflict clause ->
+    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
+```
+
 Here, the conflict clause is:
 
 $$
@@ -575,12 +782,6 @@ So Blue3 learns:
 $$
 q
 $$
-
-```ocaml
-let trail' = Trail.backjump ~level trail in
-let formula' = clause :: formula in
-bcp level trail' formula'
-```
 
 The formula effectively becomes:
 
