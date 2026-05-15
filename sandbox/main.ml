@@ -257,4 +257,4 @@ let print_drop_redundant_ineqs () =
       (Formula.to_string ~key before)
       (Formula.to_string ~key after))
 
-let () = Benchmark.benchmark 100
+let () = Benchmark.benchmark 2000

@@ -1,5 +1,7 @@
 # Programming Blue3: An SMT solver for Caprice-Lang
 
+By: Nathanael Oh
+
 Blue3 is an SMT solver for JHU's [`caprice-lang`](https://github.com/JHU-PL-Lab/caprice-lang). It is used by the typechecker's [Concolic Evaluator](https://github.com/JHU-PL-Lab/caprice-lang/blob/main/docs/caprice.md), or `ceval`.
 
 Before Blue3, `ceval` used [Z3](https://www.microsoft.com/en-us/research/project/z3-3/) directly. Z3 is powerful, but often overkill for simple formulas like:
@@ -800,99 +802,105 @@ Result -> SAT / UNSAT / fallback
 
 ## Benchmarks and Last Words
 
-These measurements use the [Benchmark](https://ocaml.org/p/benchmark/1.7) library on 179 formulas from a real `ceval` run. Each formula was solved 100 times by each solver, and the averages were saved.
+These measurements use the [Benchmark](https://ocaml.org/p/benchmark/1.7) library on 179 formulas from a real `ceval` run. Each formula was solved 2000 times by each solver, and the averages were saved.
 
 ### Measurements
 
 #### Average runtimes
 |  blue3  |   z3    |
 |---------|---------|
-| 227.0μs | 339.0μs |
+| 241.0μs | 359.0μs |
+
+On average, blue3 outperforms z3 by just under ~40%.
 
 #### Blue3-only count
 | count |
 |-------|
 | 89    |
 
+Out of the 179 formulas solved by Blue3, it solved 89 of them without having to fallback to Z3.
+
 #### Z3-deferred count
 | count |
 |-------|
 | 90    |
 
+Out of the 179 formulas solved by Blue3, it deferred 90 formulas to Z3 .
+
 #### Deferred overhead
 | cases |   diff   |  pct   |
 |-------|----------|--------|
-| 90    | -15.83μs | -2.07% |
+| 90    | -12.83μs | -2.41% |
+
+On average, running Z3 through the Blue3 solve pipeline incurs a ~13 microsecond overhead over running Z3 alone.
 
 #### Fast cases
 | cases |   diff   |  pct   |
 |-------|----------|--------|
-| 142   | 144.23μs | 63.08% |
+| 146   | 146.61μs | 61.54% |
+
+On the cases that Blue3 was able to solve faster than Z3, regardless of if it deferred to Z3 or not, it was able to solve it was around ~60% faster. While a more thorough analysis would need to be done to say this for certain, I am guessing that the $146 - 89$ cases that were deferred to Z3 were faster than the Z3 call alone because of the simplifications Blue3 performs.
 
 #### Slow cases
-| cases |  diff   |  pct  |
-|-------|---------|-------|
-| 37    | 13.95μs | 3.67% |
+| cases |  diff   | pct  |
+|-------|---------|------|
+| 33    | 10.05μs | 3.2% |
+
+When Z3-only solver outperformed Blue3, it was by 3.2%.
 
 #### Top 5 fastest Blue3-only cases
-| id |         formula          | blue3  |    z3    |   diff    |
-|----|--------------------------|--------|----------|-----------|
-| 9  | (0 < a) ^ ((a + 1) <= a) | 0.12μs | 90.44μs  | -90.32μs  |
-| 8  | (0 < a) ^ ((a + 1) <= 1) | 0.13μs | 87.94μs  | -87.81μs  |
-| 11 | (1 < a) ^ (a < 0)        | 0.26μs | 106.73μs | -106.47μs |
-| 88 | (0 < a) ^ (a < 1)        | 0.27μs | 110.35μs | -110.08μs |
-| 36 | (2 < a) ^ (a < 0)        | 0.28μs | 111.81μs | -111.53μs |
+| id  |            formula             | blue3  |    z3    |   diff    |
+|-----|--------------------------------|--------|----------|-----------|
+| 8   | (0 < a) ^ ((a + 1) <= 1)       | 0.21μs | 91.41μs  | -91.2μs   |
+| 9   | (0 < a) ^ ((a + 1) <= a)       | 0.28μs | 88.46μs  | -88.18μs  |
+| 56  | (not (a = 0)) ^ ((a + 10) = 0) | 0.29μs | 230.75μs | -230.46μs |
+| 117 | (0 <= a) ^ ((1 + a) < 0)       | 0.3μs  | 124.54μs | -124.24μs |
+| 178 | (0 <= a) ^ ((a + 2) < 0)       | 0.31μs | 127.94μs | -127.64μs |
+
+Blue3 greatly outperforms Z3 on small IDL cases.
 
 #### Top 5 slowest Blue3-only cases
 | id  |                           formula                            |  blue3   |    z3    |   diff    |
 |-----|--------------------------------------------------------------|----------|----------|-----------|
-| 167 | (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a | 191.59μs | 459.57μs | -267.98μs |
+| 167 | (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a | 177.42μs | 477.72μs | -300.29μs |
 |     |  = 97)) ^ (not (a = 61)) ^ (not (a = 45)) ^ (not (a = 43)) ^ |          |          |           |
 |     |  (not (a = 42)) ^ (not (a = 41)) ^ (not (a = 40)) ^ (not (a  |          |          |           |
 |     | = 32)) ^ (48 <= a)                                           |          |          |           |
-| 168 | (48 <= a) ^ (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98 | 178.27μs | 428.93μs | -250.66μs |
+| 168 | (48 <= a) ^ (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98 | 175.71μs | 456.12μs | -280.41μs |
 |     | )) ^ (not (a = 97)) ^ (not (a = 61)) ^ (not (a = 45)) ^ (not |          |          |           |
 |     |  (a = 43)) ^ (not (a = 42)) ^ (not (a = 41)) ^ (not (a = 40) |          |          |           |
 |     | ) ^ (not (a = 32)) ^ (57 < a)                                |          |          |           |
-| 172 | (65 <= a) ^ (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a | 104.84μs | 450.14μs | -345.3μs  |
+| 172 | (65 <= a) ^ (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a | 103.67μs | 507.73μs | -404.05μs |
 |     |  = 105)) ^ (not (a = 98)) ^ (not (a = 97)) ^ (not (a = 61))  |          |          |           |
 |     | ^ (not (a = 45)) ^ (not (a = 43)) ^ (not (a = 42)) ^ (not (a |          |          |           |
 |     |  = 41)) ^ (not (a = 40)) ^ (not (a = 32)) ^ (90 < a)         |          |          |           |
-| 170 | (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a = 105)) ^ ( | 101.19μs | 446.47μs | -345.28μs |
+| 170 | (48 <= a) ^ (57 < a) ^ (not (a = 108)) ^ (not (a = 105)) ^ ( | 101.82μs | 477.36μs | -375.55μs |
 |     | not (a = 98)) ^ (not (a = 97)) ^ (not (a = 61)) ^ (not (a =  |          |          |           |
 |     | 45)) ^ (not (a = 43)) ^ (not (a = 42)) ^ (not (a = 41)) ^ (n |          |          |           |
 |     | ot (a = 40)) ^ (not (a = 32)) ^ (65 <= a)                    |          |          |           |
-| 175 | (65 <= a) ^ (48 <= a) ^ (90 < a) ^ (57 < a) ^ (not (a = 108) | 68.94μs  | 455.22μs | -386.28μs |
+| 175 | (65 <= a) ^ (48 <= a) ^ (90 < a) ^ (57 < a) ^ (not (a = 108) | 66.57μs  | 492.07μs | -425.5μs  |
 |     | ) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a = 97)) ^ (not |          |          |           |
 |     |  (a = 61)) ^ (not (a = 45)) ^ (not (a = 43)) ^ (not (a = 42) |          |          |           |
 |     | ) ^ (not (a = 41)) ^ (not (a = 40)) ^ (not (a = 32)) ^ (97 < |          |          |           |
 |     | = a)                                                         |          |          |           |
 
-#### Biggest Blue3 win
-|  diff   |
-|---------|
-| 630.0μs |
-
-#### Biggest Z3 win
-|  diff   |
-|---------|
-| 105.0μs |
+These are Blue3’s slowest solved cases that are purely IDL-compatible. They contain many disequalities and redundant lower bounds, causing more simplification and case-analysis work before the formula collapses and outperforms calling Z3 alone.
 
 #### Cases Z3 beat Blue3
 | id  |                           formula                            |  blue3  |   z3    |
 |-----|--------------------------------------------------------------|---------|---------|
-| 109 | (c <= (b % a)) ^ (c <= a) ^ (b <= ((b * a) / c)) ^ (0 < c) ^ | 1865.03 | 1816.62 |
-|     |  (0 < a) ^ (0 < b) ^ (not ((b % a) = 0)) ^ (not (c = 0)) ^ ( |         |         |
-|     | not (a = 0)) ^ (((b * a) / c) < a)                           |         |         |
-| 94  | (b <= a) ^ (0 < b) ^ (0 < a) ^ (not ((a % b) = 0)) ^ (not (b | 1038.82 | 1031.07 |
+| 94  | (b <= a) ^ (0 < b) ^ (0 < a) ^ (not ((a % b) = 0)) ^ (not (b | 1163.14 | 1157.67 |
 |     |  = 0)) ^ ((b + 1) <= c)                                      |         |         |
-| 103 | (0 < a) ^ (0 < b) ^ (0 < c) ^ (not ((c % b) = 0)) ^ (not (b  | 1025.34 | 920.57  |
-|     | = 0)) ^ (a <= b)                                             |         |         |
-| 105 | (0 < a) ^ (0 < b) ^ (0 < c) ^ (not ((c % b) = 0)) ^ (not (b  | 954.28  | 949.84  |
+| 105 | (0 < a) ^ (0 < b) ^ (0 < c) ^ (not ((c % b) = 0)) ^ (not (b  | 1065.32 | 1047.21 |
 |     | = 0)) ^ (b < a)                                              |         |         |
-| 99  | (0 < a) ^ (0 < b) ^ (not (a = 0)) ^ (not ((b % a) = 0))      | 889.68  | 885.48  |
+| 103 | (0 < a) ^ (0 < b) ^ (0 < c) ^ (not ((c % b) = 0)) ^ (not (b  | 996.61  | 985.42  |
+|     | = 0)) ^ (a <= b)                                             |         |         |
+| 70  | (not ((a % 2) = 0)) ^ (not (a = 0)) ^ (not (((a - 1) % 2) =  | 703.25  | 661.79  |
+|     | 0))                                                          |         |         |
+| 102 | ((b % a) = 0) ^ (0 < a) ^ (0 < b) ^ (not (a = 0)) ^ (((b * a | 664.39  | 655.5   |
+|     | ) / a) < b)                                                  |         |         |
 
-Z3 wins on formulas involving modulus, multiplication, and division, which Blue3 intentionally leaves to a general-purpose solver.
+Z3 wins on formulas involving modulus, multiplication, and division, which Blue3 intentionally leaves to a general-purpose solver, because the simplifications Blue3 performs on these formulas before sending to Z3 does not make up for the overhead of those simplifications.
 
 ### Last words
 
