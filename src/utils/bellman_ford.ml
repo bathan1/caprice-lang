@@ -88,25 +88,21 @@ module Make (Node : Baby.OrderedType) = struct
     | Some node -> node
     | None -> failwith "No relaxed node found"
 
-  let find_cycle_entry_opt (edges : Node.t edge list) (dist : tbl)
+  let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
     : Node.t option =
     let num_nodes = Hashtbl.length dist in
     let relaxed_predecessor = find_relaxed_node_opt edges dist in
-    match relaxed_predecessor with
-    | None -> None
-    | Some entry ->
-      let rec move_back node n =
-        if n = 0 then node
-        else if n < num_nodes && node = entry then node
-        else
-          match find_predecessor node dist with
-          | None -> node
-          | Some from_ -> move_back from_ (n - 1)
-      in
-      Some (move_back entry num_nodes)
+    let rec move_back node n =
+      if n = 0 then node
+      else
+        match find_predecessor node dist with
+        | None -> node
+        | Some from_ -> move_back from_ (n - 1)
+    in
+    Option.map (fun entry -> move_back entry num_nodes) relaxed_predecessor
       
-  let find_cycle_entry (edges : Node.t edge list) (dist : tbl) : Node.t =
-    match find_cycle_entry_opt edges dist with
+  let find_cycle_node (edges : Node.t edge list) (dist : tbl) : Node.t =
+    match find_cycle_node_opt edges dist with
     | Some entry -> entry
     | None -> failwith "No negative cycle found"
 
@@ -136,7 +132,7 @@ let bellman_ford
     ] =
   let open Make (Node) in
   let tbl = find_shortest_paths ~src edges in
-  match find_cycle_entry_opt edges tbl with
+  match find_cycle_node_opt edges tbl with
   | None -> `No_negative_cycle (
     tbl
     |> Hashtbl.to_seq_keys

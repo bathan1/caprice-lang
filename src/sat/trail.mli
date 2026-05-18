@@ -56,9 +56,9 @@ val analyze_conflict : clause:Formula.clause -> int -> trail -> Formula.clause *
     all steps in TRAIL with a [level] > LEVEL *)
 val backjump : level:int -> trail -> trail
 
-(** [decided ~lit level trail] prepends step with [reason = Decided]
+(** [decide ~lit level trail] prepends step with [reason = Decided]
     after solver loop has {i decided} on LIT at LEVEL *)
-val decided : lit:Formula.literal -> int -> trail -> trail
+val decide : lit:Formula.literal -> int -> trail -> trail
 
 (** [imply ~reason level lit trail] {i implies} LIT at decision LEVEL
     by prepending step with [reason = Propagated] to TRAIL *)

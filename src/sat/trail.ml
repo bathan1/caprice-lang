@@ -84,7 +84,7 @@ let rec analyze_conflict ~clause level trail =
 let backjump ~level:backtrack_level trail =
   List.filter (fun { level ; _ } -> level <= backtrack_level) trail
 
-let decided ~lit level trail = { level ; lit ; reason = Decided } :: trail
+let decide ~lit level trail = { level ; lit ; reason = Decided } :: trail
 
 let imply ~reason level lit trail =
   { level ; lit ; reason = Propagated reason } :: trail

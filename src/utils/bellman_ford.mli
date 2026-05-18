@@ -84,13 +84,13 @@ module Make (Node : Baby.OrderedType) : sig
   *)
   val find_relaxed_node : Node.t edge list -> tbl -> Node.t
 
-  (** [find_cycle_entry_opt edges dist] returns the first node from EDGES that in a part
+  (** [find_cycle_node_opt edges dist] returns the first node from EDGES that in a part
       of the negative cycle recorded in DIST, if it exists *)
-  val find_cycle_entry_opt : Node.t edge list -> tbl -> Node.t option
+  val find_cycle_node_opt : Node.t edge list -> tbl -> Node.t option
 
-  (** [find_cycle_entry edges dist] returns the first node from EDGES that in a part
+  (** [find_cycle_node edges dist] returns the first node from EDGES that in a part
       of the negative cycle recorded in DIST, if it exists, otherwise this throws *)
-  val find_cycle_entry : Node.t edge list -> tbl -> Node.t
+  val find_cycle_node : Node.t edge list -> tbl -> Node.t
 
   (** [find_predecessor_edge node dist] returns the predecessor edge value of
       NODE in the DIST table, where an edge of [None] means there are currently

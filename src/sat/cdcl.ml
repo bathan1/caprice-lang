@@ -23,11 +23,11 @@ let pp_next ~uid fd (next : next) : unit =
 *)
 let unit_propagate formula model =
   let rec search_empty
-    (clauses : Formula.formula)
+    (formula : Formula.formula)
     (reason_clause : literal list)
     (lit : Formula.literal)
     : next =
-    match clauses with
+    match formula with
     | [] -> Implication (reason_clause, lit)
     | clause :: clauses' ->
       match Model.eval_clause clause model with
@@ -54,11 +54,11 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : So
     | None ->
       if Model.is_tautology formula model then SAT model
       else UNSAT
-    | Some x -> decide ~lit:(Formula.pos x) level trail formula
+    | Some x -> decide ~lit:(Formula.pos x) (level + 1) trail formula
       (* [Formula.pos x] is arbitrary. It doesn't matter because the
           learned conflicts forces the loop to terminate (at some point).
 
-          Smarter heuristics could be implemented in the future... *)
+          Smarter decision heuristics could be implemented in the future... *)
     end
   | Conflict clause ->
     let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
@@ -74,9 +74,8 @@ and backtrack_learn ~level clause trail formula =
   let formula' = clause :: formula in
   bcp level trail' formula'
 
-and decide ~lit level trail =
-  let next_lvl = level + 1 in
-  let trail' = Trail.decided ~lit next_lvl trail in
+and decide ~lit next_lvl trail =
+  let trail' = Trail.decide ~lit next_lvl trail in
   bcp next_lvl trail'
 
 let cdcl formula = bcp 0 [] formula

@@ -12,7 +12,7 @@ $$
 
 This formula is **UNSAT**, because $a$ cannot be at least $6$ and less than $0$ at the same time. Since calling Z3 has overhead, Blue3 was built to solve simple cases internally and fall back to Z3 when needed.
 
-I will reference both theory bits along with implementation details throughout the report, leaning a bit more on the implementation side since this paper is meant for a general computer science audience. The full source code can be found on the [`caprice-lang`](https://github.com/JHU-PL-Lab/caprice-lang) repository if want to see it for yourself.
+I will reference both theory bits along with implementation details throughout the report, leaning a bit more on the implementation side since this paper is meant for a general computer science audience. The full source code can be found on the [`caprice-lang`](https://github.com/JHU-PL-Lab/caprice-lang) repository if you want to see the implementations in full.
 
 ## Intro
 
@@ -271,63 +271,77 @@ graph LR
   nc["c"] -->|"0"| nd["d"]
 ```
 
-So we have to walk backward through the predecessor links:
-
+To find a node in the cycle, we walk backward from that relaxed node:
 
 ```ocaml {filename="utils/bellman_ford.ml" .numberLines}
-let find_cycle_entry_opt (edges : Node.t edge list) (dist : tbl)
+let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
   : Node.t option =
   let num_nodes = Hashtbl.length dist in
   let relaxed_predecessor = find_relaxed_node_opt edges dist in
-  match relaxed_predecessor with
-  | None -> None
-  | Some entry ->
-    let rec move_back node n =
-```
-
-By the pigeonhole principle, we need to backtrack a max of $N$ nodes to guarantee we land inside the cycle:
-
-Then we collect predecessor edges until we backtrack $N$ times:
-
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
-let rec move_back node n =
-  if n = 0 then node
-  else if ...
-```
-
-Or until we loop back to the start:
-
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
-let rec move_back node n =
-  if n = 0 then node
-  else if n < num_nodes && node = entry then node
   ...
 ```
 
-Otherwise we continue backtracking:
+For a graph with $\text{NUM_NODES}$ nodes, we need to move back $\text{NUM_NODES}$ from the relaxed node to return a node guaranteed to be in the cycle because of the pigeonhole principle:
 
 ```ocaml {filename="utils/bellman_ford.ml" .numberLines}
-let rec move_back node n =
-  if n = 0 then node
-  else if n < num_nodes && node = entry then node
-  else
-    match find_predecessor node dist with
-    | None -> node
-    | Some from_ -> move_back from_ (n - 1)
+let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
+  ...
+  let rec move_back node n =
+    if n = 0 then node
+    else
+      match find_predecessor node dist with
+      | None -> node
+      | Some from_ -> move_back from_ (n - 1)
+  in
+  Option.map (fun entry -> move_back entry num_nodes) relaxed_predecessor
 ```
 
-In short:
+The `start` node is all we need to collect the edges in the negative cycle because we can just backtrack from it:
+```ocaml {.numberLines .filename="utils/bellman_ford.ml"}
+let collect_cycle (start : Node.t) (dist : tbl) : Node.t edge list =
+  let num_nodes = Hashtbl.length dist in
+  let rec loop curr n acc =
+    if n = 0 then
+      acc
+    else
+      match find_predecessor_edge curr dist with
+      | None -> acc
+      | Some ((from_, _, _) as pred_edge) ->
+        let acc = pred_edge :: acc in
+        if Node.compare from_ start = 0 then acc
+        else loop from_ (n - 1) acc
+  in
+  loop start num_nodes []
+```
 
-1. Compute distances.
-2. Run one extra relaxation pass.
-3. If nothing changes, return distances.
-4. If something changes, backtrack predecessors and return the negative cycle.
+Now that we can collect negative cycles, our bellman ford implementation is finished.
+
+```ocaml {filename="utils/bellman_ford.ml"}
+let bellman_ford
+  (type node)
+  (module Node : Baby.OrderedType with type t = node)
+ ~(src : node)
+  (edges : node edge list)
+  : [ `No_negative_cycle of (node * int) list
+    | `Negative_cycle of node edge list
+    ] =
+  let open Make (Node) in
+  let tbl = find_shortest_paths ~src edges in
+  match find_cycle_node_opt edges tbl with
+  | None -> `No_negative_cycle (
+    tbl
+    |> Hashtbl.to_seq_keys
+    |> Seq.map (fun node -> node, find_distance node tbl)
+    |> List.of_seq
+  )
+  | Some entry -> `Negative_cycle (collect_cycle entry tbl)
+```
 
 ## Bellman-Ford as a Difference Logic Solver
 
 Bellman-Ford solves difference logic because each constraint can be encoded as a graph edge.
 
-We encode:
+We can encode:
 
 $$
 x - y \leq c
@@ -338,6 +352,11 @@ as:
 $$
 (y, x, c)
 $$
+
+```mermaid
+graph LR
+  ny["y"] -->|"c"| nx["x"]
+```
 
 It looks like this for Blue3:
 
@@ -350,11 +369,6 @@ let leq_to_diff (left : Ints.affine) (right : Ints.affine) : diff =
 ```
 
 Where we pattern match to build our `diff` record.
-
-```mermaid
-graph LR
-  ny["y"] -->|"c"| nx["x"]
-```
 
 Then we add a dummy source node with $0$-weight edges to every node and run Bellman-Ford. If it finds a negative cycle, the formula is **UNSAT**. Otherwise, it is **SAT**.
 
@@ -459,17 +473,12 @@ And then subtract it from every other value with `var_dist - z0_dist`:
 ```ocaml {.numberLines filename="smt/idl.ml"}
 ...
 | `No_negative_cycle distances ->
-    let distance_map = NodeMap.of_list distances in
-    let z0_dist = NodeMap.find Node.zero distance_map in
-    let local_model =
-    vars
-    |> List.map (fun uid ->
-        let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
-        uid, Model.Int (var_dist - z0_dist))
-    |> Uid.Map.of_list
-    in
-    let model = Model.from_value_map local_model in
-    Theory.sat model
+  ...
+  vars
+  |> List.map (fun uid ->
+      let var_dist = NodeMap.find (Node.symbol_key uid) distance_map in
+      uid, Model.Int (var_dist - z0_dist))
+  ...
 ```
 
 So the SAT flow looks like this:
@@ -546,7 +555,9 @@ flowchart TD
 
 The negative cycle is also the **UNSAT core**, meaning the specific literals responsible for the contradiction.
 
-## SAT
+With our `solve_int_diff` function we can now use bellman ford to solve our simple formulas.
+
+## SAT solving
 
 3SAT was the first problem shown to be $\text{NP-complete}$. More generally, $\text{k-SAT}$ asks:
 
@@ -566,14 +577,14 @@ No polynomial-time SAT algorithm is known, so practical SAT solvers are still ve
 
 Blue3 uses **Conflict-Driven Clause Learning**, or `CDCL`, for boolean solving.
 
-The loop is:
+The (simple) loop goes like:
 
-1. Infer forced assignments.
-2. If nothing is forced, guess.
-3. If there is a contradiction, learn from it.
+1. *Propagate* forced boolean constraints
+2. *Decide* on a variable once nothing is forced
+3. *Learn* from contradictions caused from decisions and *backtrack* to some unique implication cut.
 4. Repeat until `SAT` or `UNSAT`.
 
-Our `cdcl` function takes care of the main recursive loop by calling the "actual" `bcp` function:
+So we begin with propagation via the boolean constraint propagation function `bcp`:
 
 ```ocaml {.numberLines filename="sat/cdcl.ml"}
 let cdcl formula = bcp 0 [] formula
@@ -588,7 +599,7 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : So
   | Implication (clause, lit) -> ...
 ```
 
-Depending on the result of `unit_propagate`, we will either `backtrack_learn`:
+Which calls `unit_propagate`. Depending on the result of `unit_propagate`, we will either `backtrack_learn`:
 
 ```ocaml {.numberLines filename="sat/cdcl.ml"}
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
@@ -602,13 +613,10 @@ and backtrack_learn ~level clause trail formula =
 or `decide`:
 
 ```ocaml {.numberLines filename="sat/cdcl.ml"}
-and decide ~lit level trail =
-  let next_lvl = level + 1 in
-  let trail' = Trail.decided ~lit next_lvl trail in
+and decide ~lit next_lvl trail =
+  let trail' = Trail.decide ~lit next_lvl trail in
   bcp next_lvl trail'
 ```
-
-So let's take a look at what `unit_propagate` does.
 
 ### Unit Propagation
 
@@ -634,28 +642,102 @@ $$
 
 because $p$ and $\neg q$ are unit clauses.
 
-The main `unit_propagate` result is one of three useful cases: `Decide`, `Conflict`, or `Implication`.
+Then it returns the `next` step which is one of `Decide`, `Conflict`, or `Implication`.
 
 ```ocaml {.numberLines filename="sat/cdcl.ml"}
 let unit_propagate formula model =
-    ...
+  let rec search_empty
+    (formula : Formula.formula)
+    (reason_clause : literal list)
+    (lit : Formula.literal)
+    : next = ...
+  in
+  let rec search_unit (formula : Formula.formula) : next = ...
+  in search_unit formula
+```
+
+It first calls `search_unit`:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec search_unit (formula : Formula.formula) : next =
+  match formula with
+  | [] -> Decide
+  | clause :: clauses' ->
     match Model.eval_clause clause model with
     | `Falsified -> Conflict clause
-    | `Undecided [lit] -> Implication (clause, lit)
+    | `Undecided [lit] -> search_empty clauses' clause lit
     | _ -> search_unit clauses'
 ```
 
-For example, if:
+`search_unit` scans through the formula one clause at a time under the current model. If a clause is already falsified, then propagation has discovered a contradiction and returns `Conflict clause`.
+
+If a clause has exactly one undecided literal, then that literal must be assigned in order to satisfy the clause. In that case, `search_unit` calls `search_empty` with the unit clause as the `reason_clause` and the forced literal as `lit`.
+
+For example, if the clause is:
 
 $$
 (\neg p \lor q \lor r)
 $$
 
-and the model says $p = \text{true}$ and $q = \text{false}$, then unit propagation forces:
+and the model says:
+
+$$
+p = \text{true}
+\qquad
+q = \text{false}
+$$
+
+then the clause reduces to:
+
+$$
+(\text{false} \lor \text{false} \lor r)
+$$
+
+so unit propagation forces:
 
 $$
 r = \text{true}
 $$
+
+Before returning that implication, `search_empty` checks the rest of the formula:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec search_empty
+  (formula : Formula.formula)
+  (reason_clause : literal list)
+  (lit : Formula.literal)
+  : next =
+  match formula with
+  | [] -> Implication (reason_clause, lit)
+  | clause :: clauses' ->
+    match Model.eval_clause clause model with
+    | `Falsified -> Conflict clause
+    | _ -> search_empty clauses' reason_clause lit
+```
+
+This second scan gives conflicts priority over implications. If the rest of the formula already contains a falsified clause, then CDCL should handle the conflict first. Otherwise, once the scan finishes, it returns:
+
+```ocaml
+Implication (reason_clause, lit)
+```
+
+In which case the loop adds the implied `lit` along with the `reason` clause behind that assignment to the trail state:
+
+```ocaml {.filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  begin match unit_propagate formula model with
+  ...
+  | Implication (clause, lit) ->
+    let trail' = Trail.imply ~reason:clause level lit trail in
+    bcp level trail' formula
+```
+
+Besides the implication case, `unit_propagate` returns 2 more cases:
+
+1. `Decide`: no conflict was found, and no unit clause is available, so decide on a variable
+
+2. `Conflict clause`: some clause is already false under the current model
 
 ### Deciding and Conflicts
 
@@ -679,6 +761,13 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : So
     | None -> ...
     | Some x -> decide ~lit:(Formula.pos x) level trail formula
   ...
+and decide ~lit next_lvl trail =
+  let trail' = Trail.decide ~lit next_lvl trail in
+  bcp next_lvl trail'
+```
+
+```ocaml {.numberLines filename="sat/trail.ml"}
+let decide ~lit level trail = { level ; lit ; reason = Decided } :: trail
 ```
 
 $$
@@ -705,13 +794,7 @@ $$
 
 If CDCL guesses $p = \text{true}$, then it is forced to set $q = \text{true}$. But then $(\neg p \lor \neg q)$ becomes false.
 
-CDCL learns from this conflict instead of blindly backtracking. In this case, it can learn:
-
-$$
-\neg p \lor \neg q
-$$
-
-through:
+CDCL learns from this conflict with the `Trail.analyze_conflict` function:
 
 ```ocaml {.numberLines filename="sat/cdcl.ml"}
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
@@ -719,20 +802,152 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : So
   begin match unit_propagate formula model with
   ...
   | Conflict clause ->
-    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
-    if backtrack_lvl < 0 then UNSAT
-    else backtrack_learn ~level:backtrack_lvl clause' trail formula
+    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail
 ```
 
 which prevents the same bad assignment from being repeated.
 
+It does so by first filtering for all literals in the conflict clause at the current decision level:
+
+```ocaml {.filename="sat/trail.ml"}
+let rec analyze_conflict ~clause level trail =
+  match List.filter (fun lit -> find_level lit trail = level) clause with
+```
+
+Say we have the conflict clause:
+
+$$
+\neg p \lor \neg q \lor \neg r
+$$
+
+where:
+
+$$
+p \text{ is assigned at level } 1
+$$
+
+$$
+q \text{ is assigned at level } 2
+$$
+
+$$
+r \text{ is assigned at level } 3
+$$
+
+If the current decision level is `3`, then filtering the clause for literals at level `3` gives:
+
+$$
+\neg{r}
+$$
+
+That means the clause has exactly one literal from the current decision level, so it is ready to learn:
+
+```ocaml {.filename="sat/trail.ml"}
+| [hd] ->
+  if level = 0 then [], -1
+  else
+    let new_lvl =
+      clause
+      |> List_utils.remove1 hd
+      |> List.fold_left
+          (fun lvl' lit ->
+            max lvl' (find_level lit trail)) 0
+    in
+    clause, new_lvl
+```
+
+This case returns the learned `clause` and computes the level to backjump to. It removes the single current-level literal `hd`, then finds the highest decision level among the remaining literals.
+
+For the example:
+
+$$
+\neg p \lor \neg q \lor \neg r
+$$
+
+we remove:
+
+$$
+\neg r
+$$
+
+and compute:
+
+$$
+\max(\text{level}(\neg p), \text{level}(\neg q)) = \max(1, 2) = 2
+$$
+
+So `analyze_conflict` returns:
+
+```ocaml
+([¬p; ¬q; ¬r], 2)
+```
+
+This tells CDCL to learn:
+
+$$
+\neg p \lor \neg q \lor \neg r
+$$
+
+and backjump to level `2`:
+
+```ocaml {.filename="sat/cdcl.ml"}
+let rec bcp ...
+  | Conflict clause ->
+    let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
+    if backtrack_lvl < 0 then UNSAT
+    else backtrack_learn ~level:backtrack_lvl clause' trail formula
+...
+and backtrack_learn ~level clause trail formula =
+  let trail' = Trail.backjump ~level trail in
+  let formula' = clause :: formula in
+  bcp level trail' formula'
+```
+
+```ocaml {.filename="sat/trail.ml"}
+let backjump ~level:backtrack_level trail =
+  List.filter (fun { level ; _ } -> level <= backtrack_level) trail
+```
+
+After backjumping, `r` becomes unassigned, while `p` and `q` remain assigned, so the learned clause becomes unit and immediately forces:
+
+$$
+r = \text{false}
+$$
+
+If there is more than one literal from the current decision level, then the clause is not ready to learn yet:
+
+```ocaml {.filename="sat/trail.ml"}
+| current_level_lits ->
+  let reason = find_reason current_level_lits trail in
+  let clause' = Formula.resolve_pair clause reason in
+  analyze_conflict ~clause:clause' level trail
+```
+
+In that case, `analyze_conflict` finds the reason clause for one of the current-level literals, resolves it with the current conflict clause, and recursively tries again. This removes one current-level literal and replaces it with the literals that caused it, gradually moving the explanation backward until only one current-level literal remains.
+
 ### A Full Example
 
-Consider:
+Let's run through the example:
 
 $$
 (p \lor q) \land (\neg p \lor r) \land (\neg r \lor q)
 $$
+
+There are no unit clauses to propagate, so `unit_propagate` returns `Decide`:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
+  let model = Trail.to_model trail in
+  begin match unit_propagate formula model with
+  | Decide ->
+    let atoms = List.map Formula.atom_from_literal model in
+    begin match Formula.find_free_variable_opt atoms formula with
+    | None ->
+      if Model.is_tautology formula model then SAT model
+      else UNSAT
+    | Some x -> decide ~lit:(Formula.neg x) (level + 1) trail formula
+    end
+```
 
 Suppose Blue3 makes the bad decision:
 
@@ -740,23 +955,135 @@ $$
 q = \text{false}
 $$
 
-Then $(p \lor q)$ forces $p = \text{true}$, and $(\neg p \lor r)$ forces $r = \text{true}$.
+The `decide` helper records that assignment on the trail at the next decision level, then immediately returns to `bcp`:
 
-Now:
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+and decide ~lit next_lvl trail formula =
+  let trail' = Trail.decide ~lit next_lvl trail in
+  bcp next_lvl trail' formula
+```
+
+So the trail now contains:
+
+$$
+q = \text{false}
+$$
+
+at decision level `1`.
+
+Now `bcp` calls `unit_propagate` again. Under the current model, the clause:
+
+$$
+(p \lor q)
+$$
+
+becomes:
+
+$$
+(p \lor \text{false})
+$$
+
+so unit propagation forces:
+
+$$
+p = \text{true}
+$$
+
+That returns an `Implication`:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+| Implication (clause, lit) ->
+  let trail' = Trail.imply ~reason:clause level lit trail in
+  bcp level trail' formula
+```
+
+Blue3 records this implication on the trail, along with the reason clause:
+
+$$
+(p \lor q)
+$$
+
+So the trail is now:
+
+$$
+[
+  p = \text{true} \;\text{ because of } (p \lor q);
+  \;
+  q = \text{false}
+]
+$$
+
+Then `bcp` loops again. Now the clause:
+
+$$
+(\neg p \lor r)
+$$
+
+becomes:
+
+$$
+(\text{false} \lor r)
+$$
+
+so unit propagation forces:
+
+$$
+r = \text{true}
+$$
+
+Blue3 records the implication and its reason:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+| Implication (clause, lit) ->
+  let trail' = Trail.imply ~reason:clause level lit trail in
+  bcp level trail' formula
+```
+
+Now the trail is:
+
+$$
+[
+  r = \text{true} \;\text{ because of } (\neg p \lor r);
+  \;
+  p = \text{true} \;\text{ because of } (p \lor q);
+  \;
+  q = \text{false}
+]
+$$
+
+Then `bcp` calls `unit_propagate` again. This time, the clause:
 
 $$
 (\neg r \lor q)
 $$
 
-is false, so Blue3 gets a conflict.
+becomes:
+
+$$
+(\text{false} \lor \text{false})
+$$
+
+so the clause is falsified. `unit_propagate` returns a conflict:
 
 ```ocaml {.numberLines filename="sat/cdcl.ml"}
-let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
-  let model = Trail.to_model trail in
-  begin match unit_propagate formula model with
-  ...
+let unit_propagate ...
+  let rec search_unit (formula : Formula.formula) : next =
+    match formula with
+    | [] -> Decide
+    | clause :: clauses' ->
+      match Model.eval_clause clause model with
+      | `Falsified -> Conflict clause
+```
+
+So `bcp` enters the conflict case:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+let rec bcp ...
+  match unit_propagate ... with
   | Conflict clause ->
     let clause', backtrack_lvl = Trail.analyze_conflict ~clause level trail in
+    if backtrack_lvl < 0 then UNSAT
+    else backtrack_learn ~level:backtrack_lvl clause' trail formula
 ```
 
 Here, the conflict clause is:
@@ -765,44 +1092,179 @@ $$
 (\neg r \lor q)
 $$
 
-Since $r$ came from $(\neg p \lor r)$, resolving gives:
+The current conflict clause is:
+
+$$
+(\neg r \lor q)
+$$
+
+Both $r$ and $q$ were assigned at the current decision level, so there is more than one current-level literal. That means the clause is not ready to learn yet, so Blue3 uses the recursive case:
+
+```ocaml {.numberLines filename="sat/trail.ml"}
+| current_level_lits ->
+  let reason = find_reason current_level_lits trail in
+  let clause' = Formula.resolve_pair clause reason in
+  analyze_conflict ~clause:clause' level trail
+```
+
+Since $r$ came from:
+
+$$
+(\neg p \lor r)
+$$
+
+Blue3 resolves the conflict clause:
+
+$$
+(\neg r \lor q)
+$$
+
+with the reason clause:
+
+$$
+(\neg p \lor r)
+$$
+
+The complementary literals $r$ and $\neg r$ cancel, giving:
 
 $$
 (q \lor \neg p)
 $$
 
-Since $p$ came from $(p \lor q)$, resolving again gives:
+Now `analyze_conflict` recursively checks the new clause:
+
+$$
+(q \lor \neg p)
+$$
+
+Again, both $q$ and $p$ were assigned at the current decision level, so there is still more than one current-level literal. Blue3 resolves again.
+
+Since $p$ came from:
+
+$$
+(p \lor q)
+$$
+
+Blue3 resolves:
+
+$$
+(q \lor \neg p)
+$$
+
+with:
+
+$$
+(p \lor q)
+$$
+
+The complementary literals $p$ and $\neg p$ cancel, leaving:
 
 $$
 q
 $$
 
-So Blue3 learns:
+Now the learned clause has only one literal from the current decision level:
 
 $$
 q
 $$
 
-The formula effectively becomes:
+So `analyze_conflict` hits the return case:
+
+```ocaml {.numberLines filename="sat/trail.ml"}
+| [hd] ->
+  if level = 0 then [], -1
+  else
+    let new_lvl =
+      clause
+      |> List_utils.remove1 hd
+      |> List.fold_left
+          (fun lvl' lit ->
+            max lvl' (find_level lit trail)) 0
+    in
+    clause, new_lvl
+```
+
+Since the learned clause is just:
+
+$$
+q
+$$
+
+removing the current-level literal leaves no other literals, so the backtrack level is:
+
+$$
+0
+$$
+
+So Blue3 returns:
+
+$$
+(q, 0)
+$$
+
+meaning:
+
+$$
+\text{learn } q
+\qquad
+\text{and backjump to level } 0
+$$
+
+Then `bcp` calls `backtrack_learn`:
+
+```ocaml {.numberLines filename="sat/cdcl.ml"}
+and backtrack_learn ~level clause trail formula =
+  let trail' = Trail.backjump ~level trail in
+  let formula' = clause :: formula in
+  bcp level trail' formula'
+```
+
+This removes the bad branch from the trail and adds the learned clause to the formula. The formula effectively becomes:
 
 $$
 q \land (p \lor q) \land (\neg p \lor r) \land (\neg r \lor q)
 $$
 
-So Blue3 has learned that $q = \text{false}$ cannot work. After backtracking, $q = \text{true}$ is forced, and the formula becomes satisfiable.
+Now Blue3 calls `bcp` again at level `0`. Since:
 
-The key idea is that a conflict may only mean the current branch is impossible. CDCL learns from the branch, backjumps, and continues.
+$$
+q
+$$
 
-## SMT
+is a unit clause, unit propagation immediately forces:
 
-Blue3 has two main pieces:
+$$
+q = \text{true}
+$$
 
-1. The **SAT solver**, which handles boolean structure.
-2. The **IDL solver**, which handles difference constraints.
+So Blue3 has learned that the branch:
 
-The SMT layer connects them:
+$$
+q = \text{false}
+$$
 
-> SAT handles boolean structure; the theory solver checks whether the selected theory literals are consistent.
+cannot work. Instead of trying that same bad assignment again, it backjumps, learns the clause $q$, and propagates the opposite assignment.
+
+With:
+
+$$
+q = \text{true}
+$$
+
+the original formula is satisfiable:
+
+$$
+(p \lor q) \land (\neg p \lor r) \land (\neg r \lor q)
+$$
+
+because the first and third clauses are already satisfied by $q = \text{true}$, and Blue3 can choose values for the remaining variables that satisfy the rest.
+
+The key idea is that a conflict may only mean the current branch is impossible. CDCL learns from that branch, backjumps, and continues with a new clause that prevents the same bad reasoning from happening again.
+
+## SMT solving
+
+Blue3 connects the propositional [CDCL solver](#conflict-driven-clause-learning) with the [Bellman Ford solver](#bellman-ford-as-a-difference-logic-solver)
 
 ### Theory atoms and results
 
@@ -813,9 +1275,10 @@ Blue3 represents theory-level boolean expressions as `Theory.atom`s. Theory lite
 - `Theory_split`: the solver needs more case splits.
 - `Theory_unknown`: Blue3 should fall back to the next solver.
 
-```ocaml
-type 'k theory_solution =
-  | Theory_unknown | Theory_sat of 'k Model.t
+```ocaml {.filename="smt/theory.mli"}
+type 'k theory_solution = private
+  | Theory_unknown
+  | Theory_sat of 'k Model.t
   | Theory_unsat of 'k core
   | Theory_split of 'k formula
 ```
@@ -843,34 +1306,235 @@ $$
 p_1 \land p_2
 $$
 
-Blue3 keeps both directions of this mapping so it can move between SAT literals and theory literals.
+Blue3 stores this mapping in a connector:
 
-```ocaml
-Hashtbl.add conn.to_sat atom sat_atom;
-Hashtbl.add conn.from_sat sat_atom atom;
-sat_atom
+```ocaml {.filename="smt/blue3.ml"}
+type 'k connector =
+  { to_sat : ('k Theory.atom, Sat.Formula.atom) Hashtbl.t
+  ; from_sat : (Sat.Formula.atom, 'k Theory.atom) Hashtbl.t
+  ; mutable count : int
+  }
 ```
 
-### The CDCL(T) loop
+The `to_sat` table maps theory atoms to SAT atoms, while `from_sat` maps SAT atoms back to their original theory atoms.
 
-The main SMT loop is:
+When Blue3 sees a theory atom, it either reuses the existing SAT atom or creates a fresh one:
 
-1. Abstract SMT into SAT.
-2. Run CDCL.
-3. Convert the SAT model back into theory literals.
-4. Ask the theory solver whether they are consistent.
-5. If theory says `UNSAT`, learn a clause and retry.
-6. If theory says `SPLIT`, add split clauses and retry.
+```ocaml {.filename="smt/blue3.ml"}
+let abstract_atom
+    ?uid
+    (atom : 'k Theory.atom)
+    (conn : 'k connector)
+  : Sat.Formula.atom =
+  match Hashtbl.find_opt conn.to_sat atom with
+  | Some uid -> uid
+  | None ->
+      let sat_atom = next_uid ?uid conn in
+      Hashtbl.add conn.to_sat atom sat_atom;
+      Hashtbl.add conn.from_sat sat_atom atom;
+      sat_atom
+```
 
-This is CDCL plus a theory solver: `CDCL(T)`.
+Literals preserve their sign during abstraction:
 
-```ocaml
+```ocaml {.filename="smt/blue3.ml"}
+let abstract_literal
+    ?uid
+    (lit : 'k Theory.literal)
+    (conn : 'k connector)
+  : Sat.Formula.literal =
+  match lit with
+  | Neg smt_atom -> Sat.Formula.neg (abstract_atom ?uid smt_atom conn)
+  | Pos smt_atom -> Sat.Formula.pos (abstract_atom ?uid smt_atom conn)
+```
+
+Then clauses and formulas are abstracted by mapping over their literals:
+
+```ocaml {.filename="smt/blue3.ml"}
+let abstract_clause
+    ?uid
+    (Clause clause : 'k Theory.clause)
+    (conn : 'k connector)
+  : Sat.Formula.literal list =
+  List.map (fun lit -> abstract_literal ?uid lit conn) clause
+
+let abstract
+    ?uid
+    (formula : 'k Theory.formula)
+    (conn : 'k connector)
+  : Sat.Formula.literal list list =
+  List.map (fun clause -> abstract_clause ?uid clause conn) formula
+```
+
+Once SAT finds a boolean model, Blue3 converts the SAT literals back into theory literals before calling the theory solver:
+
+```ocaml {.filename="smt/blue3.ml"}
+let make_theory_literals
+  (sat_model : Sat.Formula.literal list)
+  (conn : 'k connector)
+  : 'k Theory.literal list =
+  List.map
+    (function
+     | Sat.Formula.Pos sat_atom
+     | Sat.Formula.Neg sat_atom -> make_theory_literal sat_model sat_atom conn)
+    sat_model
+```
+
+So the connector lets Blue3 move in both directions:
+
+```text
+theory formula -> SAT formula -> SAT model -> theory literals
+```
+
+### CDCL(T)
+
+After boolean abstraction, Blue3 runs a simple CDCL(T) loop:
+
+```ocaml {.filename="smt/blue3.ml"}
+let cdcl_T ~(solver : 'k Theory.theory_solver) (formula : (bool, 'k) Formula.t)
+  : 'k Solution.t =
+  let conn = make 64 in
+  let propositional = abstract (Theory.from_smt_formula formula) conn in
+  let rec loop conn sat_formula =
+    match Sat.Cdcl.cdcl sat_formula with
+    | UNSAT -> Solution.Unsat
+    | SAT model ->
+      let theory_lits =
+        make_theory_literals model conn
+      in
+      match solver theory_lits with
+      | Theory_unknown -> Solution.Unknown
+      | Theory_unsat core ->
+        let learned = theory_learn core conn in
+        let sat_formula' = Sat.Formula.conjoin1 learned sat_formula in
+        loop conn sat_formula'
+      | Theory_sat model -> Solution.Sat model
+      | Theory_split clauses ->
+        let sat_formula' =
+          List.fold_left
+            (fun acc clause ->
+              let sat_clause = abstract_clause clause conn in
+              Sat.Formula.conjoin1 sat_clause acc)
+            sat_formula
+            clauses
+        in
+        loop conn sat_formula'
+  in
+  loop conn propositional
+```
+
+First, Blue3 creates a connector and abstracts the SMT formula into a propositional SAT formula:
+
+```ocaml {.filename="smt/blue3.ml"}
+let conn = make 64 in
+let propositional = abstract (Theory.from_smt_formula formula) conn in
+```
+
+The connector remembers which SAT atom corresponds to which theory atom, so the SAT solver can work on boolean variables while Blue3 can later recover the original theory literals.
+
+Then Blue3 calls the SAT solver:
+
+```ocaml {.filename="smt/blue3.ml"}
 match Sat.Cdcl.cdcl sat_formula with
 | UNSAT -> Solution.Unsat
-| SAT model ->
-  let theory_lits = make_theory_literals model conn in
-  match solver theory_lits with ...
+| SAT model -> ...
 ```
+
+If the propositional abstraction is already unsatisfiable, then the original SMT formula is also unsatisfiable. But if SAT finds a boolean model, Blue3 still needs to ask whether that model makes sense in the theory.
+
+So it converts the SAT model back into theory literals:
+
+```ocaml {.filename="smt/blue3.ml"}
+let theory_lits =
+  make_theory_literals model conn
+in
+match solver theory_lits with
+```
+
+For example, if the SAT model contains:
+
+```text
+p1 = true
+p2 = true
+```
+
+and the connector says:
+
+```text
+p1 := (6 <= a)
+p2 := (a < 0)
+```
+
+then Blue3 sends the theory solver:
+
+$$
+(6 \le a) \land (a < 0)
+$$
+
+The theory solver can then return one of four results.
+
+If the theory solver does not know how to solve the formula, Blue3 returns `Unknown` so the next solver can try:
+
+```ocaml {.filename="smt/blue3.ml"}
+| Theory_unknown -> Solution.Unknown
+```
+
+If the theory solver says the literals are inconsistent, it returns an unsat core:
+
+```ocaml {.filename="smt/blue3.ml"}
+| Theory_unsat core ->
+  let learned = theory_learn core conn in
+  let sat_formula' = Sat.Formula.conjoin1 learned sat_formula in
+  loop conn sat_formula'
+```
+
+The unsat core explains which theory literals caused the contradiction. Blue3 turns that core into a learned SAT clause, conjoins it to the SAT formula, and reruns the loop.
+
+For example, if the theory solver says:
+
+$$
+(6 \le a) \land (a < 0)
+$$
+
+is impossible, then Blue3 learns that the SAT solver should not try that same boolean assignment again.
+
+If the theory solver says the literals are consistent, then Blue3 has found a real SMT model:
+
+```ocaml {.filename="smt/blue3.ml"}
+| Theory_sat model -> Solution.Sat model
+```
+
+Finally, the theory solver may say that it needs more case splits:
+
+```ocaml {.filename="smt/blue3.ml"}
+| Theory_split clauses ->
+  let sat_formula' =
+    List.fold_left
+      (fun acc clause ->
+        let sat_clause = abstract_clause clause conn in
+        Sat.Formula.conjoin1 sat_clause acc)
+      sat_formula
+      clauses
+  in
+  loop conn sat_formula'
+```
+
+In that case, Blue3 abstracts each theory clause into a SAT clause, adds those clauses to the SAT problem, and continues.
+
+So the loop is:
+
+```text
+abstract SMT formula into SAT
+run CDCL
+convert SAT model back into theory literals
+ask the theory solver
+learn theory conflicts or add theory splits
+repeat
+```
+
+This is the simple version of CDCL(T): the SAT solver and theory solver communicate by repeatedly adding learned clauses back into the SAT formula. 
+
+More production-grade solvers like Z3 use a much more incremental version of this idea, with tighter communication between the SAT core and theory solvers, instead of restarting this simple outer loop each time. See the Programming Z3 section on [CDCL(T)](https://theory.stanford.edu/~nikolaj/programmingz3.html#sec-cdclt).
 
 ### Example and Theory Learning
 
@@ -983,14 +1647,57 @@ So the theory solver gives SAT more structure, and the loop continues.
   loop conn sat_formula'
 ```
 
-### The final Blue3 wrapper
+### The Blue3 wrapper
 
-Blue3 falls back if the formula contains operations outside its internal fragment, like multiplication, division, modulus, or general addition.
+The top-level `blue3` function wraps the CDCL(T) loop with a few fallback checks:
 
-```ocaml
-let contains_unsolvable formula =
-  Formula.contains_binops [Times; Divide; Modulus; Plus] formula
+```ocaml {.filename="smt/blue3.ml"}
+let blue3
+  : type k. solver:k Theory.theory_solver -> k solver -> (bool, k) Formula.t -> k Solution.t =
+  fun ~solver next formula ->
+  let solve formula = cdcl_T ~solver formula in
+  if contains_unsolvable formula then next formula
+  else
+    match formula with
+    | Const_bool true -> Solution.Sat Model.empty
+    | Const_bool false -> Solution.Unsat
+    | _ ->
+      match solve formula with
+      | Solution.Unknown -> next formula
+      | solution -> solution
 ```
+
+Blue3 first checks whether the formula contains operations outside its internal fragment, like multiplication, division, modulus, or general addition:
+
+```ocaml {.filename="smt/blue3.ml"}
+let contains_unsolvable formula =
+  Formula.contains_binops [Times ; Divide ; Modulus ; Plus] formula
+```
+
+If the formula contains one of these operations, Blue3 immediately delegates to the next solver:
+
+```ocaml {.filename="smt/blue3.ml"}
+if contains_unsolvable formula then next formula
+```
+
+Otherwise, it handles the trivial boolean constants directly:
+
+```ocaml {.filename="smt/blue3.ml"}
+match formula with
+| Const_bool true -> Solution.Sat Model.empty
+| Const_bool false -> Solution.Unsat
+```
+
+For every other formula, Blue3 calls its internal CDCL(T) solver:
+
+```ocaml {.filename="smt/blue3.ml"}
+| _ ->
+  match solve formula with
+  | Solution.Unknown -> next formula
+  | solution -> solution
+```
+
+If CDCL(T) returns `Unknown`, Blue3 falls back to the next solver. Otherwise, it returns the solution it found.
 
 So the final architecture is:
 

@@ -16,17 +16,18 @@ type 'k core = private Core of 'k literal list
 type 'k formula = 'k clause list
 
 (** A ['k theory_solution] is a domain specific theory solution 'instantiated'
-    by the parent ['k] formula key. It is one of...
+    by the parent ['k] formula key:
 
     1. [Theory_sat model] is a concrete [Model.t] that satisfies
        some given set of conjunctive difference literals
 
     2. [Theory_unsat core] is a list of the ['k] literals that
-       resulted in a contradiction from the theory solver.
+       resulted in a contradiction from the theory solver
 
     3. [Theory_split splits] is the list of clauses that represents one conjunction
        of many disjunctions, which can be used as a case split by the
-       boolean solver. *)
+       boolean solver
+*)
 type 'k theory_solution = private
   | Theory_unknown
   | Theory_sat of 'k Model.t
