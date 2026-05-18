@@ -281,7 +281,7 @@ let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
   ...
 ```
 
-For a graph with $\text{NUM_NODES}$ nodes, we need to move back $\text{NUM_NODES}$ from the relaxed node to return a node guaranteed to be in the cycle because of the pigeonhole principle:
+For a graph with $\text{NUM\_NODES}$ nodes, we need to move back $\text{NUM\_NODES}$ from the relaxed node to return a node guaranteed to be in the cycle because of the pigeonhole principle:
 
 ```ocaml {filename="utils/bellman_ford.ml" .numberLines}
 let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
@@ -1712,9 +1712,19 @@ Result -> SAT / UNSAT / fallback
 
 These measurements use the [Benchmark](https://ocaml.org/p/benchmark/1.7) library on 179 formulas from a real `ceval` run. Each formula was solved 2000 times by each solver, and the averages were saved.
 
+Analysis was done via SQLite queries against a saved results table.
+
 ### Measurements
 
 #### Average runtimes
+
+```sql
+SELECT 
+    ROUND(AVG(time_us_blue3)) || 'μs' AS blue3,
+    ROUND(AVG(time_us_z3)) || 'μs' AS z3
+FROM benchmarks;
+```
+
 |  blue3  |   z3    |
 |---------|---------|
 | 241.0μs | 359.0μs |
@@ -1722,6 +1732,13 @@ These measurements use the [Benchmark](https://ocaml.org/p/benchmark/1.7) librar
 On average, blue3 outperforms z3 by just under ~40%.
 
 #### Blue3-only count
+
+```sql
+SELECT COUNT(DISTINCT formula_id) AS count
+FROM benchmarks
+WHERE was_backend_used = 'true';
+```
+
 | count |
 |-------|
 | 89    |
@@ -1729,6 +1746,13 @@ On average, blue3 outperforms z3 by just under ~40%.
 Out of the 179 formulas solved by Blue3, it solved 89 of them without having to fallback to Z3.
 
 #### Z3-deferred count
+
+```sql
+SELECT COUNT(DISTINCT formula_id) AS count
+FROM benchmarks
+WHERE was_backend_used = 'true';
+```
+
 | count |
 |-------|
 | 90    |
@@ -1736,6 +1760,16 @@ Out of the 179 formulas solved by Blue3, it solved 89 of them without having to 
 Out of the 179 formulas solved by Blue3, it deferred 90 formulas to Z3 .
 
 #### Deferred overhead
+
+```sql
+SELECT
+  COUNT(*) AS cases,
+  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS diff,
+  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_z3), 2) || '%' AS pct
+FROM benchmarks
+WHERE was_backend_used = 'true';
+```
+
 | cases |   diff   |  pct   |
 |-------|----------|--------|
 | 90    | -12.83μs | -2.41% |
@@ -1743,6 +1777,16 @@ Out of the 179 formulas solved by Blue3, it deferred 90 formulas to Z3 .
 On average, running Z3 through the Blue3 solve pipeline incurs a ~13 microsecond overhead over running Z3 alone.
 
 #### Fast cases
+
+```sql
+SELECT
+  COUNT(*) AS cases,
+  ROUND(AVG(time_us_z3 - time_us_blue3), 2) || 'μs' AS diff,
+  ROUND(AVG(((time_us_z3 - time_us_blue3) * 100.0) / time_us_z3), 2) || '%' AS pct
+FROM benchmarks
+WHERE time_us_blue3 < time_us_z3;
+```
+
 | cases |   diff   |  pct   |
 |-------|----------|--------|
 | 146   | 146.61μs | 61.54% |
@@ -1750,6 +1794,16 @@ On average, running Z3 through the Blue3 solve pipeline incurs a ~13 microsecond
 On the cases that Blue3 was able to solve faster than Z3, regardless of if it deferred to Z3 or not, it was able to solve it was around ~60% faster. While a more thorough analysis would need to be done to say this for certain, I am guessing that the $146 - 89$ cases that were deferred to Z3 were faster than the Z3 call alone because of the simplifications Blue3 performs.
 
 #### Slow cases
+
+```sql
+SELECT
+  COUNT(*) AS cases,
+  ROUND(AVG(time_us_blue3 - time_us_z3), 2) || 'μs' AS diff,
+  ROUND(AVG(((time_us_blue3 - time_us_z3) * 100.0) / time_us_blue3), 2) || '%' AS pct
+FROM benchmarks
+WHERE time_us_blue3 > time_us_z3;
+```
+
 | cases |  diff   | pct  |
 |-------|---------|------|
 | 33    | 10.05μs | 3.2% |
@@ -1757,6 +1811,21 @@ On the cases that Blue3 was able to solve faster than Z3, regardless of if it de
 When Z3-only solver outperformed Blue3, it was by 3.2%.
 
 #### Top 5 fastest Blue3-only cases
+
+```sql
+SELECT
+  formula_id AS id,
+  formula,
+  ROUND(AVG(time_us_blue3), 2) || 'μs' AS blue3,
+  ROUND(AVG(time_us_z3), 2) || 'μs' AS z3,
+  ROUND(AVG(time_us_blue3) - AVG(time_us_z3), 2) || 'μs' AS diff
+FROM benchmarks
+WHERE was_backend_used = 'false'
+GROUP BY formula_id, formula
+ORDER BY AVG(time_us_blue3) ASC
+LIMIT 5;
+```
+
 | id  |            formula             | blue3  |    z3    |   diff    |
 |-----|--------------------------------|--------|----------|-----------|
 | 8   | (0 < a) ^ ((a + 1) <= 1)       | 0.21μs | 91.41μs  | -91.2μs   |
@@ -1768,6 +1837,21 @@ When Z3-only solver outperformed Blue3, it was by 3.2%.
 Blue3 greatly outperforms Z3 on small IDL cases.
 
 #### Top 5 slowest Blue3-only cases
+
+```sql
+SELECT
+  formula_id AS id,
+  formula,
+  ROUND(AVG(time_us_blue3), 2) || 'μs' AS blue3,
+  ROUND(AVG(time_us_z3), 2) || 'μs' AS z3,
+  ROUND(AVG(time_us_blue3) - AVG(time_us_z3), 2) || 'μs' AS diff
+FROM benchmarks
+WHERE was_backend_used = 'false'
+GROUP BY formula_id, formula
+ORDER BY AVG(time_us_blue3) DESC
+LIMIT 5;
+```
+
 | id  |                           formula                            |  blue3   |    z3    |   diff    |
 |-----|--------------------------------------------------------------|----------|----------|-----------|
 | 167 | (not (a = 108)) ^ (not (a = 105)) ^ (not (a = 98)) ^ (not (a | 177.42μs | 477.72μs | -300.29μs |
@@ -1795,6 +1879,20 @@ Blue3 greatly outperforms Z3 on small IDL cases.
 These are Blue3’s slowest solved cases that are purely IDL-compatible. They contain many disequalities and redundant lower bounds, causing more simplification and case-analysis work before the formula collapses and outperforms calling Z3 alone.
 
 #### Cases Z3 beat Blue3
+
+```sql
+SELECT
+  b.formula_id AS id,
+  b.formula,
+  ROUND(b.time_us_blue3, 2) AS blue3,
+  ROUND(b.time_us_z3, 2) AS z3
+FROM benchmarks b
+WHERE time_us_z3 < time_us_blue3
+ORDER BY time_us_blue3 DESC
+LIMIT 5;
+
+```
+
 | id  |                           formula                            |  blue3  |   z3    |
 |-----|--------------------------------------------------------------|---------|---------|
 | 94  | (b <= a) ^ (0 < b) ^ (0 < a) ^ (not ((a % b) = 0)) ^ (not (b | 1163.14 | 1157.67 |
