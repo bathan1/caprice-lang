@@ -215,7 +215,7 @@ In our implementation, we opt for `options` over explicit int-max values to repr
 
 So in either the initial state or any state after, we are effectively checking for $dist[from] + cost < dist[to]$:
 
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+```ocaml {.filename="utils/bellman_ford.ml" .numberLines}
 let relax_edge (tbl : tbl) (was_updated : bool) ((from_, to_, cost) as edge : Node.t edge) : bool =
   match Hashtbl.find tbl from_, Hashtbl.find tbl to_ with
   | (Some du, _), (None, _) ->
@@ -227,7 +227,7 @@ let relax_edge (tbl : tbl) (was_updated : bool) ((from_, to_, cost) as edge : No
 
 The source starts at distance `0`; every other node starts at infinity. Bellman-Ford relaxes edges at most $N - 1$ times, where $N$ is the number of nodes, so we stop when we are at iteration number $N - 1$, or when a full pass does not update anything as a small optimization:
 
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+```ocaml {.filename="utils/bellman_ford.ml" .numberLines}
 let relax_edges (edges : Node.t edge list) (tbl : tbl) (i : int)
   : [ `Continue of tbl | `Stop of tbl ] =
   if i >= (Hashtbl.length tbl) - 1 then `Stop tbl
@@ -251,7 +251,7 @@ After the normal relaxation loop, Bellman-Ford runs one extra pass. If any edge 
 
 We invoke this extra pass via `find_relaxed_node_opt`:
 
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+```ocaml {.filename="utils/bellman_ford.ml" .numberLines}
 let find_relaxed_node_opt (edges : Node.t edge list) (dist : tbl) : Node.t option =
   List.find_map (fun ((_, to_, _) as edge) ->
     if relax_edge dist false edge then
@@ -273,7 +273,7 @@ graph LR
 
 To find a node in the cycle, we walk backward from that relaxed node:
 
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+```ocaml {.filename="utils/bellman_ford.ml" .numberLines}
 let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
   : Node.t option =
   let num_nodes = Hashtbl.length dist in
@@ -283,7 +283,7 @@ let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
 
 For a graph with $\text{NUM\_NODES}$ nodes, we need to move back $\text{NUM\_NODES}$ from the relaxed node to return a node guaranteed to be in the cycle because of the pigeonhole principle:
 
-```ocaml {filename="utils/bellman_ford.ml" .numberLines}
+```ocaml {.filename="utils/bellman_ford.ml" .numberLines}
 let find_cycle_node_opt (edges : Node.t edge list) (dist : tbl)
   ...
   let rec move_back node n =
@@ -316,7 +316,7 @@ let collect_cycle (start : Node.t) (dist : tbl) : Node.t edge list =
 
 Now that we can collect negative cycles, our bellman ford implementation is finished.
 
-```ocaml {filename="utils/bellman_ford.ml"}
+```ocaml {.filename="utils/bellman_ford.ml"}
 let bellman_ford
   (type node)
   (module Node : Baby.OrderedType with type t = node)
@@ -360,7 +360,7 @@ graph LR
 
 It looks like this for Blue3:
 
-```ocaml {filename="smt/idl.ml" .numberLines}
+```ocaml {.filename="smt/idl.ml" .numberLines}
 let leq_to_diff (left : Ints.affine) (right : Ints.affine) : diff =
   match left, right with
   | Var_plus_const (x, kx), Var_plus_const (y, ky) ->
@@ -380,7 +380,7 @@ $$
 x \neq y \implies (x \leq y - 1) \lor (y + 1 \leq x)
 $$
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 let find_split_opt (lit : 'k Theory.literal)
   : 'k split_neq_case option =
   let one = Formula.const_int 1 in
@@ -391,7 +391,7 @@ let find_split_opt (lit : 'k Theory.literal)
 
 Where on that case, we return both lower and upper bounds:
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 match lit with
 | Neg Predicate (Equal, x, y) ->
   begin match Ints.reflect_opt x, Ints.reflect_opt y with
@@ -406,7 +406,7 @@ match lit with
 
 We also include the equality case...
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 begin match Ints.reflect_opt x, Ints.reflect_opt y with
 | Some x', Some y' ->
   ...
@@ -456,7 +456,7 @@ $$
 
 So all we need to do is get the the $0^*$ node's distance `z0_dist`:
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 let solve_int_diff (literals : 'k Theory.literal list)
   : 'k Theory.theory_solution =
   ...
@@ -470,7 +470,7 @@ let solve_int_diff (literals : 'k Theory.literal list)
 
 And then subtract it from every other value with `var_dist - z0_dist`:
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 ...
 | `No_negative_cycle distances ->
   ...
@@ -515,7 +515,7 @@ graph LR
 
 And returns the edges of the cycle:
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 let solve_int_diff (literals : 'k Theory.literal list)
   : 'k Theory.theory_solution =
   ...
@@ -534,7 +534,7 @@ $$
 (0^*, a, -1) \implies a < 0
 $$
 
-```ocaml {.numberLines filename="smt/idl.ml"}
+```ocaml {.numberLines .filename="smt/idl.ml"}
 match bellman_ford ~src:Node.root edges with
 | `Negative_cycle edges ->
   let core =
@@ -586,11 +586,11 @@ The (simple) loop goes like:
 
 So we begin with propagation via the boolean constraint propagation function `bcp`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let cdcl formula = bcp 0 [] formula
 ```
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
   let model = Trail.to_model trail in
   match unit_propagate formula model with
@@ -601,7 +601,7 @@ let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : So
 
 Which calls `unit_propagate`. Depending on the result of `unit_propagate`, we will either `backtrack_learn`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
 ...
 and backtrack_learn ~level clause trail formula =
@@ -612,7 +612,7 @@ and backtrack_learn ~level clause trail formula =
 
 or `decide`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 and decide ~lit next_lvl trail =
   let trail' = Trail.decide ~lit next_lvl trail in
   bcp next_lvl trail'
@@ -644,7 +644,7 @@ because $p$ and $\neg q$ are unit clauses.
 
 Then it returns the `next` step which is one of `Decide`, `Conflict`, or `Implication`.
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let unit_propagate formula model =
   let rec search_empty
     (formula : Formula.formula)
@@ -658,7 +658,7 @@ let unit_propagate formula model =
 
 It first calls `search_unit`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec search_unit (formula : Formula.formula) : next =
   match formula with
   | [] -> Decide
@@ -701,7 +701,7 @@ $$
 
 Before returning that implication, `search_empty` checks the rest of the formula:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec search_empty
   (formula : Formula.formula)
   (reason_clause : literal list)
@@ -751,7 +751,7 @@ So CDCL makes a **decision**, meaning it guesses an unassigned variable:
 
 If CDCL guesses:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
   let model = Trail.to_model trail in
   begin match unit_propagate formula model with
@@ -766,7 +766,7 @@ and decide ~lit next_lvl trail =
   bcp next_lvl trail'
 ```
 
-```ocaml {.numberLines filename="sat/trail.ml"}
+```ocaml {.numberLines .filename="sat/trail.ml"}
 let decide ~lit level trail = { level ; lit ; reason = Decided } :: trail
 ```
 
@@ -796,7 +796,7 @@ If CDCL guesses $p = \text{true}$, then it is forced to set $q = \text{true}$. B
 
 CDCL learns from this conflict with the `Trail.analyze_conflict` function:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec bcp (level : int) (trail : Trail.trail) (formula : Formula.formula) : Solution.solution =
   let model = Trail.to_model trail in
   begin match unit_propagate formula model with
@@ -957,7 +957,7 @@ $$
 
 The `decide` helper records that assignment on the trail at the next decision level, then immediately returns to `bcp`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 and decide ~lit next_lvl trail formula =
   let trail' = Trail.decide ~lit next_lvl trail in
   bcp next_lvl trail' formula
@@ -991,7 +991,7 @@ $$
 
 That returns an `Implication`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 | Implication (clause, lit) ->
   let trail' = Trail.imply ~reason:clause level lit trail in
   bcp level trail' formula
@@ -1033,7 +1033,7 @@ $$
 
 Blue3 records the implication and its reason:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 | Implication (clause, lit) ->
   let trail' = Trail.imply ~reason:clause level lit trail in
   bcp level trail' formula
@@ -1065,7 +1065,7 @@ $$
 
 so the clause is falsified. `unit_propagate` returns a conflict:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let unit_propagate ...
   let rec search_unit (formula : Formula.formula) : next =
     match formula with
@@ -1077,7 +1077,7 @@ let unit_propagate ...
 
 So `bcp` enters the conflict case:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 let rec bcp ...
   match unit_propagate ... with
   | Conflict clause ->
@@ -1100,7 +1100,7 @@ $$
 
 Both $r$ and $q$ were assigned at the current decision level, so there is more than one current-level literal. That means the clause is not ready to learn yet, so Blue3 uses the recursive case:
 
-```ocaml {.numberLines filename="sat/trail.ml"}
+```ocaml {.numberLines .filename="sat/trail.ml"}
 | current_level_lits ->
   let reason = find_reason current_level_lits trail in
   let clause' = Formula.resolve_pair clause reason in
@@ -1171,7 +1171,7 @@ $$
 
 So `analyze_conflict` hits the return case:
 
-```ocaml {.numberLines filename="sat/trail.ml"}
+```ocaml {.numberLines .filename="sat/trail.ml"}
 | [hd] ->
   if level = 0 then [], -1
   else
@@ -1213,7 +1213,7 @@ $$
 
 Then `bcp` calls `backtrack_learn`:
 
-```ocaml {.numberLines filename="sat/cdcl.ml"}
+```ocaml {.numberLines .filename="sat/cdcl.ml"}
 and backtrack_learn ~level clause trail formula =
   let trail' = Trail.backjump ~level trail in
   let formula' = clause :: formula in
