@@ -1,3 +1,9 @@
+(* Runs difference logic examples for the report *)
+
+[@@@ocaml.warning "-26"]
+[@@@ocaml.warning "-27"]
+[@@@ocaml.warning "-32"]
+
 open Utils
 
 let bellman_ford = Bellman_ford.bellman_ford (module String)
@@ -119,17 +125,6 @@ let pp_result ~src result =
       Printf.printf "- %s\n" (pp_edge edge))
       cycle_edges
 
-let augmented_graph () = 
-  let edges =
-    [ ("a", "0", -6)
-    ; ("0", "a", -1)
-    ; ("0", "b", 5)
-    ]
-  in
-  print_bellman_ford ~label:"Augmented src a" ~src:"a" edges;
-  print_bellman_ford ~label:"Augmented src 0" ~src:"0" edges;
-  print_bellman_ford ~label:"Augmented src b" ~src:"b" edges
-
 let print_min_distance_to key dist =
   Printf.printf "Minimum distance to \"%s\" = %d\n" key (BellmanFord.find_distance key dist)
 
@@ -137,36 +132,8 @@ let print_predecessor_edge_of key dist =
   let predecessor_edge_of_a = BellmanFord.find_predecessor_edge key dist in
   Printf.printf "Predecessor edge of \"%s\" is = %s\n" key (pp_edge_opt predecessor_edge_of_a)
    
-let sat_graph () =
-  let edges =
-    [ ("a", "0*", 1)
-    ; ("0*", "a", 2)
-    ; ("s", "0*", 0)
-    ; ("s", "a", 0)
-  ] in
-  print_bellman_ford ~label:"SAT Graph" ~src:"s" edges
 
-let sat_graph_offset () =
-  let edges =
-    [ ("a", "0*", -1)
-    ; ("0*", "a", 2)
-    ; ("s", "0*", 0)
-    ; ("s", "a", 0)
-  ] in
-  print_bellman_ford ~label:"SAT Graph (with offset)" ~src:"s" edges
-  
-let negative_cycle_entry () =
-  let edges =
-  [ ("s", "a", 2) ; ("a", "b", 1)
-  ; ("b", "c", -4) ; ("c", "a", 1) ; ("c", "d", 3)
-  ] in
-  let dist = BellmanFord.find_shortest_paths ~src:"s" edges in
-  let cycle_entry = BellmanFord.find_cycle_entry edges dist in
-  Printf.printf "Cycle entry is: %s\n" cycle_entry;
-
-  print_bellman_ford ~label:"negative-cycle-entry" ~src:"s" edges
-
-let run_bellman_ford () =
+let () =
   let simple_no_neg =
       [ ("a", "0*", 3) ; ("0*", "a", -1)
       ; ("r", "0*", 9) ; ("r", "a", 5)
