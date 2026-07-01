@@ -1,0 +1,4 @@
+node_modules/
+dist/
+public/caprice-wasm/
+*.tsbuildinfo

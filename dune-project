@@ -20,10 +20,13 @@
   baby
   benchmark
   cmdliner
+  js_of_ocaml
+  js_of_ocaml-ppx
   menhir
   mtime
   (ocaml (>= 5.5.0))
   psq
+  wasm_of_ocaml-compiler
   yojson
   z3
   ))

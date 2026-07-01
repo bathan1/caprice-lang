@@ -46,8 +46,17 @@ Via opam, install OCaml 5.5.0~beta1 and then install the dependencies. Answer y/
 ```cmd
 opam update
 opam switch create 5.5.0~beta1
+eval $(opam env)
+wasm-opt --version
 opam install . --deps-only
 ```
+
+The WebAssembly compiler dependency requires Binaryen 119 or newer. Check the
+version before running `opam install`; some distribution packages provide an
+older `wasm-opt` that opam's `conf-binaryen` package accepts but
+`wasm_of_ocaml-compiler` cannot build with. Install a current Binaryen release
+from [upstream](https://github.com/WebAssembly/binaryen/releases) when the
+reported version is older than 119.
 
 Then, build the repository with dune:
 
