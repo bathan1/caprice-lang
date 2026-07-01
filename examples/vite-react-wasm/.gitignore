@@ -2,3 +2,10 @@ node_modules/
 dist/
 public/caprice-wasm/
 *.tsbuildinfo
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
